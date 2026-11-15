@@ -1,5 +1,8 @@
 """Build a multi-shot, topic-related visual track from Wikimedia Commons."""
 import json
+import os
+import time
+import urllib.error
 import re
 import subprocess
 import urllib.parse
@@ -16,15 +19,7 @@ def relevant_background(topic: str, folder: Path):
     if not words:
         return None
     subject = words[0]
-    params = urllib.parse.urlencode({
-        "action":"query","generator":"search","gsrsearch":subject,
-        "gsrnamespace":6,"gsrlimit":40,"prop":"imageinfo",
-        "iiprop":"url|mime|extmetadata","iiurlwidth":960,"format":"json"
-    })
     try:
-        req=urllib.request.Request("https://commons.wikimedia.org/w/api.php?"+params,headers=UA)
-        with urllib.request.urlopen(req,timeout=25) as response:
-            pages=json.load(response).get("query",{}).get("pages",{})
         folder.mkdir(parents=True,exist_ok=True)
         clips=[]
         credits=[]
@@ -32,7 +27,7 @@ def relevant_background(topic: str, folder: Path):
         try:
             vparams=urllib.parse.urlencode({
                 "action":"query","generator":"search","gsrsearch":subject+" filetype:video",
-                "gsrnamespace":6,"gsrlimit":20,"prop":"imageinfo",
+                "gsrnamespace":6,"gsrlimit":40,"prop":"imageinfo",
                 "iiprop":"url|mime","format":"json"
             })
             with urllib.request.urlopen(urllib.request.Request(
@@ -49,9 +44,29 @@ def relevant_background(topic: str, folder: Path):
                 try:
                     # Stream at most 24 MiB per source; skip excessively large media.
                     req=urllib.request.Request(url,headers=UA)
-                    with urllib.request.urlopen(req,timeout=25) as response:
-                        if int(response.headers.get("Content-Length","0") or 0)>24*1024*1024: continue
-                        raw=response.read(24*1024*1024+1)
+                    cache=Path("media_cache")/"downloads"
+                    cache.mkdir(parents=True,exist_ok=True)
+                    import hashlib
+                    key=hashlib.sha256(url.encode()).hexdigest()[:24]
+                    cached=cache/(key+".bin")
+                    if cached.exists():
+                        raw=cached.read_bytes()
+                    else:
+                        raw=None
+                        for attempt in range(3):
+                            try:
+                                with urllib.request.urlopen(req,timeout=35) as response:
+                                    if int(response.headers.get("Content-Length","0") or 0)>24*1024*1024: break
+                                    raw=response.read(24*1024*1024+1)
+                                break
+                            except urllib.error.HTTPError as e:
+                                if e.code != 429: raise
+                                delay=min(25, 5*(attempt+1))
+                                print(f"Rate limit 429; waiting {delay}s",flush=True)
+                                time.sleep(delay)
+                        if raw is None: continue
+                        if 20000<len(raw)<24*1024*1024: cached.write_bytes(raw)
+                        time.sleep(1.5)
                     if len(raw)>24*1024*1024 or len(raw)<20000: continue
                     source=folder/f"motion_{len(clips)+1:02d}.webm"
                     source.write_bytes(raw)
