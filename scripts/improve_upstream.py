@@ -74,15 +74,29 @@ media_source = media_source.replace(
 media_path.write_text(media_source, encoding="utf-8")
 print("Scene-only queries and balanced 25% metadata relevance gate enabled", flush=True)
 
-# Wire additional free image providers into Purffle's existing per-scene search.
-# Keep original stock video providers as the first choices.
-needle_search = '''        ck = (source, query.lower())'''
-replacement_search = '''        if source in ("openverse", "wikimedia", "nasa"):
-            from extra_sources import search as extra_search
-            return extra_search(source, query, MediaItem)
+
+# Video-only policy: photos, AI stills and gradient placeholders are forbidden.
+# If no real motion footage can be sourced, fail explicitly rather than exporting
+# a misleading 'successful' MP4 with blank/animated filler.
+search_needle = '''        ck = (source, query.lower())'''
+search_patch = '''        if source == "wikimedia-video":
+            from video_sources import search_wikimedia_videos
+            return search_wikimedia_videos(query, MediaItem)
         ck = (source, query.lower())'''
-if needle_search not in media_source:
-    raise SystemExit("Upstream search interface changed; extra sources not installed")
-media_source = media_source.replace(needle_search, replacement_search, 1)
+if search_needle not in media_source:
+    raise SystemExit("Upstream search method changed; cannot enforce video-only mode")
+media_source = media_source.replace(search_needle, search_patch, 1)
+
+claim_needle = '''fresh = [c for c in candidates if c.key not in self.used]'''
+claim_patch = '''fresh = [c for c in candidates if c.kind == "video" and c.key not in self.used]'''
+if claim_needle not in media_source:
+    raise SystemExit("Upstream claim method changed; cannot enforce video-only mode")
+media_source = media_source.replace(claim_needle, claim_patch, 1)
+
+fallback_needle = '''return MediaItem("generated", f"gradient-{idx}", "generated", query=query)'''
+fallback_patch = '''raise RuntimeError(f"No suitable REAL VIDEO for scene {idx + 1}: {query!r}; refusing photo/gradient fallback")'''
+if fallback_needle not in media_source:
+    raise SystemExit("Upstream fallback changed; cannot enforce video-only mode")
+media_source = media_source.replace(fallback_needle, fallback_patch, 1)
 media_path.write_text(media_source, encoding="utf-8")
-print("Extra licensed visual providers: Openverse, Wikimedia Commons, NASA", flush=True)
+print("STRICT VIDEO ONLY: Pixabay/Pexels/Wikimedia videos; no photos or gradients", flush=True)
