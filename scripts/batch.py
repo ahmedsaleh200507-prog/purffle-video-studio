@@ -41,22 +41,25 @@ for index in range(1, 11):
         "--visuals", "pixabay", "--no-review", "--no-upload",
         "--no-music", "--no-sfx", "--no-emoji",
     ]
-    try:
-        background = relevant_background(topic, Path("media_cache") / f"video_{index:02d}")
-    except Exception as exc:
-        print("VISUAL PREPARATION ERROR:", repr(exc), flush=True)
-        background = None
-    if background and not os.environ.get("PEXELS_API_KEY"):
-        cmd += ["--background", background, "--layout", "full"]
+    # Use the original Purffle per-scene search queries with the existing Pixabay key.
+    # Only fall back to custom animated footage if no stock API is configured.
+    background = None
+    if os.environ.get("PIXABAY_API_KEY"):
+        print("UPSTREAM SCENE VISUALS: Pixabay per-scene search enabled",flush=True)
     elif os.environ.get("PEXELS_API_KEY"):
-        # Restore upstream scene-by-scene visual sourcing using each scene search_query.
         cmd[cmd.index("--visuals")+1] = "pexels"
-        print("UPSTREAM SCENE VISUALS: Pexels per-scene footage enabled",flush=True)
-    elif not background:
-        print(f"Video {index}: no verified relevant visual; skipping rather than showing unrelated footage", flush=True)
-        results.append({"index": index, "language": lang, "topic": topic, "status": "no_relevant_visual", "seconds": 0, "files": 0})
-        Path("batch-results.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
-        continue
+        print("UPSTREAM SCENE VISUALS: Pexels per-scene search enabled",flush=True)
+    else:
+        try:
+            background = relevant_background(topic, Path("media_cache") / f"video_{index:02d}")
+        except Exception as exc:
+            print("VISUAL PREPARATION ERROR:",repr(exc),flush=True)
+        if background:
+            cmd += ["--background", background, "--layout", "full"]
+        else:
+            print(f"Video {index}: unable to prepare moving visuals",flush=True)
+            results.append({"index":index,"language":lang,"topic":topic,"status":"no_relevant_visual","seconds":0,"files":0})
+            continue
     print(f"\n=== VIDEO {index}/10 [{lang}] {topic} ===", flush=True)
     started = time.monotonic()
     status = "ok"
@@ -89,7 +92,7 @@ for index in range(1, 11):
             if has_visual_detail(source):
                 shutil.copy2(source, destination)
                 print("Original MP4 contains real footage; no overlay needed", flush=True)
-            else:
+            elif background:
                 print("Blank frame detected; repairing with verified topic footage", flush=True)
                 try:
                     probe = subprocess.run(
@@ -116,6 +119,9 @@ for index in range(1, 11):
                     print("Visual repair failed:", repr(exc), flush=True)
                     destination.unlink(missing_ok=True)
                     status = "visual_overlay_failed"
+            else:
+                print("Blank/low-detail output rejected; no valid visual fallback",flush=True)
+                status = "visual_quality_failed"
         if any(target.glob("*.mp4")):
             status = "ok"
         if status == "ok" and not any(target.glob("*.mp4")):
