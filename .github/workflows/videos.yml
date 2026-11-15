@@ -94,6 +94,8 @@ jobs:
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
           python -m pip install --upgrade pip
           pip install "git+https://github.com/Chamanrajragu/purffle-shorts.git" groq pillow
+      - name: Improve original Purffle scene relevance
+        run: python scripts/improve_upstream.py
       - name: Produce up to 10 videos
         run: python scripts/batch.py
       - name: Save MP4 files even when some fail
