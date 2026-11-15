@@ -52,6 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 330
     env:
+      PYTHONPATH: ${{ github.workspace }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
