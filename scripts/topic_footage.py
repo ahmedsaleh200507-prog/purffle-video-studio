@@ -96,13 +96,24 @@ def relevant_background(topic: str, folder: Path):
             print("Motion search unavailable:",repr(exc),flush=True)
 
         # Strict video-only mode: never download or render still photographs.
+        if not clips:
+            print("No downloadable moving footage; creating original 2D motion graphic fallback",flush=True)
+            # Procedural moving background, not a still photograph or empty color card.
+            # FFmpeg's moving plasma pattern ensures continuous changing pixels.
+            fallback=folder/"procedural_motion.mp4"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+                "-f","lavfi","-i","cellauto=s=540x960:r=12:rule=110:random_fill_ratio=0.35",
+                "-t","9","-vf","format=yuv420p",
+                "-an","-c:v","libx264","-preset","ultrafast",str(fallback)],
+                check=True,timeout=65)
+            if not fallback.exists() or fallback.stat().st_size<15000:
+                raise RuntimeError("Moving fallback generation failed")
+            clips.append(fallback)
+            credits.append("Original procedurally animated 2D motion background")
         if len(clips)<5:
-            print(f"Only {len(clips)}/5 distinct moving clips; skipping instead of repeating or leaving blank scenes",flush=True)
-            return None
-        # Require five distinct, verified moving sources; no repeats or still photos.
-        # Keep the visual track longer than any generated narration plus random start offset.
-        # Every segment remains a verified moving clip; no black filler or still images.
-        sequence=clips[:5]*3
+            print(f"Only {len(clips)} distinct moving clips; looping available motion instead of cancelling",flush=True)
+        # Keep continuous motion for narration and any offset; never use blank fillers.
+        sequence=(clips*15)[:15]
         manifest=folder/"shots.txt"
         manifest.write_text("".join("file '"+p.name+"'\n" for p in sequence),encoding="utf-8")
         (folder/"IMAGE_SOURCE.txt").write_text("\n".join(credits),encoding="utf-8")
@@ -111,7 +122,7 @@ def relevant_background(topic: str, folder: Path):
             "-f","concat","-safe","0","-i",str(manifest),"-c","copy",str(target)],
             check=True,timeout=45)
         if target.stat().st_size<15000: return None
-        print(f"VIDEO-ONLY BACKGROUND: {len(clips)} distinct moving clips, 15 shots (135s)",flush=True)
+        print(f"VIDEO-ONLY BACKGROUND: {len(clips)} moving sources, 15 shots (135s)",flush=True)
         return str(target.resolve())
     except Exception as exc:
         print("Wikimedia multi-shot preparation failed:",repr(exc),flush=True)
