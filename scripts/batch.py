@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 from topic_footage import relevant_background
+from visual_quality import has_visual_detail
 
 OUT = Path("finished")
 OUT.mkdir(exist_ok=True)
@@ -80,35 +81,39 @@ for index in range(1, 11):
     if new_files:
         for n, source in enumerate(sorted(new_files), 1):
             destination = target / f"video_{index:02d}_{lang}_{n}.mp4"
-            # Purffle may silently output a flat navy background despite --background.
-            # Composite the verified subject footage behind its captions, preserving audio.
-            try:
-                probe = subprocess.run(
-                    ["ffprobe", "-v", "error", "-select_streams", "v:0",
-                     "-show_entries", "stream=width,height", "-of", "csv=p=0", str(source)],
-                    capture_output=True, text=True, timeout=12, check=True)
-                w, h = (int(x) for x in probe.stdout.strip().split(",")[:2])
-                filtergraph = (
-                    f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
-                    f"crop={w}:{h},setsar=1[bg];"
-                    f"[1:v]format=rgba,colorkey=0x0b263d:0.23:0.08[fg];"
-                    f"[bg][fg]overlay=shortest=1:format=auto,format=yuv420p[out]"
-                )
-                subprocess.run([
-                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                    "-stream_loop", "-1", "-i", background, "-i", str(source),
-                    "-filter_complex", filtergraph, "-map", "[out]", "-map", "1:a?",
-                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-                    "-c:a", "copy", "-t", "35", "-shortest", str(destination)
-                ], check=True, timeout=100)
-                if not destination.exists() or destination.stat().st_size < 15000:
-                    raise RuntimeError("Composited MP4 missing or too small")
-                print("Visual overlay applied:", destination, flush=True)
-            except Exception as exc:
-                print("Visual overlay failed; refusing blank video:", repr(exc), flush=True)
-                # Never publish a known blank original as a successful video.
-                destination.unlink(missing_ok=True)
-                status = "visual_overlay_failed"
+            # Keep already-good footage: color-keying can destroy actual images.
+            if has_visual_detail(source):
+                shutil.copy2(source, destination)
+                print("Original MP4 contains real footage; no overlay needed", flush=True)
+            else:
+                print("Blank frame detected; repairing with verified topic footage", flush=True)
+                try:
+                    probe = subprocess.run(
+                        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                         "-show_entries", "stream=width,height", "-of", "csv=p=0", str(source)],
+                        capture_output=True, text=True, timeout=12, check=True)
+                    w, h = (int(x) for x in probe.stdout.strip().split(",")[:2])
+                    filtergraph = (
+                        f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+                        f"crop={w}:{h},setsar=1[bg];"
+                        f"[1:v]format=rgba,colorkey=0x0b263d:0.23:0.08[fg];"
+                        f"[bg][fg]overlay=shortest=1:format=auto,format=yuv420p[out]"
+                    )
+                    subprocess.run([
+                        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                        "-stream_loop", "-1", "-i", background, "-i", str(source),
+                        "-filter_complex", filtergraph, "-map", "[out]", "-map", "1:a?",
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                        "-c:a", "copy", "-t", "35", "-shortest", str(destination)
+                    ], check=True, timeout=100)
+                    if not destination.exists() or destination.stat().st_size < 15000 or not has_visual_detail(destination):
+                        raise RuntimeError("Visual repair failed quality check")
+                except Exception as exc:
+                    print("Visual repair failed:", repr(exc), flush=True)
+                    destination.unlink(missing_ok=True)
+                    status = "visual_overlay_failed"
+        if any(target.glob("*.mp4")):
+            status = "ok"
         if status == "ok" and not any(target.glob("*.mp4")):
             status = "visual_overlay_failed"
     else:
