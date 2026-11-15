@@ -39,7 +39,7 @@ for index in range(1, 11):
         "--duration", "25", "--caption-style", "bold",
         "--resolution", "540x960", "--fps", "24",
         "--visuals", "pixabay", "--no-review", "--no-upload",
-        "--no-music", "--no-sfx", "--no-emoji",
+        "--no-music",
     ]
     # Use the original Purffle per-scene search queries with the existing Pixabay key.
     # Only fall back to custom animated footage if no stock API is configured.
