@@ -91,7 +91,7 @@ for index in range(1, 11):
                 filtergraph = (
                     f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
                     f"crop={w}:{h},setsar=1[bg];"
-                    f"[1:v]format=rgba,colorkey=0x0a243b:0.13:0.04[fg];"
+                    f"[1:v]format=rgba,colorkey=0x0b263d:0.23:0.08[fg];"
                     f"[bg][fg]overlay=shortest=1:format=auto,format=yuv420p[out]"
                 )
                 subprocess.run([
@@ -104,12 +104,15 @@ for index in range(1, 11):
                 print("Visual overlay applied:", destination, flush=True)
             except Exception as exc:
                 print("Visual overlay failed; original video retained:", repr(exc), flush=True)
-                shutil.copy2(source, destination)
-        status = "ok"
+                # Never publish a known blank original as a successful video.
+                destination.unlink(missing_ok=True)
+                status = "visual_overlay_failed"
+        if status == "ok" and not any(target.glob("*.mp4")):
+            status = "visual_overlay_failed"
     else:
         status = "no_mp4" if status == "ok" else status
     results.append({"index": index, "language": lang, "topic": topic, "status": status,
-                    "seconds": round(time.monotonic() - started, 1), "files": len(new_files)})
+                    "seconds": round(time.monotonic() - started, 1), "files": len(list(target.glob("*.mp4")))})
     Path("batch-results.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"=== VIDEO {index} DONE: {status} ===", flush=True)
 
