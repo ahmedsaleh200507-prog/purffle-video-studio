@@ -40,7 +40,7 @@ for index in range(1, 11):
         "--topic", topic, "--style", "facts", "--lang", lang,
         "--duration", "25", "--caption-style", "bold",
         "--resolution", "540x960", "--fps", "24",
-        "--visuals", "pixabay,pexels,wikimedia-video" if os.environ.get("PEXELS_API_KEY") else "pixabay,wikimedia-video", "--no-review", "--no-upload",
+        "--visuals", "pixabay,pexels,wikimedia-video,nasa-video,nasa-video" if os.environ.get("PEXELS_API_KEY") else "pixabay,wikimedia-video,nasa-video", "--no-review", "--no-upload",
         "--no-music",
     ]
     # Use the original Purffle per-scene search queries with the existing Pixabay key.
@@ -49,7 +49,7 @@ for index in range(1, 11):
     if os.environ.get("PIXABAY_API_KEY"):
         print("MULTI-SOURCE SCENE VISUALS: Pixabay videos + Wikimedia Commons videos (Pexels when configured)",flush=True)
     elif os.environ.get("PEXELS_API_KEY"):
-        cmd[cmd.index("--visuals")+1] = "pexels,wikimedia-video"
+        cmd[cmd.index("--visuals")+1] = "pexels,wikimedia-video,nasa-video"
         print("UPSTREAM SCENE VISUALS: Pexels per-scene search enabled",flush=True)
     else:
         try:
