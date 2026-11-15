@@ -40,7 +40,7 @@ for index in range(1, 11):
         "--topic", topic, "--style", "facts", "--lang", lang,
         "--duration", "25", "--caption-style", "bold",
         "--resolution", "540x960", "--fps", "24",
-        "--visuals", "pixabay,pexels,wikimedia-video,nasa-video,nasa-video" if os.environ.get("PEXELS_API_KEY") else "pixabay,wikimedia-video,nasa-video", "--no-review", "--no-upload",
+        "--visuals", "pixabay" + (",pexels" if os.environ.get("PEXELS_API_KEY") else "") + (",coverr-video" if os.environ.get("COVERR_API_KEY") else "") + ",wikimedia-video,nasa-video,archive-video", "--no-review", "--no-upload",
         "--no-music",
     ]
     # Use the original Purffle per-scene search queries with the existing Pixabay key.
