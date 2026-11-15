@@ -56,11 +56,13 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
+      EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
       LLM_PROVIDER: groq
       LLM_MODEL: openai/gpt-oss-20b
       SCRIPT_REVIEW: 'off'
       SEO_KEYWORDS: 'false'
-      VISUAL_SOURCES: pixabay,pexels,wikimedia-video,nasa-video,nasa-video
+      VISUAL_SOURCES: pixabay,pexels,coverr-video,wikimedia-video,nasa-video,archive-video
       TTS_ENGINE: edge
       RESOLUTION: 540x960
       FPS: '24'
