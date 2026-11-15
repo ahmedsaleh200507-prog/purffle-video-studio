@@ -62,3 +62,62 @@ def search_nasa_videos(query, MediaItem):
     except Exception as exc:
         print(f"NASA video search unavailable: {exc}",flush=True)
         return []
+
+
+def search_coverr_videos(query, MediaItem):
+    """Coverr API, enabled only when the user supplies a key."""
+    import os
+    key = os.environ.get("COVERR_API_KEY", "").strip()
+    if not key:
+        return []
+    try:
+        response = requests.get("https://api.coverr.co/videos",
+            params={"query":query,"page_size":12,"urls":"true"},
+            headers={**HEADERS,"x-api-key":key},timeout=18)
+        response.raise_for_status()
+        results=[]
+        for rank, entry in enumerate(response.json().get("hits", [])):
+            urls=entry.get("urls") or {}
+            url=urls.get("mp4") or urls.get("mp4_download")
+            if not url or not url.startswith("https://"):
+                continue
+            results.append(MediaItem("coverr-video",str(entry.get("id")),"video",url,
+                int(entry.get("width") or 0),int(entry.get("height") or 0),
+                credit="Coverr | https://coverr.co",query=query,rank=rank,
+                text=entry.get("title") or ""))
+        return results
+    except Exception as exc:
+        print(f"Coverr video search unavailable: {exc}",flush=True)
+        return []
+
+
+def search_archive_videos(query, MediaItem):
+    """Only explicitly CC0/public-domain items, never arbitrary archive uploads."""
+    from urllib.parse import quote
+    try:
+        search = requests.get("https://archive.org/advancedsearch.php",
+            params={"q":f'mediatype:movies AND ({query}) AND (licenseurl:*creativecommons.org/publicdomain/zero* OR licenseurl:*creativecommons.org/publicdomain/mark*)',
+                    "fl[]":["identifier","title","licenseurl"],"rows":8,"output":"json"},
+            headers=HEADERS,timeout=18)
+        search.raise_for_status()
+        results=[]
+        for rank, doc in enumerate(search.json().get("response",{}).get("docs",[])):
+            identifier=doc.get("identifier","")
+            license_url=str(doc.get("licenseurl") or "").lower()
+            if not identifier or not ("publicdomain/zero" in license_url or "publicdomain/mark" in license_url):
+                continue
+            metadata=requests.get("https://archive.org/metadata/"+quote(identifier,safe=""),headers=HEADERS,timeout=15)
+            metadata.raise_for_status()
+            files=metadata.json().get("files") or []
+            video=next((f for f in files if str(f.get("name","")).lower().endswith(".mp4") and
+                        not any(w in str(f.get("name","")).lower() for w in ("thumb","preview","sample"))),None)
+            if not video:
+                continue
+            url="https://archive.org/download/"+quote(identifier,safe="")+"/"+quote(video["name"],safe="/")
+            results.append(MediaItem("archive-video",identifier,"video",url,
+                credit=f"Internet Archive | {license_url} | https://archive.org/details/{identifier}",
+                query=query,rank=rank,text=doc.get("title") or ""))
+        return results
+    except Exception as exc:
+        print(f"Internet Archive video search unavailable: {exc}",flush=True)
+        return []
