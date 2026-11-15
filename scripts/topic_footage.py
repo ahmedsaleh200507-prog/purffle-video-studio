@@ -100,7 +100,9 @@ def relevant_background(topic: str, folder: Path):
             print(f"Only {len(clips)}/5 distinct moving clips; skipping instead of repeating or leaving blank scenes",flush=True)
             return None
         # Require five distinct, verified moving sources; no repeats or still photos.
-        sequence=clips[:5]
+        # Keep the visual track longer than any generated narration plus random start offset.
+        # Every segment remains a verified moving clip; no black filler or still images.
+        sequence=clips[:5]*3
         manifest=folder/"shots.txt"
         manifest.write_text("".join("file '"+p.name+"'\n" for p in sequence),encoding="utf-8")
         (folder/"IMAGE_SOURCE.txt").write_text("\n".join(credits),encoding="utf-8")
@@ -109,7 +111,7 @@ def relevant_background(topic: str, folder: Path):
             "-f","concat","-safe","0","-i",str(manifest),"-c","copy",str(target)],
             check=True,timeout=45)
         if target.stat().st_size<15000: return None
-        print(f"VIDEO-ONLY BACKGROUND: {len(clips)} moving clips, 5 shots",flush=True)
+        print(f"VIDEO-ONLY BACKGROUND: {len(clips)} distinct moving clips, 15 shots (135s)",flush=True)
         return str(target.resolve())
     except Exception as exc:
         print("Wikimedia multi-shot preparation failed:",repr(exc),flush=True)
