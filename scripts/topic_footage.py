@@ -77,5 +77,29 @@ def relevant_background(topic: str, folder: Path):
                 print("Verified topic PHOTO fallback:", subject, hit.get("tags", ""), flush=True)
                 return str(target.resolve())
     except Exception as exc:
-        print("Topic photo fallback failed:", type(exc).__name__, flush=True)
+        print("Topic photo fallback failed:", repr(exc), flush=True)
+    # Last resort: topic-specific text card. It is honest, not random scenery.
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        title = re.sub(r"[^\\w\\s?!.,-]", "", topic, flags=re.UNICODE)[:100]
+        words = title.split()
+        lines = []
+        while words:
+            lines.append(" ".join(words[:4]))
+            words = words[4:]
+        (folder / "title.txt").write_text("\\n".join(lines[:6]), encoding="utf-8")
+        target = folder / "topic_background.mp4"
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=c=0x0a243c:s=540x960:r=12",
+            "-t", "40", "-vf",
+            "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:textfile="
+            + str((folder / "title.txt").resolve())
+            + ":fontcolor=white:fontsize=34:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(target)
+        ], check=True, timeout=65)
+        print("Using topic-specific title card (no unrelated scenery)", flush=True)
+        return str(target.resolve())
+    except Exception as exc:
+        print("Topic card creation failed:", repr(exc), flush=True)
     return None
