@@ -18,7 +18,7 @@ def relevant_background(topic: str, folder: Path):
     subject = words[0]
     # Commons is independent of Pixabay's API 403 error.
     params = urllib.parse.urlencode({
-        "action":"query","generator":"search","gsrsearch":f"filetype:bitmap {subject}",
+        "action":"query","generator":"search","gsrsearch":subject,
         "gsrnamespace":6,"gsrlimit":12,"prop":"imageinfo",
         "iiprop":"url|mime|extmetadata","iiurlwidth":960,"format":"json"
     })
@@ -27,9 +27,9 @@ def relevant_background(topic: str, folder: Path):
             headers={"User-Agent":"PurffleVideoStudio/1.0 (GitHub educational video maker; contact via repository)"})
         with urllib.request.urlopen(req,timeout=20) as response:
             pages=json.load(response).get("query",{}).get("pages",{})
-        for page in pages.values():
+        for page in sorted(pages.values(), key=lambda p: (subject not in p.get("title", "").lower(), p.get("title", ""))):
             title=page.get("title","").lower()
-            if subject not in title and not any(subject in w for w in title.split()):
+            if subject not in title:
                 continue
             info=(page.get("imageinfo") or [{}])[0]
             if info.get("mime") not in ("image/jpeg","image/png","image/webp"):
@@ -50,7 +50,7 @@ def relevant_background(topic: str, folder: Path):
                 "-framerate","12","-i",str(image),"-t","40",
                 "-vf","scale=540:960:force_original_aspect_ratio=increase,crop=540:960,format=yuv420p",
                 "-c:v","libx264","-preset","ultrafast","-r","12",str(target)],check=True,timeout=80)
-            if target.stat().st_size>10000:
+            if target.exists() and target.stat().st_size>10000:
                 print("VERIFIED SUBJECT IMAGE:",page["title"],flush=True)
                 return str(target.resolve())
     except Exception as exc:
