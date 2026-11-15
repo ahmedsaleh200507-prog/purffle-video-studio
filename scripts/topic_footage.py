@@ -1,0 +1,48 @@
+"""Find a genuinely topic-related Pixabay video; never substitute generic scenery."""
+import os
+import re
+import urllib.parse
+import urllib.request
+import json
+from pathlib import Path
+
+STOP = {"why","what","how","do","does","did","is","are","the","a","an","have","has","three","and","in","of","for","to","with","their","its","can","would","if","when","where","who","was","were","about","this","that","it","they","you","your","why","ist","sind","die","der","das","und","ein","eine","warum","wie","was","haben","hat","den","dem","des","von","mit","für"}
+ALIASES = {"octopuses":"octopus","octopi":"octopus","kraken":"octopus","oktopusse":"octopus","oktopus":"octopus","herzen":"heart","himmel":"sky","blau":"blue","erde":"earth","sonne":"sun","mond":"moon","katzen":"cat","hunde":"dog"}
+def relevant_background(topic: str, folder: Path):
+    key = os.environ.get("PIXABAY_API_KEY","")
+    if not key: return None
+    words = re.findall(r"[a-zA-ZäöüÄÖÜß]+", topic.lower())
+    words = [ALIASES.get(w,w) for w in words if w not in STOP and len(w)>2]
+    if not words: return None
+    # Strongest subject noun is usually the first content word.
+    subject = words[0]
+    query = urllib.parse.urlencode({"key":key,"q":subject,"per_page":10,"safesearch":"true"})
+    try:
+        req = urllib.request.Request("https://pixabay.com/api/videos/?"+query,headers={"User-Agent":"PurffleVideoStudio/1.0"})
+        with urllib.request.urlopen(req,timeout=12) as resp:
+            hits=json.load(resp).get("hits",[])
+        for hit in hits:
+            tags=set(re.findall(r"[a-z]+",hit.get("tags","").lower()))
+            # Require subject in the tags: no unrelated forest/waterfall fallback.
+            if subject not in tags and not any(subject in t or t in subject for t in tags if len(t)>3):
+                continue
+            videos=hit.get("videos",{})
+            v=videos.get("medium") or videos.get("small") or videos.get("large") or {}
+            url=v.get("url")
+            if not url: continue
+            folder.mkdir(parents=True,exist_ok=True)
+            target=folder/"topic_background.mp4"
+            with urllib.request.urlopen(url,timeout=25) as src, target.open("wb") as out:
+                total=0
+                while True:
+                    chunk=src.read(1024*1024)
+                    if not chunk: break
+                    total+=len(chunk)
+                    if total>35*1024*1024: raise ValueError("Background too large")
+                    out.write(chunk)
+            if target.stat().st_size>10000:
+                print("Verified topic footage:",subject,hit.get("tags",""),flush=True)
+                return str(target.resolve())
+    except Exception as exc:
+        print("Topic video unavailable; standard footage search used:",type(exc).__name__,flush=True)
+    return None
