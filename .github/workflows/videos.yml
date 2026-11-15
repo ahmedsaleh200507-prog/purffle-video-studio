@@ -60,7 +60,7 @@ jobs:
       LLM_MODEL: openai/gpt-oss-20b
       SCRIPT_REVIEW: 'off'
       SEO_KEYWORDS: 'false'
-      VISUAL_SOURCES: pixabay,pexels,openverse,wikimedia,nasa
+      VISUAL_SOURCES: pixabay,pexels,wikimedia-video
       TTS_ENGINE: edge
       RESOLUTION: 540x960
       FPS: '24'
