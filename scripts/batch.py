@@ -43,15 +43,20 @@ for index in range(1, 11):
     background = relevant_background(topic, Path("media_cache") / f"video_{index:02d}")
     if background:
         cmd += ["--background", background, "--layout", "full"]
+    else:
+        print(f"Video {index}: no verified relevant visual; skipping rather than showing unrelated footage", flush=True)
+        results.append({"index": index, "language": lang, "topic": topic, "status": "no_relevant_visual", "seconds": 0, "files": 0})
+        Path("batch-results.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+        continue
     print(f"\n=== VIDEO {index}/10 [{lang}] {topic} ===", flush=True)
     started = time.monotonic()
     status = "ok"
     try:
         # A stalled video must not block the entire batch.
-        subprocess.run(cmd, check=True, timeout=720)
+        subprocess.run(cmd, check=True, timeout=420)
     except subprocess.TimeoutExpired:
         status = "timeout"
-        print(f"Video {index} timed out after 12 minutes", flush=True)
+        print(f"Video {index} timed out after 7 minutes", flush=True)
     except subprocess.CalledProcessError as exc:
         status = f"failed (exit {exc.returncode})"
         print(f"Video {index} failed: {exc}", flush=True)
