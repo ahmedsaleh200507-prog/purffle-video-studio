@@ -46,9 +46,13 @@ for index in range(1, 11):
     except Exception as exc:
         print("VISUAL PREPARATION ERROR:", repr(exc), flush=True)
         background = None
-    if background:
+    if background and not os.environ.get("PEXELS_API_KEY"):
         cmd += ["--background", background, "--layout", "full"]
-    else:
+    elif os.environ.get("PEXELS_API_KEY"):
+        # Restore upstream scene-by-scene visual sourcing using each scene search_query.
+        cmd[cmd.index("--visuals")+1] = "pexels"
+        print("UPSTREAM SCENE VISUALS: Pexels per-scene footage enabled",flush=True)
+    elif not background:
         print(f"Video {index}: no verified relevant visual; skipping rather than showing unrelated footage", flush=True)
         results.append({"index": index, "language": lang, "topic": topic, "status": "no_relevant_visual", "seconds": 0, "files": 0})
         Path("batch-results.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
