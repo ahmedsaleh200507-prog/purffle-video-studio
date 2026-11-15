@@ -28,6 +28,48 @@ def relevant_background(topic: str, folder: Path):
         folder.mkdir(parents=True,exist_ok=True)
         clips=[]
         credits=[]
+        # Prefer actual moving footage; still photos are a fallback.
+        try:
+            vparams=urllib.parse.urlencode({
+                "action":"query","generator":"search","gsrsearch":subject+" filetype:video",
+                "gsrnamespace":6,"gsrlimit":20,"prop":"imageinfo",
+                "iiprop":"url|mime","format":"json"
+            })
+            with urllib.request.urlopen(urllib.request.Request(
+                "https://commons.wikimedia.org/w/api.php?"+vparams,headers=UA),timeout=20) as response:
+                vpages=json.load(response).get("query",{}).get("pages",{})
+            for page in vpages.values():
+                if len(clips)>=5: break
+                info=(page.get("imageinfo") or [{}])[0]
+                mime=info.get("mime","")
+                if mime not in ("video/webm","video/ogg","video/mp4"): continue
+                if subject not in page.get("title","").lower(): continue
+                url=info.get("url")
+                if not url: continue
+                try:
+                    # Stream at most 24 MiB per source; skip excessively large media.
+                    req=urllib.request.Request(url,headers=UA)
+                    with urllib.request.urlopen(req,timeout=25) as response:
+                        if int(response.headers.get("Content-Length","0") or 0)>24*1024*1024: continue
+                        raw=response.read(24*1024*1024+1)
+                    if len(raw)>24*1024*1024 or len(raw)<20000: continue
+                    source=folder/f"motion_{len(clips)+1:02d}.webm"
+                    source.write_bytes(raw)
+                    clip=folder/f"shot_{len(clips)+1:02d}.mp4"
+                    subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+                        "-stream_loop","-1","-i",str(source),"-t","9",
+                        "-vf","scale=540:960:force_original_aspect_ratio=increase,crop=540:960,setsar=1,fps=12,format=yuv420p",
+                        "-an","-c:v","libx264","-preset","ultrafast","-r","12",str(clip)],
+                        check=True,timeout=65)
+                    if clip.stat().st_size<15000: continue
+                    clips.append(clip)
+                    credits.append(page.get("title","")+" | "+url)
+                    print("REAL MOTION SHOT",len(clips),page.get("title"),flush=True)
+                except Exception as exc:
+                    print("Skipping unusable video:",repr(exc),flush=True)
+        except Exception as exc:
+            print("Motion search unavailable, trying photos:",repr(exc),flush=True)
+
         for page in sorted(pages.values(),key=lambda p:(subject not in p.get("title","").lower(),p.get("title",""))):
             if len(clips)>=5: break
             title=page.get("title","").lower()
@@ -42,7 +84,7 @@ def relevant_background(topic: str, folder: Path):
                     data=response.read(8*1024*1024+1)
                 if not 10000<len(data)<8*1024*1024: continue
                 suffix={"image/jpeg":".jpg","image/png":".png","image/webp":".webp"}[mime]
-                image=folder/f"shot_{len(clips)+1:02d}{suffix}"
+                image=folder/f"photo_{len(clips)+1:02d}{suffix}"
                 image.write_bytes(data)
                 clip=folder/f"shot_{len(clips)+1:02d}.mp4"
                 # Each 9-second shot is independently encoded for reliable concatenation.
@@ -71,7 +113,7 @@ def relevant_background(topic: str, folder: Path):
             "-f","concat","-safe","0","-i",str(manifest),"-c","copy",str(target)],
             check=True,timeout=45)
         if target.stat().st_size<15000: return None
-        print(f"MULTI-SHOT BACKGROUND: {len(clips)} unique images, 5 shots",flush=True)
+        print(f"MULTI-SHOT BACKGROUND: {len(clips)} unique visual sources, 5 shots",flush=True)
         return str(target.resolve())
     except Exception as exc:
         print("Wikimedia multi-shot preparation failed:",repr(exc),flush=True)
