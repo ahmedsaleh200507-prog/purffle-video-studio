@@ -69,24 +69,37 @@ for index in range(1, 11):
     try:
         # A stalled video must not block the entire batch.
         log_path = target / "purffle.log"
-        with log_path.open("w", encoding="utf-8") as log:
-            process = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, text=True)
-            try:
-                process.wait(timeout=240)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-                log.flush()
-                print(f"Video {index} stalled for 240 seconds. Last 45 Purffle log lines:",flush=True)
-                print("\\n".join(log_path.read_text(errors="replace").splitlines()[-45:]),flush=True)
-                raise
-            if process.returncode:
-                print("PURFFLE FAILED, last 35 log lines:", flush=True)
-                print("\n".join(log_path.read_text(errors="replace").splitlines()[-35:]), flush=True)
-                raise subprocess.CalledProcessError(process.returncode, cmd)
+        # Retry once with a different English Edge voice if synthesis stalls.
+        voices = [None, "en-US-GuyNeural"] if lang == "en" else [None]
+        for attempt, fallback_voice in enumerate(voices, 1):
+            child_env = os.environ.copy()
+            if fallback_voice:
+                child_env["TTS_VOICE"] = fallback_voice
+                print("Retrying English voice with",fallback_voice,flush=True)
+            with log_path.open("w" if attempt == 1 else "a", encoding="utf-8") as log:
+                process = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, text=True, env=child_env)
+                try:
+                    process.wait(timeout=110 if lang == "en" else 240)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                    log.flush()
+                    print(f"Video {index} attempt {attempt} stalled. Last 45 log lines:",flush=True)
+                    print("\\n".join(log_path.read_text(errors="replace").splitlines()[-45:]),flush=True)
+                    if attempt < len(voices):
+                        continue
+                    raise
+                if process.returncode:
+                    log.flush()
+                    print("PURFFLE FAILED, last 35 log lines:",flush=True)
+                    print("\\n".join(log_path.read_text(errors="replace").splitlines()[-35:]),flush=True)
+                    if attempt < len(voices):
+                        continue
+                    raise subprocess.CalledProcessError(process.returncode,cmd)
+                break
     except subprocess.TimeoutExpired:
         status = "timeout"
-        print(f"Video {index} timed out after 4 minutes; see Purffle log tail above", flush=True)
+        print(f"Video {index} timed out after retry; see Purffle log tail above", flush=True)
     except subprocess.CalledProcessError as exc:
         status = f"failed (exit {exc.returncode})"
         print(f"Video {index} failed: {exc}", flush=True)
