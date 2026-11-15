@@ -40,7 +40,11 @@ for index in range(1, 11):
         "--visuals", "pixabay", "--no-review", "--no-upload",
         "--no-music", "--no-sfx", "--no-emoji",
     ]
-    background = relevant_background(topic, Path("media_cache") / f"video_{index:02d}")
+    try:
+        background = relevant_background(topic, Path("media_cache") / f"video_{index:02d}")
+    except Exception as exc:
+        print("VISUAL PREPARATION ERROR:", repr(exc), flush=True)
+        background = None
     if background:
         cmd += ["--background", background, "--layout", "full"]
     else:
@@ -53,7 +57,19 @@ for index in range(1, 11):
     status = "ok"
     try:
         # A stalled video must not block the entire batch.
-        subprocess.run(cmd, check=True, timeout=420)
+        log_path = target / "purffle.log"
+        with log_path.open("w", encoding="utf-8") as log:
+            process = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, text=True)
+            try:
+                process.wait(timeout=420)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                raise
+            if process.returncode:
+                print("PURFFLE FAILED, last 35 log lines:", flush=True)
+                print("\n".join(log_path.read_text(errors="replace").splitlines()[-35:]), flush=True)
+                raise subprocess.CalledProcessError(process.returncode, cmd)
     except subprocess.TimeoutExpired:
         status = "timeout"
         print(f"Video {index} timed out after 7 minutes", flush=True)
