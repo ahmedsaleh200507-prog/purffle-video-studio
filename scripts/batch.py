@@ -63,7 +63,32 @@ for index in range(1, 11):
     new_files = [p for p in work.rglob("*.mp4") if p.resolve() not in before and p.stat().st_size > 1000]
     if new_files:
         for n, source in enumerate(sorted(new_files), 1):
-            shutil.copy2(source, target / f"video_{index:02d}_{lang}_{n}.mp4")
+            destination = target / f"video_{index:02d}_{lang}_{n}.mp4"
+            # Purffle may silently output a flat navy background despite --background.
+            # Composite the verified subject footage behind its captions, preserving audio.
+            try:
+                probe = subprocess.run(
+                    ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                     "-show_entries", "stream=width,height", "-of", "csv=p=0", str(source)],
+                    capture_output=True, text=True, timeout=12, check=True)
+                w, h = (int(x) for x in probe.stdout.strip().split(",")[:2])
+                filtergraph = (
+                    f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+                    f"crop={w}:{h},setsar=1[bg];"
+                    f"[1:v]format=rgba,colorkey=0x0a243b:0.13:0.04[fg];"
+                    f"[bg][fg]overlay=shortest=1:format=auto,format=yuv420p[out]"
+                )
+                subprocess.run([
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-stream_loop", "-1", "-i", background, "-i", str(source),
+                    "-filter_complex", filtergraph, "-map", "[out]", "-map", "1:a?",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                    "-c:a", "copy", "-t", "35", "-shortest", str(destination)
+                ], check=True, timeout=100)
+                print("Visual overlay applied:", destination, flush=True)
+            except Exception as exc:
+                print("Visual overlay failed; original video retained:", repr(exc), flush=True)
+                shutil.copy2(source, destination)
         status = "ok"
     else:
         status = "no_mp4" if status == "ok" else status
