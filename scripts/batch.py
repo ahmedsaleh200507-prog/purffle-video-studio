@@ -24,8 +24,10 @@ for index in range(1, 11):
         lang, topic = raw.split("|", 1)
         lang = lang.strip().lower()
         topic = topic.strip()
+    elif raw[:3].lower() in ("de ", "en "):
+        lang, topic = raw[:2].lower(), raw[3:].strip()
     else:
-        lang, topic = "en", raw
+        lang, topic = ("de" if any(ch in raw.lower() for ch in ("warum ", "wie ", "was ", "haben ", "herzen", "oktopusse")) else "en"), raw
     if not topic:
         continue
     target = OUT / f"video_{index:02d}_{lang}"
@@ -61,6 +63,7 @@ for index in range(1, 11):
             results.append({"index":index,"language":lang,"topic":topic,"status":"no_relevant_visual","seconds":0,"files":0})
             continue
     print(f"\n=== VIDEO {index}/10 [{lang}] {topic} ===", flush=True)
+    print("VOICE LANGUAGE:",lang,"(expected Edge locale)",flush=True)
     started = time.monotonic()
     status = "ok"
     try:
