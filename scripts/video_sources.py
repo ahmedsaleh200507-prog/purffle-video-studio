@@ -51,7 +51,7 @@ def search_nasa_videos(query, MediaItem):
                 headers=HEADERS,timeout=15)
             manifest.raise_for_status()
             links = [x.get("href","") for x in manifest.json().get("collection",{}).get("items",[])]
-            candidates = [u for u in links if re.search(r"\\.mp4(?:[?#]|$)",u,re.I)]
+            candidates = [u for u in links if re.search(r"\.mp4(?:[?#]|$)",u,re.I)]
             if not candidates:
                 continue
             url = next((u for u in candidates if "~small" in u.lower() or "~mobile" in u.lower()), candidates[-1])
