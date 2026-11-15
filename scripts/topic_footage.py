@@ -5,6 +5,7 @@ import urllib.parse
 import urllib.request
 import json
 from pathlib import Path
+import subprocess
 
 STOP = {"why","what","how","do","does","did","is","are","the","a","an","have","has","three","and","in","of","for","to","with","their","its","can","would","if","when","where","who","was","were","about","this","that","it","they","you","your","why","ist","sind","die","der","das","und","ein","eine","warum","wie","was","haben","hat","den","dem","des","von","mit","für"}
 ALIASES = {"octopuses":"octopus","octopi":"octopus","kraken":"octopus","oktopusse":"octopus","oktopus":"octopus","herzen":"heart","himmel":"sky","blau":"blue","erde":"earth","sonne":"sun","mond":"moon","katzen":"cat","hunde":"dog"}
@@ -44,5 +45,37 @@ def relevant_background(topic: str, folder: Path):
                 print("Verified topic footage:",subject,hit.get("tags",""),flush=True)
                 return str(target.resolve())
     except Exception as exc:
-        print("Topic video unavailable; standard footage search used:",type(exc).__name__,flush=True)
+        print("Topic video search unavailable:", type(exc).__name__, flush=True)
+    # Fallback: a subject-matched still photo animated into a lightweight MP4.
+    # Do not fall back to generic scenery or unbounded searches.
+    try:
+        query = urllib.parse.urlencode({"key": key, "q": subject, "per_page": 10, "image_type": "photo", "safesearch": "true"})
+        with urllib.request.urlopen("https://pixabay.com/api/?" + query, timeout=12) as response:
+            hits = json.load(response).get("hits", [])
+        for hit in hits:
+            tags = set(re.findall(r"[a-z]+", hit.get("tags", "").lower()))
+            if not any(subject == tag or subject in tag for tag in tags):
+                continue
+            url = hit.get("largeImageURL") or hit.get("webformatURL")
+            if not url:
+                continue
+            folder.mkdir(parents=True, exist_ok=True)
+            photo = folder / "topic_photo.jpg"
+            with urllib.request.urlopen(url, timeout=15) as response:
+                data = response.read(8 * 1024 * 1024 + 1)
+            if len(data) > 8 * 1024 * 1024:
+                continue
+            photo.write_bytes(data)
+            target = folder / "topic_background.mp4"
+            subprocess.run([
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-loop", "1", "-framerate", "12", "-i", str(photo),
+                "-t", "40", "-vf", "scale=540:960:force_original_aspect_ratio=increase,crop=540:960,format=yuv420p",
+                "-c:v", "libx264", "-preset", "ultrafast", "-r", "12", str(target)
+            ], check=True, timeout=60)
+            if target.exists() and target.stat().st_size > 10000:
+                print("Verified topic PHOTO fallback:", subject, hit.get("tags", ""), flush=True)
+                return str(target.resolve())
+    except Exception as exc:
+        print("Topic photo fallback failed:", type(exc).__name__, flush=True)
     return None
