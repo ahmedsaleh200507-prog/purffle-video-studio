@@ -14,7 +14,12 @@ replacement = ('- search_query: 2-4 English words for stock footage depicting EX
                '"black hole event horizon"; NEVER use "castle", "island", "clock", '
                '"person falling" or unrelated metaphorical footage). '
                'For abstract science, search for literal scientific visualization or animation '
-               'of the subject, not a metaphor. Prefer accurate visuals over generic filler.')
+               'of the subject, not a metaphor. Prefer accurate visuals over generic filler. ' 
+               'Build a consistent storyboard: keep the same protagonist, location and central object ' 
+               'across consecutive scenes. Narration must describe concrete visible actions in ' 
+               'chronological order. Each scene search_query must include the key physical object ' 
+               'AND visible action (for example \"man picking up euro banknote\", not \"money\" ' 
+               'or \"gold\"). Do not invent unrelated twists or switch to abstract metaphors.')
 if needle not in source:
     raise SystemExit("Upstream prompt changed; refusing to silently patch an unknown version")
 path.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
@@ -38,8 +43,8 @@ new = '''            else:
             self.used.add(best.key)'''
 if old not in media_source:
     raise SystemExit("Upstream media selection changed; cannot apply relevance gate safely")
-media_path.write_text(media_source.replace(old, new, 1), encoding="utf-8")
-print("Purffle unrelated-stock rejection gate enabled", flush=True)
+media_source = media_source.replace(old, new, 1)
+print("Purffle unrelated-stock rejection gate prepared", flush=True)
 
 # Search only scene-specific terms; do not broaden to a German topic or
 # unrelated general concepts after the scene search fails.
@@ -49,22 +54,22 @@ if old_queries not in media_source:
     raise SystemExit("Upstream scene query strategy changed; refusing unsafe patch")
 media_source = media_source.replace(old_queries, new_queries, 1)
 
-# A single shared word out of three is weak evidence. Require at least half
-# the scene terms in the provider's actual descriptive metadata.
+# A single shared word out of three is weak evidence. Require at least two thirds
+# the scene terms in the provider's actual descriptive metadata; reject missing metadata.
 media_source = media_source.replace(
     'matching = [c for c in fresh if relevance(c, query) >= 0.34]',
-    'matching = [c for c in fresh if relevance(c, query) >= 0.50]',
+    'matching = [c for c in fresh if c.text and relevance(c, query) >= 0.67]',
     1
 )
 media_source = media_source.replace(
     '''                if not matching:
                     return None''',
     '''                if not matching:
-                    log.info("Rejecting %d unrelated candidates for scene query %r", len(fresh), query)
+                    log.info("Rejecting %d weakly described or unrelated candidates for scene query %r", len(fresh), query)
                     return None''',
     1
 )
 # The first write above happens before these additions. Write final patched
 # version again so all changes take effect.
 media_path.write_text(media_source, encoding="utf-8")
-print("Scene-only queries and stronger 50% metadata relevance gate enabled", flush=True)
+print("Scene-only queries and stronger 67% metadata relevance gate enabled", flush=True)
