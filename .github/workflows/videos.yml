@@ -64,12 +64,12 @@ jobs:
       TTS_ENGINE: edge
       RESOLUTION: 540x960
       FPS: '24'
-      PRESET: ultrafast
-      TRANSITION: none
-      KEN_BURNS: 'false'
-      COLOR_GRADE: none
-      SOUND_EFFECTS: 'false'
-      CAPTION_EMOJI: 'false'
+      PRESET: medium
+      TRANSITION: fade
+      KEN_BURNS: 'true'
+      COLOR_GRADE: vivid
+      SOUND_EFFECTS: 'true'
+      CAPTION_EMOJI: 'true'
       MUSIC_VOLUME: '0'
       OUTPUT_DIR: output_videos
       UPLOAD: 'false'
