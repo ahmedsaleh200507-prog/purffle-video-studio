@@ -28,7 +28,7 @@ def relevant_background(topic: str, folder: Path):
         folder.mkdir(parents=True,exist_ok=True)
         clips=[]
         credits=[]
-        # Prefer actual moving footage; still photos are a fallback.
+        # Video only: reject clips without detectable frame-to-frame movement.
         try:
             vparams=urllib.parse.urlencode({
                 "action":"query","generator":"search","gsrsearch":subject+" filetype:video",
@@ -62,21 +62,30 @@ def relevant_background(topic: str, folder: Path):
                         "-an","-c:v","libx264","-preset","ultrafast","-r","12",str(clip)],
                         check=True,timeout=65)
                     if clip.stat().st_size<15000: continue
+                    probe=subprocess.run(["ffmpeg","-v","error","-i",str(clip),
+                        "-vf","fps=1,scale=32:32,format=gray","-frames:v","7",
+                        "-f","rawvideo","-"],capture_output=True,timeout=20,check=True)
+                    frames=[probe.stdout[i:i+1024] for i in range(0,len(probe.stdout),1024)]
+                    if len(frames)<3: continue
+                    changes=[sum(abs(a-b) for a,b in zip(x,y))/1024
+                             for x,y in zip(frames,frames[1:])]
+                    if max(changes)<1.5:
+                        print("Rejected static or near-static clip:",page.get("title"),flush=True)
+                        continue
                     clips.append(clip)
                     credits.append(page.get("title","")+" | "+url)
                     print("REAL MOTION SHOT",len(clips),page.get("title"),flush=True)
                 except Exception as exc:
                     print("Skipping unusable video:",repr(exc),flush=True)
         except Exception as exc:
-            print("Motion search unavailable, trying photos:",repr(exc),flush=True)
+            print("Motion search unavailable:",repr(exc),flush=True)
 
         # Strict video-only mode: never download or render still photographs.
-        if not clips:
-            print("No moving video clips found; skipping video (photos disabled)",flush=True)
+        if len(clips)<5:
+            print(f"Only {len(clips)}/5 distinct moving clips; skipping instead of repeating or leaving blank scenes",flush=True)
             return None
-        # At least five visual changes across 45 seconds, if five images were found.
-        # Repeat moving clips only when fewer than five are available.
-        sequence=(clips*5)[:5]
+        # Require five distinct, verified moving sources; no repeats or still photos.
+        sequence=clips[:5]
         manifest=folder/"shots.txt"
         manifest.write_text("".join("file '"+p.name+"'\n" for p in sequence),encoding="utf-8")
         (folder/"IMAGE_SOURCE.txt").write_text("\n".join(credits),encoding="utf-8")
