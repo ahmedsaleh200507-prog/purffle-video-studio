@@ -73,3 +73,16 @@ media_source = media_source.replace(
 # version again so all changes take effect.
 media_path.write_text(media_source, encoding="utf-8")
 print("Scene-only queries and balanced 25% metadata relevance gate enabled", flush=True)
+
+# Wire additional free image providers into Purffle's existing per-scene search.
+# Keep original stock video providers as the first choices.
+needle_search = '''        ck = (source, query.lower())'''
+replacement_search = '''        if source in ("openverse", "wikimedia", "nasa"):
+            from extra_sources import search as extra_search
+            return extra_search(source, query, MediaItem)
+        ck = (source, query.lower())'''
+if needle_search not in media_source:
+    raise SystemExit("Upstream search interface changed; extra sources not installed")
+media_source = media_source.replace(needle_search, replacement_search, 1)
+media_path.write_text(media_source, encoding="utf-8")
+print("Extra licensed visual providers: Openverse, Wikimedia Commons, NASA", flush=True)
