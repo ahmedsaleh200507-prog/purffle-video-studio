@@ -11,8 +11,8 @@ from topic_footage import relevant_background
 OUT = Path("finished")
 OUT.mkdir(exist_ok=True)
 results = []
-if not os.environ.get("GROQ_API_KEY") or not os.environ.get("PIXABAY_API_KEY"):
-    print("Missing GROQ_API_KEY or PIXABAY_API_KEY in repository Actions secrets.", flush=True)
+if not os.environ.get("GROQ_API_KEY"):
+    print("Missing GROQ_API_KEY in repository Actions secrets.", flush=True)
     sys.exit(2)
 
 for index in range(1, 11):
@@ -101,9 +101,11 @@ for index in range(1, 11):
                     "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
                     "-c:a", "copy", "-t", "35", "-shortest", str(destination)
                 ], check=True, timeout=100)
+                if not destination.exists() or destination.stat().st_size < 15000:
+                    raise RuntimeError("Composited MP4 missing or too small")
                 print("Visual overlay applied:", destination, flush=True)
             except Exception as exc:
-                print("Visual overlay failed; original video retained:", repr(exc), flush=True)
+                print("Visual overlay failed; refusing blank video:", repr(exc), flush=True)
                 # Never publish a known blank original as a successful video.
                 destination.unlink(missing_ok=True)
                 status = "visual_overlay_failed"
