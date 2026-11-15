@@ -40,3 +40,31 @@ if old not in media_source:
     raise SystemExit("Upstream media selection changed; cannot apply relevance gate safely")
 media_path.write_text(media_source.replace(old, new, 1), encoding="utf-8")
 print("Purffle unrelated-stock rejection gate enabled", flush=True)
+
+# Search only scene-specific terms; do not broaden to a German topic or
+# unrelated general concepts after the scene search fails.
+old_queries = '''        for q in (query, simplify_query(query), simplify_query(topic), topic):'''
+new_queries = '''        for q in (query, simplify_query(query)):'''
+if old_queries not in media_source:
+    raise SystemExit("Upstream scene query strategy changed; refusing unsafe patch")
+media_source = media_source.replace(old_queries, new_queries, 1)
+
+# A single shared word out of three is weak evidence. Require at least half
+# the scene terms in the provider's actual descriptive metadata.
+media_source = media_source.replace(
+    'matching = [c for c in fresh if relevance(c, query) >= 0.34]',
+    'matching = [c for c in fresh if relevance(c, query) >= 0.50]',
+    1
+)
+media_source = media_source.replace(
+    '''                if not matching:
+                    return None''',
+    '''                if not matching:
+                    log.info("Rejecting %d unrelated candidates for scene query %r", len(fresh), query)
+                    return None''',
+    1
+)
+# The first write above happens before these additions. Write final patched
+# version again so all changes take effect.
+media_path.write_text(media_source, encoding="utf-8")
+print("Scene-only queries and stronger 50% metadata relevance gate enabled", flush=True)
