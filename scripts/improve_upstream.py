@@ -79,9 +79,9 @@ print("Scene-only queries and balanced 25% metadata relevance gate enabled", flu
 # If no real motion footage can be sourced, fail explicitly rather than exporting
 # a misleading 'successful' MP4 with blank/animated filler.
 search_needle = '''        ck = (source, query.lower())'''
-search_patch = '''        if source == "wikimedia-video":
-            from video_sources import search_wikimedia_videos
-            return search_wikimedia_videos(query, MediaItem)
+search_patch = '''        if source in ("wikimedia-video", "nasa-video"):
+            from video_sources import search_wikimedia_videos, search_nasa_videos
+            return (search_wikimedia_videos if source == "wikimedia-video" else search_nasa_videos)(query, MediaItem)
         ck = (source, query.lower())'''
 if search_needle not in media_source:
     raise SystemExit("Upstream search method changed; cannot enforce video-only mode")
