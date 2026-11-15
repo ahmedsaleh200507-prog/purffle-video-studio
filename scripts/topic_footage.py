@@ -81,13 +81,13 @@ def relevant_background(topic: str, folder: Path):
     # Last resort: topic-specific text card. It is honest, not random scenery.
     try:
         folder.mkdir(parents=True, exist_ok=True)
-        title = re.sub(r"[^\\w\\s?!.,-]", "", topic, flags=re.UNICODE)[:100]
+        title = re.sub(r"[^\w\s?!.,-]", "", topic, flags=re.UNICODE)[:100]
         words = title.split()
         lines = []
         while words:
             lines.append(" ".join(words[:4]))
             words = words[4:]
-        (folder / "title.txt").write_text("\\n".join(lines[:6]), encoding="utf-8")
+        (folder / "title.txt").write_text("\n".join(lines[:6]), encoding="utf-8")
         target = folder / "topic_background.mp4"
         subprocess.run([
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
