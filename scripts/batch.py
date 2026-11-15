@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from topic_footage import relevant_background
 
 OUT = Path("finished")
 OUT.mkdir(exist_ok=True)
@@ -39,6 +40,9 @@ for index in range(1, 11):
         "--visuals", "pixabay", "--no-review", "--no-upload",
         "--no-music", "--no-sfx", "--no-emoji",
     ]
+    background = relevant_background(topic, Path("media_cache") / f"video_{index:02d}")
+    if background:
+        cmd += ["--background", background, "--layout", "full"]
     print(f"\n=== VIDEO {index}/10 [{lang}] {topic} ===", flush=True)
     started = time.monotonic()
     status = "ok"
