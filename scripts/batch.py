@@ -72,10 +72,13 @@ for index in range(1, 11):
         with log_path.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, text=True)
             try:
-                process.wait(timeout=420)
+                process.wait(timeout=240)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+                log.flush()
+                print(f"Video {index} stalled for 240 seconds. Last 45 Purffle log lines:",flush=True)
+                print("\\n".join(log_path.read_text(errors="replace").splitlines()[-45:]),flush=True)
                 raise
             if process.returncode:
                 print("PURFFLE FAILED, last 35 log lines:", flush=True)
@@ -83,7 +86,7 @@ for index in range(1, 11):
                 raise subprocess.CalledProcessError(process.returncode, cmd)
     except subprocess.TimeoutExpired:
         status = "timeout"
-        print(f"Video {index} timed out after 7 minutes", flush=True)
+        print(f"Video {index} timed out after 4 minutes; see Purffle log tail above", flush=True)
     except subprocess.CalledProcessError as exc:
         status = f"failed (exit {exc.returncode})"
         print(f"Video {index} failed: {exc}", flush=True)
