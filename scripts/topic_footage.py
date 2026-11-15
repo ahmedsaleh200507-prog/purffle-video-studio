@@ -8,6 +8,7 @@ import subprocess
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from animated_2d import make_scene
 
 ALIASES = {"octopuses":"octopus","octopi":"octopus","oktopusse":"octopus","oktopus":"octopus","kraken":"octopus","himmel":"sky","erde":"earth","sonne":"sun","mond":"moon","katzen":"cat","hunde":"dog"}
 STOP = set("why what how do does did is are the a an have has three and in of for to with their its can would if when where who was were about this that it they you your ist sind die der das und ein eine warum wie was haben hat den dem des von mit für".split())
@@ -96,24 +97,21 @@ def relevant_background(topic: str, folder: Path):
             print("Motion search unavailable:",repr(exc),flush=True)
 
         # Strict video-only mode: never download or render still photographs.
-        if not clips:
-            print("No downloadable moving footage; creating original 2D motion graphic fallback",flush=True)
-            # Procedural moving background, not a still photograph or empty color card.
-            # FFmpeg's moving plasma pattern ensures continuous changing pixels.
-            fallback=folder/"procedural_motion.mp4"
-            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-y",
-                "-f","lavfi","-i","cellauto=s=540x960:r=12:rule=110:random_fill_ratio=0.35",
-                "-t","9","-vf","format=yuv420p",
-                "-an","-c:v","libx264","-preset","ultrafast",str(fallback)],
-                check=True,timeout=65)
-            if not fallback.exists() or fallback.stat().st_size<15000:
-                raise RuntimeError("Moving fallback generation failed")
-            clips.append(fallback)
-            credits.append("Original procedurally animated 2D motion background")
-        if len(clips)<5:
-            print(f"Only {len(clips)} distinct moving clips; looping available motion instead of cancelling",flush=True)
-        # Keep continuous motion for narration and any offset; never use blank fillers.
-        sequence=(clips*15)[:15]
+        # Fill missing scenes with original subject animation, never a random pattern.
+        # Alternating source footage and original 2D animation makes the visual sequence varied.
+        originals=list(clips)
+        scenes=[]
+        for scene_index in range(5):
+            if scene_index%2==0 and originals:
+                scenes.append(originals[(scene_index//2)%len(originals)])
+            else:
+                animated=folder/f"animated_{scene_index+1:02d}.mp4"
+                make_scene(topic,animated,scene_index)
+                scenes.append(animated)
+                credits.append(f"Original animated 2D scene {scene_index+1}")
+        # Continuous moving visuals even when no stock clips can be downloaded.
+        sequence=scenes*3
+        print(f"VISUAL STORYBOARD: {len(originals)} stock clips, {sum('animated_' in str(p) for p in scenes)} animated 2D scenes",flush=True)
         manifest=folder/"shots.txt"
         manifest.write_text("".join("file '"+p.name+"'\n" for p in sequence),encoding="utf-8")
         (folder/"IMAGE_SOURCE.txt").write_text("\n".join(credits),encoding="utf-8")
