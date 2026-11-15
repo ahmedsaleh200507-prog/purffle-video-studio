@@ -70,40 +70,12 @@ def relevant_background(topic: str, folder: Path):
         except Exception as exc:
             print("Motion search unavailable, trying photos:",repr(exc),flush=True)
 
-        for page in sorted(pages.values(),key=lambda p:(subject not in p.get("title","").lower(),p.get("title",""))):
-            if len(clips)>=5: break
-            title=page.get("title","").lower()
-            if subject not in title: continue
-            info=(page.get("imageinfo") or [{}])[0]
-            mime=info.get("mime")
-            if mime not in ("image/jpeg","image/png","image/webp"): continue
-            url=info.get("thumburl") or info.get("url")
-            if not url: continue
-            try:
-                with urllib.request.urlopen(urllib.request.Request(url,headers=UA),timeout=20) as response:
-                    data=response.read(8*1024*1024+1)
-                if not 10000<len(data)<8*1024*1024: continue
-                suffix={"image/jpeg":".jpg","image/png":".png","image/webp":".webp"}[mime]
-                image=folder/f"photo_{len(clips)+1:02d}{suffix}"
-                image.write_bytes(data)
-                clip=folder/f"shot_{len(clips)+1:02d}.mp4"
-                # Each 9-second shot is independently encoded for reliable concatenation.
-                subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-y",
-                    "-loop","1","-framerate","12","-i",str(image),"-t","9",
-                    "-vf","scale=650:1156:force_original_aspect_ratio=increase,crop=650:1156,zoompan=z='min(zoom+0.00065,1.10)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=108:s=540x960:fps=12,format=yuv420p",
-                    "-an","-c:v","libx264","-preset","ultrafast","-r","12",str(clip)],
-                    check=True,timeout=45)
-                if clip.stat().st_size<10000: continue
-                clips.append(clip)
-                credits.append(page.get("title","")+" | "+info.get("descriptionurl",url))
-                print("VISUAL SHOT",len(clips),page.get("title"),flush=True)
-            except Exception as exc:
-                print("Skipping unusable Wikimedia image:",repr(exc),flush=True)
+        # Strict video-only mode: never download or render still photographs.
         if not clips:
-            print("No usable subject visuals",flush=True)
+            print("No moving video clips found; skipping video (photos disabled)",flush=True)
             return None
         # At least five visual changes across 45 seconds, if five images were found.
-        # Repeat available shots only when Commons provides fewer than five.
+        # Repeat moving clips only when fewer than five are available.
         sequence=(clips*5)[:5]
         manifest=folder/"shots.txt"
         manifest.write_text("".join("file '"+p.name+"'\n" for p in sequence),encoding="utf-8")
@@ -113,7 +85,7 @@ def relevant_background(topic: str, folder: Path):
             "-f","concat","-safe","0","-i",str(manifest),"-c","copy",str(target)],
             check=True,timeout=45)
         if target.stat().st_size<15000: return None
-        print(f"MULTI-SHOT BACKGROUND: {len(clips)} unique visual sources, 5 shots",flush=True)
+        print(f"VIDEO-ONLY BACKGROUND: {len(clips)} moving clips, 5 shots",flush=True)
         return str(target.resolve())
     except Exception as exc:
         print("Wikimedia multi-shot preparation failed:",repr(exc),flush=True)
