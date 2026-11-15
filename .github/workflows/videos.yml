@@ -1,0 +1,108 @@
+name: Purffle - 10 Video
+on:
+  workflow_dispatch:
+    inputs:
+      video_1:
+        description: '1 - en|Why is the sky blue? / de|Warum ist der Himmel blau?'
+        required: true
+        type: string
+      video_2:
+        description: '2 - en|Topic or de|Thema'
+        required: false
+        type: string
+      video_3:
+        description: '3 - en|Topic or de|Thema'
+        required: false
+        type: string
+      video_4:
+        description: '4 - en|Topic or de|Thema'
+        required: false
+        type: string
+      video_5:
+        description: '5 - en|Topic or de|Thema'
+        required: false
+        type: string
+      video_6:
+        description: '6 - en|Topic or de|Thema'
+        required: false
+        type: string
+      video_7:
+        description: '7 - en|Topic or de|Thema'
+        required: false
+        type: string
+      video_8:
+        description: '8 - en|Topic or de|Thema'
+        required: false
+        type: string
+      video_9:
+        description: '9 - en|Topic or de|Thema'
+        required: false
+        type: string
+      video_10:
+        description: '10 - en|Topic or de|Thema'
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: purffle-video-studio
+  cancel-in-progress: false
+jobs:
+  create-videos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      LLM_PROVIDER: groq
+      LLM_MODEL: openai/gpt-oss-20b
+      SCRIPT_REVIEW: 'off'
+      SEO_KEYWORDS: 'false'
+      VISUAL_SOURCES: pixabay
+      TTS_ENGINE: edge
+      RESOLUTION: 540x960
+      FPS: '24'
+      PRESET: ultrafast
+      TRANSITION: none
+      KEN_BURNS: 'false'
+      COLOR_GRADE: none
+      SOUND_EFFECTS: 'false'
+      CAPTION_EMOJI: 'false'
+      MUSIC_VOLUME: '0'
+      OUTPUT_DIR: output_videos
+      UPLOAD: 'false'
+      INPUT_1: ${{ inputs.video_1 }}
+      INPUT_2: ${{ inputs.video_2 }}
+      INPUT_3: ${{ inputs.video_3 }}
+      INPUT_4: ${{ inputs.video_4 }}
+      INPUT_5: ${{ inputs.video_5 }}
+      INPUT_6: ${{ inputs.video_6 }}
+      INPUT_7: ${{ inputs.video_7 }}
+      INPUT_8: ${{ inputs.video_8 }}
+      INPUT_9: ${{ inputs.video_9 }}
+      INPUT_10: ${{ inputs.video_10 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install video tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          python -m pip install --upgrade pip
+          pip install "git+https://github.com/Chamanrajragu/purffle-shorts.git" groq
+      - name: Produce up to 10 videos
+        run: python scripts/batch.py
+      - name: Save MP4 files even when some fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: purffle-videos-${{ github.run_number }}
+          path: |
+            finished/
+            batch-results.json
+          if-no-files-found: warn
+          retention-days: 7
