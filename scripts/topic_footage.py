@@ -48,7 +48,7 @@ def relevant_background(topic: str, folder: Path):
                 # Each 9-second shot is independently encoded for reliable concatenation.
                 subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-y",
                     "-loop","1","-framerate","12","-i",str(image),"-t","9",
-                    "-vf","scale=540:960:force_original_aspect_ratio=increase,crop=540:960,setsar=1,format=yuv420p",
+                    "-vf","scale=650:1156:force_original_aspect_ratio=increase,crop=650:1156,zoompan=z='min(zoom+0.00065,1.10)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=108:s=540x960:fps=12,format=yuv420p",
                     "-an","-c:v","libx264","-preset","ultrafast","-r","12",str(clip)],
                     check=True,timeout=45)
                 if clip.stat().st_size<10000: continue
