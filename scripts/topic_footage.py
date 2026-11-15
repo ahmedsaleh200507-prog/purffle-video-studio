@@ -14,7 +14,7 @@ def relevant_background(topic: str, folder: Path):
     if not key: return None
     words = re.findall(r"[a-zA-ZäöüÄÖÜß]+", topic.lower())
     words = [ALIASES.get(w,w) for w in words if w not in STOP and len(w)>2]
-    if not words: return None
+    if not words: words = ["nature"]
     # Strongest subject noun is usually the first content word.
     subject = words[0]
     query = urllib.parse.urlencode({"key":key,"q":subject,"per_page":10,"safesearch":"true"})
@@ -93,9 +93,7 @@ def relevant_background(topic: str, folder: Path):
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
             "-f", "lavfi", "-i", "color=c=0x0a243c:s=540x960:r=12",
             "-t", "40", "-vf",
-            "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:textfile="
-            + str((folder / "title.txt").resolve())
-            + ":fontcolor=white:fontsize=34:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2",
+            "format=yuv420p",
             "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(target)
         ], check=True, timeout=65)
         print("Using topic-specific title card (no unrelated scenery)", flush=True)
