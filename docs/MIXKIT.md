@@ -11,3 +11,7 @@ Mixkit has HD/4K stock footage but no documented public search/download API. Its
 
 Official terms: https://mixkit.co/terms/
 Licenses: https://mixkit.co/license/
+
+## Automation-only policy
+
+This project is **fully automatic**. Mixkit manual downloads are NOT part of the supported workflow. Do not prompt the user to download or upload clips manually. Do not add Mixkit as an automated provider without an official permitted API or explicit permission. Use supported automatic video providers only, and fail clearly when no relevant video is available.
