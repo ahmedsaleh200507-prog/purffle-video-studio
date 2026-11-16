@@ -1,0 +1,143 @@
+{
+  "date": "2026-11-16",
+  "environment": "Codex managed workspace with network access",
+  "results": [
+    {
+      "provider": "nasa-video",
+      "query": "earth orbit",
+      "test": "live official API search and license filtering",
+      "status": "ok",
+      "candidate_count": 1,
+      "seconds": 0.0,
+      "sample_candidates": [
+        {
+          "id": "Envisioning the Next Generation of Human Presence in Low Earth Orbit",
+          "url": "https://images-assets.nasa.gov/video/Envisioning the Next Generation of Human Presence in Low Earth Orbit/Envisioning the Next Generation of Human Presence in Low Earth Orbit~orig.mp4",
+          "width_reported": 0,
+          "height_reported": 0,
+          "license": {
+            "id": "NASA-MEDIA",
+            "url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+            "creator": "NASA HQ",
+            "source_page": "https://images.nasa.gov/details/Envisioning%20the%20Next%20Generation%20of%20Human%20Presence%20in%20Low%20Earth%20Orbit",
+            "attribution_required": false,
+            "attribution": "NASA HQ | NASA-MEDIA | https://www.nasa.gov/nasa-brand-center/images-and-media/ | https://images.nasa.gov/details/Envisioning%20the%20Next%20Generation%20of%20Human%20Presence%20in%20Low%20Earth%20Orbit | Trimmed and cropped to vertical; original audio removed",
+            "changes": "Trimmed and cropped to vertical; original audio removed"
+          }
+        }
+      ],
+      "note": "Not a download, ffprobe, scene-semantic or end-to-end render test."
+    },
+    {
+      "provider": "wikimedia-video",
+      "query": "octopus",
+      "test": "live official API search and license filtering",
+      "status": "ok",
+      "candidate_count": 8,
+      "seconds": 0.0,
+      "sample_candidates": [
+        {
+          "id": "160591009",
+          "url": "https://upload.wikimedia.org/wikipedia/commons/c/c9/An_octopus_is_visiting_the_EMSO-Mol%C3%A8ne_observatory_%28Ifremer_00384-49520%29.webm?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+          "width_reported": 1280,
+          "height_reported": 720,
+          "license": {
+            "id": "CC-BY-4.0",
+            "url": "https://creativecommons.org/licenses/by/4.0",
+            "creator": "Frauke Klingelhoefer / Louis Géli",
+            "source_page": "https://commons.wikimedia.org/wiki/File:An_octopus_is_visiting_the_EMSO-Mol%C3%A8ne_observatory_(Ifremer_00384-49520).webm",
+            "attribution_required": true,
+            "attribution": "Frauke Klingelhoefer / Louis Géli | CC-BY-4.0 | https://creativecommons.org/licenses/by/4.0 | https://commons.wikimedia.org/wiki/File:An_octopus_is_visiting_the_EMSO-Mol%C3%A8ne_observatory_(Ifremer_00384-49520).webm | Trimmed and cropped to vertical; original audio removed",
+            "changes": "Trimmed and cropped to vertical; original audio removed"
+          }
+        },
+        {
+          "id": "201168891",
+          "url": "https://upload.wikimedia.org/wikipedia/commons/d/d3/Caribbean_Dwarf_Octopus_-_260622.mpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+          "width_reported": 1920,
+          "height_reported": 1080,
+          "license": {
+            "id": "CC-BY-4.0",
+            "url": "https://creativecommons.org/licenses/by/4.0",
+            "creator": "TropicLens",
+            "source_page": "https://commons.wikimedia.org/wiki/File:Caribbean_Dwarf_Octopus_-_260622.mpg",
+            "attribution_required": true,
+            "attribution": "TropicLens | CC-BY-4.0 | https://creativecommons.org/licenses/by/4.0 | https://commons.wikimedia.org/wiki/File:Caribbean_Dwarf_Octopus_-_260622.mpg | Trimmed and cropped to vertical; original audio removed",
+            "changes": "Trimmed and cropped to vertical; original audio removed"
+          }
+        }
+      ],
+      "note": "Not a download, ffprobe, scene-semantic or end-to-end render test."
+    },
+    {
+      "provider": "archive-video",
+      "query": "ocean",
+      "test": "live official API search and license filtering",
+      "status": "ok",
+      "candidate_count": 6,
+      "seconds": 0.0,
+      "sample_candidates": [
+        {
+          "id": "TlmsMondayOctober82012",
+          "url": "https://archive.org/download/TlmsMondayOctober82012/Ohioan.mp4",
+          "width_reported": 640,
+          "height_reported": 480,
+          "license": {
+            "id": "CC0-1.0",
+            "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+            "creator": "",
+            "source_page": "https://archive.org/details/TlmsMondayOctober82012",
+            "attribution_required": false,
+            "attribution": " | CC0-1.0 | https://creativecommons.org/publicdomain/zero/1.0/ | https://archive.org/details/TlmsMondayOctober82012 | Trimmed and cropped to vertical; original audio removed",
+            "changes": "Trimmed and cropped to vertical; original audio removed"
+          }
+        },
+        {
+          "id": "NPC-323",
+          "url": "https://archive.org/download/NPC-323/428-npc-323%20Japanese%20Propaganda%20Newsreel%20Invasion%20Philippines%20Mandalay%2001-1943.mp4",
+          "width_reported": 1280,
+          "height_reported": 720,
+          "license": {
+            "id": "PDM-1.0",
+            "url": "https://creativecommons.org/publicdomain/mark/1.0/",
+            "creator": "United States. Navy",
+            "source_page": "https://archive.org/details/NPC-323",
+            "attribution_required": false,
+            "attribution": "United States. Navy | PDM-1.0 | https://creativecommons.org/publicdomain/mark/1.0/ | https://archive.org/details/NPC-323 | Trimmed and cropped to vertical; original audio removed",
+            "changes": "Trimmed and cropped to vertical; original audio removed"
+          }
+        }
+      ],
+      "note": "Not a download, ffprobe, scene-semantic or end-to-end render test."
+    },
+    {
+      "provider": "pixabay",
+      "test": "configuration/policy check",
+      "status": "skipped",
+      "detail": "missing PIXABAY_API_KEY",
+      "live_api_test": false
+    },
+    {
+      "provider": "pexels",
+      "test": "configuration/policy check",
+      "status": "skipped",
+      "detail": "missing PEXELS_API_KEY",
+      "live_api_test": false
+    },
+    {
+      "provider": "europeana-video",
+      "test": "configuration/policy check",
+      "status": "skipped",
+      "detail": "missing EUROPEANA_API_KEY",
+      "live_api_test": false
+    },
+    {
+      "provider": "coverr-video",
+      "test": "configuration/policy check",
+      "status": "skipped",
+      "detail": "policy_blocked: free production API permission not verified",
+      "live_api_test": false
+    }
+  ],
+  "caching_note": "Official APIs were contacted during this session; repeated verification reused 24-hour JSON caches. Candidate counts reflect final filters. This is not proof of visual scene suitability or rendering."
+}

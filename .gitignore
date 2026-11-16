@@ -1,0 +1,12 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+.venv/
+finished/
+output_videos/
+media_cache/
+data/
+.cache/
+batch-results.json
+.env
+.env.*

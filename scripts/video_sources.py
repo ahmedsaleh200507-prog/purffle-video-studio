@@ -1,173 +1,468 @@
-"""Search openly licensed moving footage from Wikimedia Commons."""
+"""Official API adapters for real footage. No scraping, images or permissive fallbacks.
+
+Reported dimensions are hints; media_quality validates the downloaded file. API responses
+are cached for 24 hours (including empty searches), never API keys or error bodies.
+"""
+from __future__ import annotations
+
+import hashlib
+import html
+import json
+import os
 import re
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import quote, urlparse
+
 import requests
 
+HEADERS = {"User-Agent": "PurffleVideoStudio/2.0 (https://github.com/ahmedsaleh200507-prog/purffle-video-studio)"}
 API = "https://commons.wikimedia.org/w/api.php"
-HEADERS = {"User-Agent":"PurffleVideoStudio/1.0 (https://github.com/ahmedsaleh200507-prog/purffle-video-studio)"}
+VIDEO_MIMES = {"video/mp4", "video/webm", "video/ogg", "application/ogg", "video/quicktime", "video/mpeg"}
+NASA_POLICY = "https://www.nasa.gov/nasa-brand-center/images-and-media/"
+
+
+def clean(value):
+    if isinstance(value, list):
+        return " ".join(clean(x) for x in value)
+    return html.unescape(re.sub(r"<[^>]*>", "", str(value or ""))).strip()
+
+
+def sequence(value):
+    return value if isinstance(value, list) else ([value] if value else [])
+
+
+def secure_url(value):
+    try:
+        p = urlparse(value)
+        return p.scheme == "https" and bool(p.hostname) and not p.username and not p.password
+    except (TypeError, ValueError):
+        return False
+
+
+def video_url(value):
+    return secure_url(value) and bool(re.search(r"\.(?:mp4|webm|ogv|ogg|mov|m4v|mpg|mpeg)(?:[?#]|$)", value, re.I))
+
+
+class LicenseValidator:
+    """Small allowlist, with complete attribution for CC BY. SA/NC/ND are excluded.
+
+    This validates provider declarations; an upload is never proof of ownership.
+    Model/privacy/trademark restrictions continue to apply to stock footage.
+    """
+    STOCK = {
+        "PIXABAY": "https://pixabay.com/service/license-summary/",
+        "PEXELS": "https://www.pexels.com/license/",
+        "NASA-MEDIA": NASA_POLICY,
+    }
+
+    @classmethod
+    def identify(cls, url, label=""):
+        p = urlparse(str(url or ""))
+        if p.hostname in {"creativecommons.org", "www.creativecommons.org"}:
+            path = p.path.lower()
+            if re.fullmatch(r"/publicdomain/zero/1\.0/?", path):
+                return "CC0-1.0"
+            if re.fullmatch(r"/publicdomain/mark/1\.0/?", path):
+                return "PDM-1.0"
+            m = re.fullmatch(r"/licenses/by/([1-4]\.0)/?", path)
+            if m:
+                return "CC-BY-" + m.group(1)
+        return ""  # A licence name or a substring in a URL is insufficient.
+
+    @classmethod
+    def validate(cls, license_info):
+        if not isinstance(license_info, dict):
+            return False
+        lid = license_info.get("id", "")
+        url = license_info.get("url", "")
+        if not secure_url(license_info.get("source_page", "")):
+            return False
+        if lid in cls.STOCK:
+            return url == cls.STOCK[lid] and bool(license_info.get("creator"))
+        if lid != cls.identify(url):
+            return False
+        if lid in {"CC0-1.0", "PDM-1.0"}:
+            return True
+        return lid.startswith("CC-BY-") and bool(clean(license_info.get("creator")))
+
+
+class ProviderError(RuntimeError):
+    def __init__(self, status, detail=""):
+        self.status, self.detail = status, detail
+        super().__init__(status + (": " + detail if detail else ""))
+
+
+class JsonClient:
+    """Bounded JSON transport with hashed credential-aware persistent caching.
+
+    Serialize network calls to protect free quotas. A 429 causes a provider circuit
+    breaker in ProviderRegistry; no repeated requests during the current video.
+    """
+    _lock = threading.Lock()
+    _last_request = {}
+
+    def __init__(self, cache_dir=Path("media_cache/api"), session=None, ttl=86400):
+        self.cache_dir = Path(cache_dir)
+        self.session = session or requests.Session()
+        self.ttl = ttl
+
+    def get(self, url, params=None, headers=None):
+        headers = {**HEADERS, **(headers or {})}
+        identity = json.dumps([url, params or {}, headers], sort_keys=True)
+        cache = self.cache_dir / (hashlib.sha256(identity.encode()).hexdigest() + ".json")
+        with self._lock:
+            try:
+                if cache.exists() and time.time() - cache.stat().st_mtime < self.ttl:
+                    return json.loads(cache.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+            host = urlparse(url).hostname
+            # <= 60 calls/minute, below Pixabay's default 100/minute.
+            pause = 1.05 - (time.monotonic() - self._last_request.get(host, 0))
+            if pause > 0:
+                time.sleep(pause)
+            try:
+                response = self.session.get(url, params=params, headers=headers,
+                                            timeout=(8, 25), stream=True, allow_redirects=False)
+                self._last_request[host] = time.monotonic()
+                with response:
+                    if response.status_code != 200:
+                        status = response.status_code
+                        raise ProviderError(f"http_{status}", "rate limited" if status == 429 else "request rejected")
+                    if int(response.headers.get("Content-Length", "0")) > 4 * 1024 * 1024:
+                        raise ProviderError("invalid_response", "JSON response exceeds 4 MiB")
+                    chunks, size = [], 0
+                    for part in response.iter_content(65536):
+                        size += len(part)
+                        if size > 4 * 1024 * 1024:
+                            raise ProviderError("invalid_response", "JSON response exceeds 4 MiB")
+                        chunks.append(part)
+                    data = json.loads(b"".join(chunks))
+                    if not isinstance(data, dict):
+                        raise ProviderError("invalid_response", "expected JSON object")
+                    if data.get("error"):
+                        raise ProviderError("api_error", "API returned an error object")
+            except ProviderError:
+                raise
+            except (requests.RequestException, ValueError, OSError):
+                # Never return request URLs or response bodies: they may contain keys.
+                raise ProviderError("network_or_json_error", "API request or JSON parsing failed") from None
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            temp = cache.with_suffix(".tmp")
+            temp.write_text(json.dumps(data), encoding="utf-8")
+            temp.replace(cache)
+            return data
+
+
+@dataclass(frozen=True)
+class VideoProvider:
+    name: str
+    key_env: str = ""
+    policy_block: str = ""
+
+    def unavailable_reason(self):
+        if self.policy_block:
+            return self.policy_block
+        if self.key_env and not os.environ.get(self.key_env, "").strip():
+            return "missing " + self.key_env
+        return ""
+
+
+class ProviderHealthCheck:
+    @staticmethod
+    def check(provider):
+        reason = provider.unavailable_reason()
+        return {"provider": provider.name, "enabled": not bool(reason), "reason": reason,
+                "api_test": "not_requested"}
+
+
+PROVIDERS = [
+    VideoProvider("pixabay", "PIXABAY_API_KEY"),
+    VideoProvider("pexels", "PEXELS_API_KEY"),
+    VideoProvider("wikimedia-video"), VideoProvider("nasa-video"),
+    VideoProvider("archive-video"), VideoProvider("europeana-video", "EUROPEANA_API_KEY"),
+    VideoProvider("coverr-video", "COVERR_API_KEY",
+                  "policy_blocked: free production API permission not verified"),
+]
+
+
+class ProviderRegistry:
+    def __init__(self, MediaItem=None, cache_dir=Path("media_cache/api"), client=None):
+        if MediaItem is None:
+            from purffle_shorts.media import MediaItem
+        self.MediaItem = MediaItem
+        self.client = client or JsonClient(cache_dir)
+        self.providers = {p.name: p for p in PROVIDERS}
+        self.enabled = [p.name for p in PROVIDERS if not p.unavailable_reason()]
+        self.events = []
+        self._circuit = set()
+        self._event_lock = threading.Lock()
+
+    def health(self):
+        checks = []
+        for p in self.providers.values():
+            check = ProviderHealthCheck.check(p)
+            check["circuit_open"] = p.name in self._circuit
+            latest = next((e for e in reversed(self.events) if e["provider"] == p.name), None)
+            if latest:
+                check["last_status"] = latest["status"]
+                check["api_test"] = latest["status"]
+            checks.append(check)
+        return checks
+
+    def event(self, name, status, query="", count=0, detail=""):
+        value = {"provider": name, "status": status, "query": query, "count": count, "detail": detail}
+        with self._event_lock:
+            self.events.append(value)
+        print(f"[SOURCE CHECK] {name}: status={status} candidates={count} query={query!r} {detail}", flush=True)
+
+    def search(self, source, query):
+        provider = self.providers.get(source)
+        if not provider:
+            self.event(source, "unsupported", query)
+            return []
+        reason = provider.unavailable_reason()
+        if reason:
+            self.event(source, "skipped", query, detail=reason)
+            return []
+        if source in self._circuit:
+            self.event(source, "circuit_open", query, detail="provider disabled after API rejection this video")
+            return []
+        try:
+            found = getattr(self, "_" + source.replace("-video", ""))(query.strip())
+            synthetic = re.compile(r"\banimat(?:ion|ions|ed)\b|\bCGI\b|computer[- ]generated|\bsimulation\b|\bAI[- ]generated\b|\bvisuali[sz]ation\b", re.I)
+            items = [x for x in found if x.kind == "video" and secure_url(x.url)
+                     and LicenseValidator.validate(x.extra.get("license")) and not synthetic.search(x.text)]
+            self.event(source, "ok" if items else "empty", query, len(items))
+            return items
+        except ProviderError as exc:
+            if exc.status in {"http_401", "http_403", "http_429"}:
+                self._circuit.add(source)
+            self.event(source, exc.status, query, detail=exc.detail)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            self.event(source, "invalid_schema", query, detail="API schema did not match documented response")
+        return []
+
+    def _item(self, source, identifier, url, query, rank, text, license_info, width=0, height=0, duration=0):
+        if not secure_url(url) or not LicenseValidator.validate(license_info):
+            return None
+        item = self.MediaItem(source, str(identifier), "video", url, int(width or 0), int(height or 0),
+                              duration=float(duration or 0), query=query, rank=rank, text=clean(text),
+                              credit=" | ".join(str(license_info.get(k, "")) for k in ("creator", "id", "url", "source_page")))
+        item.extra["license"] = license_info
+        item.extra["metadata_reported"] = {"width": item.width, "height": item.height}
+        return item
+
+    @staticmethod
+    def license(lid, url, creator, page):
+        return {"id": lid, "url": url, "creator": clean(creator), "source_page": page,
+                "attribution_required": lid.startswith("CC-BY-"),
+                "attribution": " | ".join([clean(creator), lid, url, page,
+                    "Trimmed and cropped to vertical; original audio removed"]),
+                "changes": "Trimmed and cropped to vertical; original audio removed"}
+
+    @staticmethod
+    def _files(files, url_field="url"):
+        """Prefer genuine 1080p+ / 4K source variants. Unknown stays unknown."""
+        files = [f for f in files if secure_url(f.get(url_field)) and
+                 f.get("file_type", "video/mp4") == "video/mp4"]
+        if not files:
+            return None
+        def score(f):
+            w, h = int(f.get("width") or 0), int(f.get("height") or 0)
+            return (min(w, h) >= 1080, min(w, h), w * h)
+        return max(files, key=score)
+
+    def _pixabay(self, query):
+        data = self.client.get("https://pixabay.com/api/videos/", params={
+            "key": os.environ["PIXABAY_API_KEY"], "q": query[:100], "per_page": 20,
+            "safesearch": "true", "video_type": "film"})
+        result = []
+        for rank, x in enumerate(data.get("hits", [])):
+            f = self._files((x.get("videos") or {}).values())
+            if not f:
+                continue
+            lic = self.license("PIXABAY", LicenseValidator.STOCK["PIXABAY"], x.get("user") or "Pixabay contributor", x.get("pageURL", ""))
+            item = self._item("pixabay", x["id"], f["url"], query, rank, x.get("tags"), lic,
+                              f.get("width"), f.get("height"), x.get("duration"))
+            if item:
+                result.append(item)
+        # Portrait helps only after metadata relevance and license are validated downstream.
+        return sorted(result, key=lambda x: (x.height > x.width, min(x.width, x.height)), reverse=True)
+
+    def _pexels(self, query):
+        data = self.client.get("https://api.pexels.com/videos/search", params={
+            "query": query, "per_page": 15, "size": "large", "orientation": "portrait"},
+            headers={"Authorization": os.environ["PEXELS_API_KEY"]})
+        result = []
+        for rank, x in enumerate(data.get("videos", [])):
+            f = self._files(x.get("video_files", []), "link")
+            if not f:
+                continue
+            page = x.get("url", "")
+            slug = re.sub(r"[-_\d]+", " ", page.rstrip("/").split("/")[-1])
+            lic = self.license("PEXELS", LicenseValidator.STOCK["PEXELS"], (x.get("user") or {}).get("name") or "Pexels contributor", page)
+            item = self._item("pexels", x["id"], f["link"], query, rank,
+                              slug + " " + clean(x.get("tags")), lic, f.get("width"), f.get("height"), x.get("duration"))
+            if item:
+                result.append(item)
+        return sorted(result, key=lambda x: (x.height > x.width, min(x.width, x.height)), reverse=True)
+
+    def _wikimedia(self, query):
+        data = self.client.get(API, params={"action": "query", "generator": "search",
+            "gsrsearch": query + " filetype:video", "gsrnamespace": 6, "gsrlimit": 15,
+            "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata", "format": "json", "maxlag": 5})
+        if "error" in data:
+            raise ProviderError("api_error", clean(data["error"].get("code")))
+        result = []
+        for rank, page in enumerate(data.get("query", {}).get("pages", {}).values()):
+            info = (page.get("imageinfo") or [{}])[0]
+            if info.get("mime") not in VIDEO_MIMES:
+                continue
+            ext = info.get("extmetadata", {})
+            get = lambda k: clean((ext.get(k) or {}).get("value"))
+            url = get("LicenseUrl")
+            lid = LicenseValidator.identify(url, get("LicenseShortName"))
+            # Commons PD records often have no LicenseUrl; their metadata has an explicit UsageTerms.
+            if not lid and get("LicenseShortName").lower() in {"public domain", "cc0"}:
+                url = "https://creativecommons.org/publicdomain/" + ("zero/1.0/" if get("LicenseShortName").lower() == "cc0" else "mark/1.0/")
+                lid = LicenseValidator.identify(url)
+            lic = self.license(lid, url, get("Artist"), info.get("descriptionurl", ""))
+            item = self._item("wikimedia-video", page["pageid"], info.get("url", ""), query, rank,
+                              page.get("title", "").replace("File:", "").replace("_", " ") + " " + get("ImageDescription"),
+                              lic, info.get("width"), info.get("height"))
+            if item:
+                result.append(item)
+        return result
+
+    def _nasa(self, query):
+        data = self.client.get("https://images-api.nasa.gov/search", params={
+            "q": query, "media_type": "video", "page_size": 8})
+        result = []
+        for rank, entry in enumerate(data.get("collection", {}).get("items", [])):
+            meta = (entry.get("data") or [{}])[0]
+            identifier = meta.get("nasa_id")
+            if not identifier or meta.get("media_type") != "video":
+                continue
+            rights_text = clean([meta.get("description"), meta.get("secondary_creator"), meta.get("photographer"), meta.get("copyright")])
+            # NASA's collection includes partner material. Reject explicit outside credits rather
+            # than applying the agency policy to third-party copyrighted footage.
+            if re.search(r"copyright|©|all rights reserved|courtesy|getty|shutterstock|reuters|associated press|esa[/ ,]|spacex", rights_text, re.I):
+                continue
+            credit_fields = [clean(meta.get(k)) for k in ("secondary_creator", "photographer") if meta.get(k)]
+            if any(not re.search(r"\bNASA\b|\bJPL\b|Goddard|Johnson Space Center|Kennedy Space Center", c, re.I)
+                   for c in credit_fields):
+                continue
+            manifest = self.client.get("https://images-api.nasa.gov/asset/" + quote(str(identifier), safe=""))
+            links = [x.get("href", "") for x in manifest.get("collection", {}).get("items", [])]
+            # Official manifests still emit HTTP assets. The same NASA CDN path is
+            # available over TLS; upgrade only the NASA-owned asset hostname.
+            links = [u.replace("http://", "https://", 1)
+                     if urlparse(u).hostname == "images-assets.nasa.gov" and u.startswith("http://") else u
+                     for u in links]
+            candidates = [u for u in links if secure_url(u) and re.search(r"\.mp4(?:[?#]|$)", u, re.I)
+                          and not re.search(r"~(?:small|mobile|preview)", u, re.I)]
+            if not candidates:
+                continue
+            # NASA manifest naming: orig > large > medium. Never invent width or height.
+            def quality(u):
+                return 3 if "~orig" in u.lower() else 2 if "~large" in u.lower() else 1 if "~medium" in u.lower() else 0
+            url = max(candidates, key=quality)
+            page = "https://images.nasa.gov/details/" + quote(str(identifier), safe="")
+            creator = meta.get("secondary_creator") or ("NASA " + clean(meta.get("center")))
+            lic = self.license("NASA-MEDIA", NASA_POLICY, creator, page)
+            item = self._item("nasa-video", identifier, url, query, rank,
+                              clean([meta.get("title"), meta.get("keywords"), meta.get("description")]), lic)
+            if item:
+                result.append(item)
+        return result
+
+    def _archive(self, query):
+        # Quote scene terms so a user/topic cannot inject Archive query operators.
+        terms = " ".join(re.findall(r"[A-Za-z0-9]+", query))
+        data = self.client.get("https://archive.org/advancedsearch.php", params={
+            "q": f'mediatype:movies AND ("{terms}") AND (licenseurl:"https://creativecommons.org/publicdomain/zero/1.0/" OR licenseurl:"http://creativecommons.org/publicdomain/zero/1.0/" OR licenseurl:"https://creativecommons.org/publicdomain/mark/1.0/" OR licenseurl:"http://creativecommons.org/publicdomain/mark/1.0/")',
+            "fl[]": ["identifier", "title", "licenseurl"], "rows": 8, "output": "json"})
+        result = []
+        for rank, doc in enumerate(data.get("response", {}).get("docs", [])):
+            identifier = doc.get("identifier")
+            if not identifier:
+                continue
+            meta = self.client.get("https://archive.org/metadata/" + quote(identifier, safe=""))
+            md = meta.get("metadata", {})
+            licenses = sequence(md.get("licenseurl"))
+            if not licenses or any(LicenseValidator.identify(u) not in {"CC0-1.0", "PDM-1.0"} for u in licenses):
+                continue
+            files = [f for f in meta.get("files", []) if video_url("https://archive.org/" + f.get("name", ""))
+                     and not re.search(r"thumb|preview|sample", f.get("name", ""), re.I)
+                     and int(f.get("size") or 0) <= 300 * 1024 * 1024]
+            if not files:
+                continue
+            # Prefer dimensions where known, originals then file size; ffprobe remains decisive.
+            file = max(files, key=lambda f: (min(int(f.get("width") or 0), int(f.get("height") or 0)),
+                       f.get("source") == "original", int(f.get("size") or 0)))
+            url = "https://archive.org/download/" + quote(identifier, safe="") + "/" + quote(file["name"], safe="/")
+            lic = self.license(LicenseValidator.identify(licenses[0]), licenses[0].replace("http://", "https://", 1),
+                               md.get("creator"), "https://archive.org/details/" + quote(identifier, safe=""))
+            item = self._item("archive-video", identifier, url, query, rank,
+                              clean([md.get("title"), md.get("description"), md.get("subject")]), lic,
+                              file.get("width"), file.get("height"))
+            if item:
+                result.append(item)
+        return result
+
+    def _europeana(self, query):
+        data = self.client.get("https://api.europeana.eu/record/v2/search.json", params={
+            "query": query, "qf": "TYPE:VIDEO", "media": "true", "reusability": "open",
+            "rows": 30, "profile": "rich"}, headers={"X-Api-Key": os.environ["EUROPEANA_API_KEY"]})
+        if data.get("success") is False:
+            raise ProviderError("api_error", "Europeana rejected request")
+        result = []
+        for rank, entry in enumerate(data.get("items", [])):
+            rights = sequence(entry.get("rights"))
+            # Search rights are aggregated. Accept only consistently PD/CC0 records; no
+            # claim that one permissive right grants rights to every linked representation.
+            if str(entry.get("type", "")).upper() != "VIDEO" or not rights:
+                continue
+            if any(LicenseValidator.identify(r) not in {"CC0-1.0", "PDM-1.0"} for r in rights):
+                continue
+            urls = sequence(entry.get("edmIsShownBy")) + sequence(entry.get("edmHasView"))
+            for url in urls:
+                if not video_url(url):
+                    continue
+                lic = self.license(LicenseValidator.identify(rights[0]), rights[0].replace("http://", "https://", 1),
+                                   entry.get("dcCreator") or entry.get("dataProvider"), entry.get("guid", ""))
+                item = self._item("europeana-video", entry.get("id", rank), url, query, rank,
+                                  clean([entry.get("title"), entry.get("dcDescription")]), lic)
+                if item:
+                    result.append(item)
+                break
+        return result
+
+
+# Compatibility functions for callers of the original extension module.
+def _compat(source, query, MediaItem):
+    return ProviderRegistry(MediaItem).search(source, query)
+
 
 def search_wikimedia_videos(query, MediaItem):
-    try:
-        response = requests.get(API, params={
-            "action":"query", "generator":"search",
-            "gsrsearch":query+" filetype:video", "gsrnamespace":6,
-            "gsrlimit":20, "prop":"imageinfo",
-            "iiprop":"url|size|mime|extmetadata", "format":"json"
-        }, headers=HEADERS, timeout=18)
-        response.raise_for_status()
-        items = []
-        for rank, page in enumerate(response.json().get("query",{}).get("pages",{}).values()):
-            info = (page.get("imageinfo") or [{}])[0]
-            mime = info.get("mime", "")
-            url = info.get("url", "")
-            if mime not in ("video/webm", "video/ogg", "video/mp4") or not url:
-                continue
-            lic = re.sub("<[^>]+>", "", (info.get("extmetadata",{}).get("LicenseShortName",{}).get("value") or "")).lower().strip()
-            if not (lic.startswith("cc by") or lic in ("cc0","public domain","pd")):
-                continue
-            items.append(MediaItem("wikimedia-video", str(page.get("pageid")), "video",
-                url, int(info.get("width") or 0), int(info.get("height") or 0),
-                credit=f"{lic} | {info.get('descriptionurl') or ''}",
-                query=query, rank=rank, text=page.get("title","").replace("File:","").replace("_"," ")))
-        return items
-    except Exception as exc:
-        print(f"Wikimedia video search unavailable: {exc}",flush=True)
-        return []
+    return _compat("wikimedia-video", query, MediaItem)
 
 
 def search_nasa_videos(query, MediaItem):
-    """NASA video search with asset manifests; avoid image thumbnails."""
-    try:
-        data = requests.get("https://images-api.nasa.gov/search",
-            params={"q":query,"media_type":"video","page_size":12},
-            headers=HEADERS, timeout=18)
-        data.raise_for_status()
-        results = []
-        for rank, entry in enumerate(data.json().get("collection",{}).get("items",[])):
-            meta = (entry.get("data") or [{}])[0]
-            nasa_id = meta.get("nasa_id")
-            if not nasa_id:
-                continue
-            manifest = requests.get("https://images-api.nasa.gov/asset/"+requests.utils.quote(str(nasa_id),safe=""),
-                headers=HEADERS,timeout=15)
-            manifest.raise_for_status()
-            links = [x.get("href","") for x in manifest.json().get("collection",{}).get("items",[])]
-            candidates = [u for u in links if re.search(r"\.mp4(?:[?#]|$)",u,re.I)]
-            if not candidates:
-                continue
-            url = next((u for u in candidates if "~small" in u.lower() or "~mobile" in u.lower()), candidates[-1])
-            results.append(MediaItem("nasa-video",str(nasa_id),"video",url,1280,720,
-                credit="NASA | "+str(entry.get("href") or ""),query=query,rank=rank,
-                text=(meta.get("title") or "")+" "+" ".join(meta.get("keywords") or [])))
-        return results
-    except Exception as exc:
-        print(f"NASA video search unavailable: {exc}",flush=True)
-        return []
+    return _compat("nasa-video", query, MediaItem)
 
 
 def search_coverr_videos(query, MediaItem):
-    """Coverr API, enabled only when the user supplies a key."""
-    import os
-    key = os.environ.get("COVERR_API_KEY", "").strip()
-    if not key:
-        return []
-    try:
-        response = requests.get("https://api.coverr.co/videos",
-            params={"query":query,"page_size":12,"urls":"true"},
-            headers={**HEADERS,"x-api-key":key},timeout=18)
-        response.raise_for_status()
-        results=[]
-        for rank, entry in enumerate(response.json().get("hits", [])):
-            urls=entry.get("urls") or {}
-            url=urls.get("mp4") or urls.get("mp4_download")
-            if not url or not url.startswith("https://"):
-                continue
-            results.append(MediaItem("coverr-video",str(entry.get("id")),"video",url,
-                int(entry.get("width") or 0),int(entry.get("height") or 0),
-                credit="Coverr | https://coverr.co",query=query,rank=rank,
-                text=entry.get("title") or ""))
-        return results
-    except Exception as exc:
-        print(f"Coverr video search unavailable: {exc}",flush=True)
-        return []
+    return _compat("coverr-video", query, MediaItem)
 
 
 def search_archive_videos(query, MediaItem):
-    """Only explicitly CC0/public-domain items, never arbitrary archive uploads."""
-    from urllib.parse import quote
-    try:
-        search = requests.get("https://archive.org/advancedsearch.php",
-            params={"q":f'mediatype:movies AND ({query}) AND (licenseurl:*creativecommons.org/publicdomain/zero* OR licenseurl:*creativecommons.org/publicdomain/mark*)',
-                    "fl[]":["identifier","title","licenseurl"],"rows":8,"output":"json"},
-            headers=HEADERS,timeout=18)
-        search.raise_for_status()
-        results=[]
-        for rank, doc in enumerate(search.json().get("response",{}).get("docs",[])):
-            identifier=doc.get("identifier","")
-            license_url=str(doc.get("licenseurl") or "").lower()
-            if not identifier or not ("publicdomain/zero" in license_url or "publicdomain/mark" in license_url):
-                continue
-            metadata=requests.get("https://archive.org/metadata/"+quote(identifier,safe=""),headers=HEADERS,timeout=15)
-            metadata.raise_for_status()
-            files=metadata.json().get("files") or []
-            video=next((f for f in files if str(f.get("name","")).lower().endswith(".mp4") and
-                        not any(w in str(f.get("name","")).lower() for w in ("thumb","preview","sample"))),None)
-            if not video:
-                continue
-            url="https://archive.org/download/"+quote(identifier,safe="")+"/"+quote(video["name"],safe="/")
-            results.append(MediaItem("archive-video",identifier,"video",url,
-                credit=f"Internet Archive | {license_url} | https://archive.org/details/{identifier}",
-                query=query,rank=rank,text=doc.get("title") or ""))
-        return results
-    except Exception as exc:
-        print(f"Internet Archive video search unavailable: {exc}",flush=True)
-        return []
+    return _compat("archive-video", query, MediaItem)
 
 
 def search_europeana_videos(query, MediaItem):
-    """Europeana Search API: public-domain direct MP4 only, never thumbnails."""
-    import os
-    key = os.environ.get("EUROPEANA_API_KEY", "").strip()
-    if not key:
-        print("[SOURCE CHECK] Europeana skipped: EUROPEANA_API_KEY not set", flush=True)
-        return []
-    try:
-        response = requests.get(
-            "https://api.europeana.eu/record/v2/search.json",
-            params={"query":query, "qf":"TYPE:VIDEO", "media":"true",
-                    "reusability":"open", "rows":30, "profile":"rich"},
-            headers={**HEADERS, "X-Api-Key":key}, timeout=18)
-        response.raise_for_status()
-        results = []
-        for rank, entry in enumerate(response.json().get("items", [])):
-            if str(entry.get("type", "")).upper() != "VIDEO":
-                continue
-            rights = entry.get("rights") or []
-            if isinstance(rights, str):
-                rights = [rights]
-            # Avoid licenses requiring attribution/share-alike handling until
-            # a proper video credits manifest is implemented.
-            if not any("publicdomain/zero/" in str(x).lower() or
-                       "publicdomain/mark/" in str(x).lower()
-                       for x in rights):
-                continue
-            urls = entry.get("edmIsShownBy") or []
-            if isinstance(urls, str):
-                urls = [urls]
-            urls += entry.get("edmHasView") or []
-            for url in urls:
-                if not isinstance(url, str) or not url.startswith("https://"):
-                    continue
-                if not re.search(r"\.mp4(?:[?#]|$)", url, re.I):
-                    continue
-                title = entry.get("title") or []
-                if isinstance(title, list):
-                    title = " ".join(str(x) for x in title)
-                results.append(MediaItem(
-                    "europeana-video", str(entry.get("id") or rank), "video",
-                    url, 0, 0, credit="Europeana | "+str(entry.get("guid") or ""),
-                    query=query, rank=rank, text=title))
-                break
-        return results
-    except Exception as exc:
-        print(f"Europeana video search unavailable: {exc}", flush=True)
-        return []
+    return _compat("europeana-video", query, MediaItem)

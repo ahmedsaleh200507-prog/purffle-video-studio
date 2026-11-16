@@ -1,4 +1,4 @@
-name: Purffle - 10 Video
+name: Purffle V2 - 1 to 10 Videos
 on:
   workflow_dispatch:
     inputs:
@@ -49,10 +49,10 @@ concurrency:
   cancel-in-progress: false
 jobs:
   create-videos:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 330
     env:
-      PYTHONPATH: ${{ github.workspace }}
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -64,16 +64,22 @@ jobs:
       SEO_KEYWORDS: 'false'
       VISUAL_SOURCES: pixabay,pexels,coverr-video,europeana-video,wikimedia-video,nasa-video,archive-video
       TTS_ENGINE: edge
-      RESOLUTION: 540x960
-      FPS: '24'
+      RESOLUTION: 1080x1920
+      FPS: '30'
       PRESET: medium
-      TRANSITION: fade
-      KEN_BURNS: 'true'
-      COLOR_GRADE: vivid
-      SOUND_EFFECTS: 'true'
-      CAPTION_EMOJI: 'true'
+      TRANSITION: none
+      KEN_BURNS: 'false'
+      COLOR_GRADE: none
+      SOUND_EFFECTS: 'false'
+      CAPTION_EMOJI: 'false'
       MUSIC_VOLUME: '0'
       OUTPUT_DIR: output_videos
+      HF_HOME: ${{ github.workspace }}/.cache/huggingface
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      TOKENIZERS_PARALLELISM: 'false'
+      MAX_SHOT_SECONDS: '0'
+      CREDIT_FOOTAGE: 'true'
       UPLOAD: 'false'
       INPUT_1: ${{ inputs.video_1 }}
       INPUT_2: ${{ inputs.video_2 }}
@@ -95,12 +101,33 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
           python -m pip install --upgrade pip
-          pip install "git+https://github.com/Chamanrajragu/purffle-shorts.git" groq pillow
-      - name: Improve original Purffle scene relevance
+          pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-dev.txt
+      - name: Restore model and API metadata cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/huggingface
+            media_cache/api
+          key: purffle-v2-cache-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}-${{ github.run_id }}
+          restore-keys: |
+            purffle-v2-cache-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}-
+      - name: Syntax and regression tests
+        run: |
+          python -m compileall -q scripts sitecustomize.py
+          python -m pytest -q
+      - name: Verify local visual model
+        run: python scripts/check_model.py
+      - name: Verify pinned upstream compatibility
         run: python scripts/improve_upstream.py
       - name: Produce up to 10 videos
+        env:
+          PURFFLE_STRICT: '1'
         run: python scripts/batch.py
-      - name: Save MP4 files even when some fail
+      - name: Remove transient render work
+        if: always()
+        run: find finished -type d -name work -prune -exec rm -rf {} + 2>/dev/null || true
+      - name: Save MP4 files and failure reports
         if: always()
         uses: actions/upload-artifact@v4
         with:

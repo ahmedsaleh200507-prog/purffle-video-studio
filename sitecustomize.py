@@ -37,5 +37,15 @@ try:
         return content
 
     OpenAICompatible.complete = _complete
-except Exception as exc:
-    print("Groq SDK patch initialization failed:", type(exc).__name__, str(exc)[:250], flush=True)
+except ImportError:
+    # Dependency installation also starts Python before upstream is available.
+    pass
+
+if os.environ.get("PURFFLE_STRICT") == "1":
+    try:
+        from studio_runtime import install
+        install()
+    except Exception as exc:
+        # Python ignores ordinary sitecustomize errors; SystemExit deliberately
+        # stops startup so strict production cannot silently run the old fallback.
+        raise SystemExit("Strict Purffle runtime failed to initialize: " + str(exc)) from exc

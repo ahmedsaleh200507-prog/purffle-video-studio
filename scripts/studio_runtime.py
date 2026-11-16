@@ -1,0 +1,352 @@
+"""Strict runtime adapter for the audited upstream; never modifies installed source files.
+
+Only the four upstream modules below are coupled to this adapter. A changed upstream
+must be reviewed and the digests deliberately refreshed before it can render anything.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import importlib.util
+import json
+import math
+import os
+from pathlib import Path
+import time
+from urllib.parse import urlsplit
+
+UPSTREAM_COMMIT = "514fd2547227b98d951dfc1489fc8c7ce72f1b68"
+UPSTREAM_HASHES = {
+    "script.py": "715baf30a21362a2013fb0dd6d80431f156b6c9a77d5f4d710a322966b894faf",
+    "media.py": "2d3f6d1941a83bcbed2327de3696f58c15526618c8b51eceeff49fa76a1c8c21",
+    "render.py": "7ce32dbd7e81be4f2606707afe8cb50346ab62d768553771fce5da7addf71671",
+    "pipeline.py": "d3eb51f9cf877194800ef92811d96ed5199825d63a65bfaf5ddf08d06de7e4b3",
+}
+SCENE_FIELDS = ("main_character", "object", "action", "location", "time", "visual_search_query")
+_INSTALLED = False
+
+
+def verify_upstream(root=None):
+    if root is None:
+        spec = importlib.util.find_spec("purffle_shorts")
+        if spec is None or spec.origin is None:
+            raise RuntimeError("Pinned purffle-shorts is not installed")
+        root = Path(spec.origin).parent
+    root = Path(root)
+    for filename, expected in UPSTREAM_HASHES.items():
+        actual = hashlib.sha256((root / filename).read_bytes()).hexdigest()
+        if actual != expected:
+            raise RuntimeError(f"Unaudited upstream {filename}; install commit {UPSTREAM_COMMIT}")
+    return UPSTREAM_COMMIT
+
+
+def _redact(value):
+    text = str(value)
+    for key in ("GROQ_API_KEY", "PIXABAY_API_KEY", "PEXELS_API_KEY", "COVERR_API_KEY", "EUROPEANA_API_KEY"):
+        secret = os.getenv(key, "")
+        if secret:
+            text = text.replace(secret, "[REDACTED]")
+    return text
+
+
+def _atomic_json(path, data):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(_redact(json.dumps(data, indent=2, ensure_ascii=False, default=str)), encoding="utf-8")
+    temp.replace(path)
+
+
+def _scene_data(raw):
+    """No guessed scene requirements: the writer must explicitly provide the plan."""
+    if not isinstance(raw, dict):
+        raise ValueError("Scene must include a structured visual plan")
+    missing = [name for name in SCENE_FIELDS if name not in raw or not isinstance(raw[name], str)]
+    if missing:
+        raise ValueError("Missing structured scene fields: " + ", ".join(missing))
+    data = {name: raw[name].strip() for name in SCENE_FIELDS}
+    if not data["visual_search_query"] or not data["action"] or not data["object"]:
+        raise ValueError("Scene requires visible object/subject, action and English visual_search_query")
+    if len(data["visual_search_query"]) > 300:
+        raise ValueError("Visual scene query exceeds 300 characters")
+    return data
+
+
+class StrictVisuals:
+    """Sequential candidate validation keeps CPU, download and API usage bounded."""
+    def __init__(self, settings, used_keys=None, *, registry=None, downloader=None, quality=None, matcher=None):
+        from video_sources import ProviderRegistry
+        from media_validation import VideoDownloader, QualityValidator, SceneMatcher
+        self.s = settings
+        if getattr(settings, "offline", False):
+            raise RuntimeError("Offline/synthetic visuals are forbidden in strict production")
+        self.registry = registry if registry is not None else ProviderRegistry()
+        self.downloader = downloader if downloader is not None else VideoDownloader(Path("media_cache/downloads"))
+        self.quality = quality if quality is not None else QualityValidator(min_short_side=1080)
+        self.matcher = matcher if matcher is not None else SceneMatcher()
+        self.sources = [x for x in settings.visual_sources if x in self.registry.enabled]
+        self.credits = set()
+        self.used = set(used_keys or ())
+        self.state_path = Path(os.getenv("FOOTAGE_USED_PATH", "media_cache/used-media.json"))
+        try:
+            state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {}
+        except (ValueError, OSError) as exc:
+            raise RuntimeError("Cannot read footage duplicate ledger") from exc
+        self.used.update(state.get("keys", []))
+        self.used_urls = set(state.get("urls", []))
+        self.used_hashes = set(state.get("hashes", []))
+        self.report = {"state": "searching", "upstream_commit": UPSTREAM_COMMIT,
+                       "policy": "real video; verified license; native source short side >=1080; local visual validation",
+                       "sources": self.registry.health(), "scenes": [], "provider_events": []}
+        print("[SOURCE HEALTH] " + _redact(json.dumps(self.report["sources"], ensure_ascii=False)), flush=True)
+        self._save()
+
+    def _save(self):
+        self.report["sources"] = self.registry.health()
+        self.report["provider_events"] = list(self.registry.events)
+        path = os.getenv("FOOTAGE_REPORT")
+        if path:
+            _atomic_json(path, self.report)
+
+    def _remember(self, item, url_key, digest):
+        self.used.add(item.key)
+        self.used_urls.add(url_key)
+        self.used_hashes.add(digest)
+        _atomic_json(self.state_path, {"keys": sorted(self.used), "urls": sorted(self.used_urls),
+                                      "hashes": sorted(self.used_hashes)})
+
+    def for_scene(self, idx, query, image_prompt, topic, need, dest_dir):
+        from media_validation import SceneSpec
+        from video_sources import LicenseValidator
+        try:
+            data = _scene_data(json.loads(image_prompt))
+        except (ValueError, TypeError) as exc:
+            self.report["state"] = "failed"
+            self.report["error"] = "Missing structured scene plan"
+            self._save()
+            raise RuntimeError("Missing structured scene plan; refusing broad topic fallback") from exc
+        spec = SceneSpec.from_dict(data)
+        scene = {"index": idx + 1, "plan": data, "required_seconds": need,
+                 "status": "searching", "rejections": []}
+        self.report["scenes"].append(scene)
+        scene_start = time.monotonic()
+        max_candidates = max(1, min(12, int(os.getenv("CANDIDATES_PER_SOURCE", "4"))))
+        for source in self.sources:
+            if time.monotonic() - scene_start > 240:
+                break
+            candidates = self.registry.search(source, data["visual_search_query"])
+            print(f"[SOURCE CHECK] {source}: {len(candidates)} candidates scene={idx+1}", flush=True)
+            for item in candidates[:max_candidates]:
+                if time.monotonic() - scene_start > 240:
+                    scene["rejections"].append({"source": source, "reason": "scene_budget_exhausted"})
+                    break
+                parts = urlsplit(item.url)
+                url_key = parts.netloc.lower() + parts.path
+                if item.kind != "video" or item.key in self.used or url_key in self.used_urls:
+                    scene["rejections"].append({"source": source, "id": item.id, "reason": "non_video_or_duplicate"})
+                    continue
+                path, digest = None, None
+                try:
+                    if not LicenseValidator.validate(item.extra.get("license")):
+                        raise ValueError("Unverified or incompatible candidate license")
+                    if hasattr(self.matcher, "metadata_score"):
+                        score = self.matcher.metadata_score(spec, item.text)
+                        if score < .45:
+                            raise ValueError(f"Unrelated metadata (score {score:.3f})")
+                    path = self.downloader.download(item.url)
+                    digest = self.downloader.digest(path)
+                    if digest in self.used_hashes:
+                        raise ValueError("duplicate content hash")
+                    quality = self.quality.validate(path, need=need + 0.1)
+                    match = self.matcher.match(path, spec, metadata=item.text, duration=need)
+                    item.path = path
+                    item.width, item.height = int(quality["width"]), int(quality["height"])
+                    item.duration = float(quality["duration"])
+                    item.extra.update({"quality": quality, "match": match, "start": 0.0,
+                                       "strict_validated": True, "sha256": digest})
+                    license_info = item.extra.get("license", {})
+                    attribution = license_info.get("attribution") or item.credit
+                    if not attribution:
+                        raise ValueError("Missing license provenance/attribution")
+                    self.credits.add(attribution)
+                    self._remember(item, url_key, digest)
+                    scene.update({"status": "selected", "source": source, "id": item.id,
+                                  "source_url": item.url, "downloaded_file": str(path),
+                                  "sha256": digest, "quality": quality, "match": match,
+                                  "license": license_info,
+                                  "crop": {"focus_x": match.get("crop_focus_x", .5),
+                                           "effective_source_width": round(min(item.width, item.height * 9 / 16)),
+                                           "effective_source_height": round(min(item.height, item.width * 16 / 9)),
+                                           "upscaled_after_crop": min(item.width, item.height * 9 / 16) < 1080
+                                                                  or min(item.height, item.width * 16 / 9) < 1920}})
+                    self._save()
+                    print(f"[SELECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} "
+                          f"actual={item.width}x{item.height} visual_score={match.get('visual_score')} "
+                          f"license={license_info.get('id')}", flush=True)
+                    return item
+                except Exception as exc:
+                    # A rejected 4K file must not accumulate until it fills the CI disk.
+                    # Preserve anything referenced by accepted footage, including a
+                    # duplicate hash reached through another URL.
+                    if path is not None and digest is not None and digest not in self.used_hashes:
+                        try:
+                            Path(path).unlink(missing_ok=True)
+                            Path(path).with_suffix(".json").unlink(missing_ok=True)
+                        except OSError:
+                            pass  # aggregate cache budget still fails safely when full
+                    reason = _redact(f"{type(exc).__name__}: {exc}")[:450]
+                    scene["rejections"].append({"source": source, "id": item.id, "reason": reason})
+                    print(f"[REJECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} reason={reason}", flush=True)
+            self._save()
+        scene["status"] = "failed"
+        self.report["state"] = "failed"
+        self.report["error"] = f"No verified real video for scene {idx+1}"
+        self._save()
+        raise RuntimeError(f"No suitable verified REAL VIDEO for scene {idx+1}: {data['visual_search_query']!r}")
+
+    def for_scenes(self, jobs, topic, dest_dir, progress=None):
+        Path(dest_dir).mkdir(parents=True, exist_ok=True)
+        items = []
+        for idx, (query, prompt, need) in enumerate(jobs):
+            items.append(self.for_scene(idx, query, prompt, topic, need, dest_dir))
+            if progress:
+                progress((idx + 1) / len(jobs))
+        self.report["state"] = "footage_ready"
+        self._save()
+        return items
+
+
+def strict_prepare_segment(item, seconds, idx, settings, work):
+    """Render only the exact stretch that was visually checked, with no looping."""
+    from purffle_shorts import ffmpeg
+    from purffle_shorts.render import _encode_args, _grade
+    if item.kind != "video" or not item.path or not item.extra.get("strict_validated"):
+        raise RuntimeError("Render refused unvalidated footage or generated/still content")
+    if item.duration < seconds + 0.05:
+        raise RuntimeError("Source too short; refusing footage loop")
+    W, H, F = settings.width, settings.height, settings.fps
+    focus = float(item.extra.get("match", {}).get("crop_focus_x", 0.5))
+    if not math.isfinite(focus):
+        raise RuntimeError("Invalid crop focus")
+    focus = max(0, min(1, focus))
+    crop_width = min(item.width, item.height * W / H)
+    crop_height = min(item.height, item.width * H / W)
+    item.extra["crop"] = {"focus_x": focus, "effective_source_width": round(crop_width),
+                          "effective_source_height": round(crop_height),
+                          "upscaled_after_crop": crop_width < W or crop_height < H}
+    # Keep the subject's horizontal focus; vertically centre when a wide crop is required.
+    cover = (f"scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,"
+             f"crop={W}:{H}:x='max(0,min(iw-ow,iw*{focus:.5f}-ow/2))':y='(ih-oh)/2',setsar=1")
+    out = Path(work) / f"seg{idx:02d}.mp4"
+    ffmpeg.run(["-threads", "2", "-filter_threads", "1", "-ss", "0", "-i", str(item.path),
+                "-t", f"{seconds:.3f}", "-an", "-vf", f"{cover},fps={F}{_grade(settings)}",
+                *_encode_args(settings, final=False), "-threads", "2", "-frames:v", str(max(2, round(seconds*F))), str(out)],
+               label=f"validated segment {idx}", timeout=240)
+    return out
+
+
+def bounded_ffmpeg_args(args):
+    """Limit decoder/filter/encoder threads independently for small CI runners."""
+    result = ["-filter_threads", "1", "-filter_complex_threads", "1"]
+    for arg in args[:-1]:
+        if arg == "-i":
+            result.extend(["-threads", "2"])
+        result.append(arg)
+    result.extend(["-threads", "2", args[-1]])
+    return result
+
+
+def install():
+    global _INSTALLED
+    if _INSTALLED:
+        return
+    verify_upstream()
+    import purffle_shorts.script as script
+    import purffle_shorts.media as media
+    import purffle_shorts.render as render
+    import purffle_shorts.pipeline as pipeline
+    import purffle_shorts.ffmpeg as ffmpeg
+
+    @dataclass
+    class PlannedScene(script.Scene):
+        main_character: str = ""
+        object: str = ""
+        action: str = ""
+        location: str = ""
+        time: str = ""
+        visual_search_query: str = ""
+
+    original_normalize = script.normalize
+    original_prompt = script.build_prompt
+    original_speak = pipeline.Studio._speak
+    original_ffmpeg_run = ffmpeg.run
+
+    def ffmpeg_run(args, **kwargs):
+        return original_ffmpeg_run(bounded_ffmpeg_args(args), **kwargs)
+
+    def normalize(data, subject, style, language):
+        raw_scenes = data.get("scenes") or []
+        if not raw_scenes or len(raw_scenes) > 6:
+            raise ValueError("A strict video needs 1–6 explicit scenes")
+        prepared, plans = [], []
+        for raw in raw_scenes:
+            plan = _scene_data(raw)
+            if not str(raw.get("narration", "")).strip():
+                raise ValueError("Scene narration is empty")
+            plans.append(plan)
+            prepared.append({**raw, "search_query": plan["visual_search_query"],
+                             "image_prompt": json.dumps(plan, ensure_ascii=False)})
+        result = original_normalize({**data, "scenes": prepared}, subject, style, language)
+        if len(result.scenes) != len(plans):
+            raise ValueError("Upstream discarded a structured scene")
+        for scene, plan in zip(result.scenes, plans):
+            for name, value in plan.items():
+                setattr(scene, name, value)
+        return result
+
+    def build_prompt(*args, **kwargs):
+        system, user = original_prompt(*args, **kwargs)
+        user += """\n\nSTRICT REAL-FOOTAGE PLAN (these rules replace earlier visual-query/image instructions):
+Every scene MUST additionally contain strings main_character, object, action, location,
+time, visual_search_query. These values are ALWAYS English. Use empty main_character if
+there is no human/animal character; use empty time when irrelevant. A visible subject
+in object (including a natural subject such as ocean), and a concrete action are required. search_query MUST equal visual_search_query. Set
+image_prompt to an empty string: images and synthetic imagery are not permitted.
+visual_search_query should describe the exact visible subject, key object, action and
+place in 5–14 words, e.g. young man picking up euro banknote on sidewalk.
+Preserve the user's concrete story, action, currency and chronology; do not replace
+banknotes with gold, people with devices or actions with metaphors. Keep the same
+character and object descriptions across adjacent scenes. Describe real recordable
+motion, never diagrams, animation, visualizations, text-only shots or generic filler.
+Narration must match these visible actions. Do not invent factual claims or an ending
+for an underspecified real event. Use 3–5 scenes for a 25-second video, at most 6 scenes. The system will fail a scene when
+exact suitable footage cannot be verified; never weaken the scene to hide that failure.
+"""
+        return system, user
+
+    def speak(self, screenplay, work, settings):
+        if settings.offline or settings.tts_engine != "edge" or settings.language not in ("de", "en"):
+            raise RuntimeError("Strict production requires online free Edge narration in de/en")
+        speech = original_speak(self, screenplay, work, settings)
+        if speech.engine != "edge" or speech.timing not in ("native", "aligned") or not speech.words:
+            raise RuntimeError("Narration lacks verified native/aligned word timing")
+        return speech
+
+    def background(settings, seconds):
+        if settings.background_video:
+            raise RuntimeError("Unverified background footage is disabled")
+        return None
+
+    script.Scene = PlannedScene
+    for name in SCENE_FIELDS:
+        script.SCENE_SCHEMA["properties"][name] = {"type": "string"}
+        if name not in script.SCENE_SCHEMA["required"]:
+            script.SCENE_SCHEMA["required"].append(name)
+    script.normalize = normalize
+    script.build_prompt = build_prompt
+    media.Visuals = pipeline.Visuals = StrictVisuals
+    media.background_item = pipeline.background_item = background
+    render.prepare_segment = strict_prepare_segment
+    pipeline.Studio._speak = speak
+    ffmpeg.run = ffmpeg_run
+    _INSTALLED = True

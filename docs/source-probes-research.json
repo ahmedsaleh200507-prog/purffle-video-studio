@@ -1,0 +1,392 @@
+{
+  "note": "No API keys used; HTTP 200 and JSON search do not establish permitted reusable HD download.",
+  "probes": [
+    {
+      "source": "NASA",
+      "url": "https://images-api.nasa.gov/search?q=earth&media_type=video&page_size=2",
+      "kind": "public_read_probe",
+      "tested_at": "2026-11-16T19:00:38.939464+00:00",
+      "status": 200,
+      "content_type": "application/json",
+      "bytes_read": 3455,
+      "json_valid": true,
+      "top_level_keys": [
+        "collection"
+      ],
+      "results": [
+        {
+          "id": "GSFC_20140421_EarthOrbit_m11525",
+          "title": "Earth from Orbit 2013"
+        },
+        {
+          "id": "Seeing Earth as Only NASA Can",
+          "title": "Seeing Earth as Only NASA Can"
+        }
+      ]
+    },
+    {
+      "source": "Wikimedia Commons",
+      "url": "https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=earth+filetype%3Avideo&gsrnamespace=6&gsrlimit=2&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cextmetadata&format=json&maxlag=5",
+      "kind": "public_read_probe",
+      "tested_at": "2026-11-16T19:00:38.946922+00:00",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "bytes_read": 6769,
+      "json_valid": true,
+      "top_level_keys": [
+        "batchcomplete",
+        "continue",
+        "query"
+      ],
+      "results": [
+        {
+          "title": "File:The Earth 4K Extended Edition.webm",
+          "info": [
+            {
+              "size": 332110511,
+              "width": 1920,
+              "height": 1080,
+              "duration": 3593.388,
+              "url": "https://upload.wikimedia.org/wikipedia/commons/6/60/The_Earth_4K_Extended_Edition.webm?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:The_Earth_4K_Extended_Edition.webm",
+              "descriptionshorturl": "https://commons.wikimedia.org/wiki/Special:Redirect/page/84304827",
+              "extmetadata": {
+                "DateTime": {
+                  "value": "2019-11-24 08:14:35",
+                  "source": "mediawiki-metadata",
+                  "hidden": ""
+                },
+                "ObjectName": {
+                  "value": "The Earth 4K Extended Edition",
+                  "source": "mediawiki-metadata"
+                },
+                "CommonsMetadataExtension": {
+                  "value": 1.2,
+                  "source": "extension",
+                  "hidden": ""
+                },
+                "Categories": {
+                  "value": "PD NASA|Jeffrey N. Williams|Video display resolution 1920 x 1080|Videos of 2017 from the United States|NASA videos in 2017|Videos of Earth from space|Uploads by Killarnee",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "Assessments": {
+                  "value": "",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "ImageDescription": {
+                  "value": "Can\u2019t get enough of Earth? Then this is for you: an extended playback of Ultra High Definition views of Planet Earth, captured by NASA astronaut Jeff Williams during his mission on the International Space Station in 2016. You\u2019ll see the French Riviera and the Sahara Desert, cross North America from Texas all the way to Canada, and more\u2014this is your source for the view of your home planet from 250 miles up! Fire up the biggest screen you have. Then throw on your favorite music, kick back and watch.",
+                  "source": "commons-desc-page"
+                },
+                "DateTimeOriginal": {
+                  "value": "2017-02-11",
+                  "source": "commons-desc-page"
+                },
+                "Credit": {
+                  "value": "<a rel=\"nofollow\" class=\"external free\" href=\"https://www.nasa.gov/content/ultra-high-definition-video-gallery\">https://www.nasa.gov/content/ultra-high-definition-video-gallery</a>; original file from <a rel=\"nofollow\" class=\"external free\" href=\"https://www.youtube.com/watch?v=7fYKMCCPh28\">https://www.youtube.com/watch?v=7fYKMCCPh28</a>",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "NASA/Jeff Williams",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "UsageTerms": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page"
+                },
+                "AttributionRequired": {
+                  "value": "false",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "Copyrighted": {
+                  "value": "False",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "Restrictions": {
+                  "value": "",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "License": {
+                  "value": "pd",
+                  "source": "commons-templates",
+                  "hidden": ""
+                }
+              },
+              "mime": "video/webm"
+            }
+          ]
+        },
+        {
+          "title": "File:View of Planet Earth (4K).webm",
+          "info": [
+            {
+              "size": 116692784,
+              "width": 3840,
+              "height": 2160,
+              "duration": 97.261,
+              "url": "https://upload.wikimedia.org/wikipedia/commons/a/a7/View_of_Planet_Earth_%284K%29.webm?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:View_of_Planet_Earth_(4K).webm",
+              "descriptionshorturl": "https://commons.wikimedia.org/wiki/Special:Redirect/page/48351824",
+              "extmetadata": {
+                "DateTime": {
+                  "value": "2016-04-24 18:21:54",
+                  "source": "mediawiki-metadata",
+                  "hidden": ""
+                },
+                "ObjectName": {
+                  "value": "View of Planet Earth (4K)",
+                  "source": "mediawiki-metadata"
+                },
+                "CommonsMetadataExtension": {
+                  "value": 1.2,
+                  "source": "extension",
+                  "hidden": ""
+                },
+                "Categories": {
+                  "value": "Media from YouTube|Taken with Red Epic|Videos taken with Red|PD NASA|WebM videos|PD reviewed files|Videos of 2016|NASA videos in 2016|Video display resolution 3840 x 2160|Videos of Earth from space|4K NASA videos",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "Assessments": {
+                  "value": "",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "ImageDescription": {
+                  "value": "NASA monitors Earth's vital signs from land, air and space with a fleet of satellites and ambitious airborne and ground-based observation campaigns. The International Space Station hosts a variety of payloads and experiments supporting climate research, weather predictions, hurricane monitoring, pollution tracking, disaster response and more.\n<p>For more on how NASA uses space to understand our home planet, visit: <a rel=\"nofollow\" class=\"external free\" data-mw-original-href=\"http://www.nasa.gov/earthrightnow\" href=\"https://www.nasa.gov/earthrightnow\">http://www.nasa.gov/earthrightnow</a>\n</p><p>Read more on 4K in space:\nNASA monitors Earth's vital signs from land, air and space with a fleet of satellites and ambitious airborne and ground-based observation campaigns. The International Space Station hosts a variety of payloads and experiments supporting climate research, weather predictions, hurricane monitoring, pollution tracking, disaster response and more.\n</p><p>For more on how NASA uses space to understand our home planet, visit: <a rel=\"nofollow\" class=\"external free\" data-mw-original-href=\"http://www.nasa.gov/earthrightnow\" href=\"https://www.nasa.gov/earthrightnow\">http://www.nasa.gov/earthrightnow</a>\n</p><p>Read more on 4K in space:\n</p>\n<a rel=\"nofollow\" class=\"external free\" data-mw-original-href=\"http://www.nasa.gov/mission_pages/station/research/news/red_epic_dragon_camera\" href=\"https://www.nasa.gov/mission_pages/station/research/news/red_epic_dragon_camera\">http://www.nasa.gov/mission_pages/station/research/news/red_epic_dragon_camera</a>",
+                  "source": "commons-desc-page"
+                },
+                "DateTimeOriginal": {
+                  "value": "2016-04-19",
+                  "source": "commons-desc-page"
+                },
+                "Credit": {
+                  "value": "<bdi lang=\"en\" dir=\"ltr\"><a href=\"//commons.wikimedia.org/wiki/Commons:YouTube_files\" title=\"Commons:YouTube files\">YouTube</a>: <a rel=\"nofollow\" class=\"external text\" href=\"https://www.youtube.com/watch?v=oFDeNcu3mnc\"><bdi lang=\"\">Ultra High Definition (4K) View of Planet Earth</bdi></a> \u2013 View/save archived versions on <a rel=\"nofollow\" class=\"external text\" href=\"https://web.archive.org/web/*/https://www.youtube.com/watch?v=oFDeNcu3mnc\">archive.org</a></bdi>",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "NASA Johnson",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "UsageTerms": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page"
+                },
+                "AttributionRequired": {
+                  "value": "false",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "Copyrighted": {
+                  "value": "False",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "Restrictions": {
+                  "value": "",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "License": {
+                  "value": "pd",
+                  "source": "commons-templates",
+                  "hidden": ""
+                }
+              },
+              "mime": "video/webm"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "Internet Archive",
+      "url": "https://archive.org/advancedsearch.php?q=mediatype%3Amovies+AND+licenseurl%3A%2Acreativecommons.org%2Fpublicdomain%2Fzero%2A&rows=2&output=json&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=licenseurl",
+      "kind": "public_read_probe",
+      "tested_at": "2026-11-16T19:00:38.948192+00:00",
+      "status": 200,
+      "content_type": "application/json",
+      "bytes_read": 69,
+      "json_valid": true,
+      "top_level_keys": [
+        "error"
+      ],
+      "results": []
+    },
+    {
+      "source": "Library of Congress",
+      "url": "https://www.loc.gov/film-and-videos/?fo=json&c=2&at=results",
+      "kind": "public_read_probe",
+      "tested_at": "2026-11-16T19:00:38.950215+00:00",
+      "status": 403,
+      "error": "Forbidden"
+    },
+    {
+      "source": "PeerTube",
+      "url": "https://peertube2.cpy.re/api/v1/videos?count=2",
+      "kind": "public_read_probe",
+      "tested_at": "2026-11-16T19:00:39.242675+00:00",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "bytes_read": 9939,
+      "json_valid": true,
+      "top_level_keys": [
+        "total",
+        "data"
+      ],
+      "total": 107078,
+      "results": [
+        {
+          "uuid": "3fe83938-fda8-4add-9812-fc6c80a9868d",
+          "name": "Pourquoi la 3D des ann\u00e9es 90 revient dans le jeu vid\u00e9o \u2013 Anti Syst\u00e8me | Pr\u00e9f\u00e9rences Syst\u00e8mes #1",
+          "licence": {
+            "id": 1,
+            "label": "Attribution"
+          }
+        },
+        {
+          "uuid": "d738e787-3f9d-4d01-8671-a7f82e44ab9d",
+          "name": "Oltre i dati: Wikipedia, il pi\u00f9 grande dataset libero, \u00e8 una democrazia in azione.",
+          "licence": {
+            "id": 2,
+            "label": "Attribution - Share Alike"
+          }
+        }
+      ]
+    },
+    {
+      "source": "Europeana",
+      "url": "https://api.europeana.eu/record/v2/search.json?query=earth&qf=TYPE%3AVIDEO&rows=1",
+      "kind": "public_read_probe",
+      "tested_at": "2026-11-16T19:00:39.444162+00:00",
+      "status": 401,
+      "error": "Unauthorized"
+    },
+    {
+      "source": "NPS",
+      "url": "https://developer.nps.gov/api/v1/multimedia/videos?limit=1",
+      "kind": "public_read_probe",
+      "tested_at": "2026-11-16T19:00:39.696288+00:00",
+      "status": 403,
+      "error": "Forbidden"
+    },
+    {
+      "source": "USGS ScienceBase",
+      "url": "https://www.sciencebase.gov/catalog/items?format=json&q=video&max=2",
+      "kind": "public_read_probe",
+      "tested_at": "2026-11-16T19:00:39.729226+00:00",
+      "status": 403,
+      "error": "Forbidden"
+    },
+    {
+      "source": "NOAA portal",
+      "url": "https://www.ncei.noaa.gov/access/ocean-exploration/video/help.html",
+      "kind": "public_read_probe",
+      "tested_at": "2026-11-16T19:00:39.736289+00:00",
+      "status": 200,
+      "content_type": "text/html",
+      "bytes_read": 17757,
+      "json_valid": false
+    },
+    {
+      "source": "DVIDS",
+      "url": "https://api.dvidshub.net/search?type=video&q=earth&max_results=1",
+      "kind": "public_read_probe",
+      "tested_at": "2026-11-16T19:00:40.024000+00:00",
+      "status": 403,
+      "error": "Forbidden"
+    },
+    {
+      "source": "Internet Archive query correction",
+      "url": "https://archive.org/advancedsearch.php?q=mediatype%3Amovies+AND+licenseurl%3A%2Acreativecommons.org%2Fpublicdomain%2Fzero%2A&rows=2&output=json&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=licenseurl",
+      "status": 200,
+      "response": {
+        "error": "[BACKEND_ERROR] Invalid or no response from Elasticsearch"
+      }
+    },
+    {
+      "source": "Internet Archive query correction",
+      "url": "https://archive.org/advancedsearch.php?q=mediatype%3Amovies+AND+licenseurl%3A%22http%3A%2F%2Fcreativecommons.org%2Fpublicdomain%2Fzero%2F1.0%2F%22&rows=2&output=json&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=licenseurl",
+      "status": 200,
+      "response": {
+        "responseHeader": {
+          "status": 0,
+          "QTime": 445,
+          "params": {
+            "query": "mediatype:movies AND licenseurl:&quot;http\\:\\/\\/creativecommons.org/publicdomain/zero/1.0/&quot;",
+            "qin": "mediatype:movies AND licenseurl:&quot;http://creativecommons.org/publicdomain/zero/1.0/&quot;",
+            "fields": "identifier,title,licenseurl",
+            "wt": "json",
+            "rows": 2,
+            "start": 0
+          }
+        },
+        "response": {
+          "numFound": 36909,
+          "start": 0,
+          "docs": [
+            {
+              "identifier": "what-were-they-thinking-takes.-tdk",
+              "licenseurl": "http://creativecommons.org/publicdomain/zero/1.0/",
+              "title": "What Were They Thinking Takes. 7z"
+            },
+            {
+              "identifier": "green-belt-module-5-eudamed-and-udi-20220225-180554-meeting-recording",
+              "licenseurl": "http://creativecommons.org/publicdomain/zero/1.0/",
+              "title": "Green Belt Module 5 EUDAMED And UDI 20220225 180554 Meeting Recording"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "source": "Internet Archive query correction",
+      "url": "https://archive.org/advancedsearch.php?q=mediatype%3Amovies+AND+%28licenseurl%3A%22https%3A%2F%2Fcreativecommons.org%2Fpublicdomain%2Fzero%2F1.0%2F%22+OR+licenseurl%3A%22http%3A%2F%2Fcreativecommons.org%2Fpublicdomain%2Fzero%2F1.0%2F%22%29&rows=2&output=json&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=licenseurl",
+      "status": 200,
+      "response": {
+        "responseHeader": {
+          "status": 0,
+          "QTime": 246,
+          "params": {
+            "query": "mediatype:movies AND (licenseurl:&quot;https\\:\\/\\/creativecommons.org/publicdomain/zero/1.0/&quot; OR licenseurl:&quot;http\\:\\/\\/creativecommons.org/publicdomain/zero/1.0/&quot;)",
+            "qin": "mediatype:movies AND (licenseurl:&quot;https://creativecommons.org/publicdomain/zero/1.0/&quot; OR licenseurl:&quot;http://creativecommons.org/publicdomain/zero/1.0/&quot;)",
+            "fields": "identifier,title,licenseurl",
+            "wt": "json",
+            "rows": 2,
+            "start": 0
+          }
+        },
+        "response": {
+          "numFound": 112531,
+          "start": 0,
+          "docs": [
+            {
+              "identifier": "gb-27-module-5-eudamed-udi-20231215-150423-meeting-recording",
+              "licenseurl": "https://creativecommons.org/publicdomain/zero/1.0/",
+              "title": "GB 27 Module 5 EUDAMED & UDI 20231215 150423 Meeting Recording"
+            },
+            {
+              "identifier": "zarke1-Abstract_545",
+              "licenseurl": "https://creativecommons.org/publicdomain/zero/1.0/",
+              "title": "Abstract_545"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

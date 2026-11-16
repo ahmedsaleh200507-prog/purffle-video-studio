@@ -1,160 +1,122 @@
-"""Run up to ten independent Purffle video jobs on GitHub Actions."""
+"""Run 1–10 independent jobs; preserve diagnostics and fail on any failed video."""
+from __future__ import annotations
+
 import json
 import os
+import signal
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
-from topic_footage import relevant_background
-from visual_quality import has_visual_detail
 
-OUT = Path("finished")
-OUT.mkdir(exist_ok=True)
-results = []
-if not os.environ.get("GROQ_API_KEY"):
-    print("Missing GROQ_API_KEY in repository Actions secrets.", flush=True)
-    sys.exit(2)
+ROOT = Path(__file__).resolve().parents[1]
 
-for index in range(1, 11):
-    raw = os.environ.get(f"INPUT_{index}", "").strip()
-    if not raw:
-        continue
-    if "|" in raw and raw.split("|", 1)[0].strip().lower() in ("de", "en"):
-        lang, topic = raw.split("|", 1)
-        lang = lang.strip().lower()
-        topic = topic.strip()
-    elif raw[:3].lower() in ("de ", "en "):
+
+def write_json(path: Path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix('.tmp')
+    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
+    tmp.replace(path)
+
+
+def parse_topic(raw: str):
+    raw = raw.strip()
+    if '|' in raw:
+        lang, topic = raw.split('|', 1)
+        if lang.strip().lower() not in ('de', 'en'):
+            raise ValueError('Language prefix must be en| or de|')
+        lang, topic = lang.strip().lower(), topic.strip()
+    elif raw[:3].lower() in ('de ', 'en '):
         lang, topic = raw[:2].lower(), raw[3:].strip()
     else:
-        lang, topic = ("de" if any(ch in raw.lower() for ch in ("warum ", "wie ", "was ", "haben ", "herzen", "oktopusse")) else "en"), raw
-    if not topic:
-        continue
-    target = OUT / f"video_{index:02d}_{lang}"
-    target.mkdir(exist_ok=True)
-    work = Path("output_videos")
-    work.mkdir(exist_ok=True)
-    before = {p.resolve() for p in work.rglob("*.mp4")}
-    cmd = [
-        sys.executable, "-m", "purffle_shorts", "make",
-        "--topic", topic, "--style", "facts", "--lang", lang,
-        "--duration", "25", "--caption-style", "bold",
-        "--resolution", "540x960", "--fps", "24",
-        "--visuals", "pixabay" + (",pexels" if os.environ.get("PEXELS_API_KEY") else "") + (",coverr-video" if os.environ.get("COVERR_API_KEY") else "") + (",europeana-video" if os.environ.get("EUROPEANA_API_KEY") else "") + ",wikimedia-video,nasa-video,archive-video", "--no-review", "--no-upload",
-        "--no-music",
-    ]
-    # Use the original Purffle per-scene search queries with the existing Pixabay key.
-    # Only fall back to custom animated footage if no stock API is configured.
-    background = None
-    if os.environ.get("PIXABAY_API_KEY"):
-        print("MULTI-SOURCE SCENE VISUALS: Pixabay videos + Wikimedia Commons videos (Pexels when configured)",flush=True)
-    elif os.environ.get("PEXELS_API_KEY"):
-        cmd[cmd.index("--visuals")+1] = "pexels,wikimedia-video,nasa-video"
-        print("UPSTREAM SCENE VISUALS: Pexels per-scene search enabled",flush=True)
-    else:
-        try:
-            background = relevant_background(topic, Path("media_cache") / f"video_{index:02d}")
-        except Exception as exc:
-            print("VISUAL PREPARATION ERROR:",repr(exc),flush=True)
-        if background:
-            cmd += ["--background", background, "--layout", "full"]
-        else:
-            print(f"Video {index}: unable to prepare moving visuals",flush=True)
-            results.append({"index":index,"language":lang,"topic":topic,"status":"no_relevant_visual","seconds":0,"files":0})
-            continue
-    print(f"\n=== VIDEO {index}/10 [{lang}] {topic} ===", flush=True)
-    print("VOICE LANGUAGE:",lang,"(expected Edge locale)",flush=True)
-    started = time.monotonic()
-    status = "ok"
-    try:
-        # A stalled video must not block the entire batch.
-        log_path = target / "purffle.log"
-        # Retry once with a different English Edge voice if synthesis stalls.
-        voices = [None, "en-US-GuyNeural"] if lang == "en" else [None]
-        for attempt, fallback_voice in enumerate(voices, 1):
-            child_env = os.environ.copy()
-            if fallback_voice:
-                child_env["TTS_VOICE"] = fallback_voice
-                print("Retrying English voice with",fallback_voice,flush=True)
-            with log_path.open("w" if attempt == 1 else "a", encoding="utf-8") as log:
-                process = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, text=True, env=child_env)
-                try:
-                    process.wait(timeout=110 if lang == "en" else 240)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-                    log.flush()
-                    print(f"Video {index} attempt {attempt} stalled. Last 45 log lines:",flush=True)
-                    print("\\n".join(log_path.read_text(errors="replace").splitlines()[-45:]),flush=True)
-                    if attempt < len(voices):
-                        continue
-                    raise
-                if process.returncode:
-                    log.flush()
-                    print("PURFFLE FAILED, last 35 log lines:",flush=True)
-                    print("\\n".join(log_path.read_text(errors="replace").splitlines()[-35:]),flush=True)
-                    if attempt < len(voices):
-                        continue
-                    raise subprocess.CalledProcessError(process.returncode,cmd)
-                break
-    except subprocess.TimeoutExpired:
-        status = "timeout"
-        print(f"Video {index} timed out after retry; see Purffle log tail above", flush=True)
-    except subprocess.CalledProcessError as exc:
-        status = f"failed (exit {exc.returncode})"
-        print(f"Video {index} failed: {exc}", flush=True)
-    new_files = [p for p in work.rglob("*.mp4") if p.resolve() not in before and p.stat().st_size > 1000]
-    if new_files:
-        for n, source in enumerate(sorted(new_files), 1):
-            destination = target / f"video_{index:02d}_{lang}_{n}.mp4"
-            # Keep already-good footage: color-keying can destroy actual images.
-            if has_visual_detail(source):
-                shutil.copy2(source, destination)
-                print("Original MP4 contains real footage; no overlay needed", flush=True)
-            elif background:
-                print("Blank frame detected; repairing with verified topic footage", flush=True)
-                try:
-                    probe = subprocess.run(
-                        ["ffprobe", "-v", "error", "-select_streams", "v:0",
-                         "-show_entries", "stream=width,height", "-of", "csv=p=0", str(source)],
-                        capture_output=True, text=True, timeout=12, check=True)
-                    w, h = (int(x) for x in probe.stdout.strip().split(",")[:2])
-                    filtergraph = (
-                        f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
-                        f"crop={w}:{h},setsar=1[bg];"
-                        f"[1:v]format=rgba,colorkey=0x0b263d:0.23:0.08[fg];"
-                        f"[bg][fg]overlay=shortest=1:format=auto,format=yuv420p[out]"
-                    )
-                    subprocess.run([
-                        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                        "-stream_loop", "-1", "-i", background, "-i", str(source),
-                        "-filter_complex", filtergraph, "-map", "[out]", "-map", "1:a?",
-                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-                        "-c:a", "copy", "-t", "35", "-shortest", str(destination)
-                    ], check=True, timeout=100)
-                    if not destination.exists() or destination.stat().st_size < 15000 or not has_visual_detail(destination):
-                        raise RuntimeError("Visual repair failed quality check")
-                except Exception as exc:
-                    print("Visual repair failed:", repr(exc), flush=True)
-                    destination.unlink(missing_ok=True)
-                    status = "visual_overlay_failed"
-            else:
-                print("Blank/low-detail output rejected; no valid visual fallback",flush=True)
-                status = "visual_quality_failed"
-        if any(target.glob("*.mp4")):
-            status = "ok"
-        if status == "ok" and not any(target.glob("*.mp4")):
-            status = "visual_overlay_failed"
-    else:
-        status = "no_mp4" if status == "ok" else status
-    results.append({"index": index, "language": lang, "topic": topic, "status": status,
-                    "seconds": round(time.monotonic() - started, 1), "files": len(list(target.glob("*.mp4")))})
-    Path("batch-results.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"=== VIDEO {index} DONE: {status} ===", flush=True)
+        lang, topic = 'en', raw
+    if not topic or len(topic) > 2000:
+        raise ValueError('Topic must contain 1–2000 characters')
+    return lang, topic
 
-print("\nFinished:", json.dumps(results, ensure_ascii=False), flush=True)
-if not results:
-    print("No video topics were supplied.", flush=True)
-    sys.exit(1)
-if not any(r["status"] == "ok" for r in results):
-    sys.exit(1)
+
+def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
+    target = out / f'video_{index:02d}'
+    target.mkdir(parents=True, exist_ok=True)
+    result = {'index': index, 'topic': raw, 'status': 'failed', 'mp4': None}
+    started = time.monotonic()
+    log_path = target / 'purffle.log'
+    try:
+        lang, topic = parse_topic(raw)
+        result.update(language=lang, topic=topic)
+        env = os.environ.copy()
+        env.update(PURFFLE_STRICT='1', LANGUAGE=lang, VIDEO_TOPIC=topic,
+                   FOOTAGE_REPORT=str((target / 'footage-report.json').resolve()),
+                   JOB_RESULT=str((target / 'job-result.json').resolve()),
+                   OUTPUT_DIR=str((target / 'render').resolve()),
+                   PYTHONPATH=os.pathsep.join([str(ROOT), str(ROOT / 'scripts')]),
+                   OMP_NUM_THREADS='2', MKL_NUM_THREADS='2', TOKENIZERS_PARALLELISM='false')
+        # No stale result can turn an unsuccessful retry into success.
+        Path(env['JOB_RESULT']).unlink(missing_ok=True)
+        print(f'[VIDEO START] index={index} language={lang} topic={topic!r}', flush=True)
+        with log_path.open('w', encoding='utf-8') as log:
+            proc = subprocess.Popen([sys.executable, str(ROOT / 'scripts/render_job.py')],
+                                    stdout=log, stderr=subprocess.STDOUT, env=env,
+                                    cwd=ROOT, start_new_session=True)
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+                raise RuntimeError(f'Video timed out after {timeout}s; entire process group stopped')
+        if proc.returncode:
+            raise RuntimeError(f'Worker exited with status {proc.returncode}')
+        job = json.loads(Path(env['JOB_RESULT']).read_text(encoding='utf-8'))
+        if job.get('status') != 'ok' or not job.get('mp4') or not Path(job['mp4']).is_file():
+            raise RuntimeError('Worker did not provide a validated successful MP4')
+        result.update(job)
+    except Exception as exc:
+        result.update(status='failed', error=str(exc), mp4=None)
+    finally:
+        if result['status'] != 'ok':
+            # Partial render output is diagnostic failure, never a deliverable.
+            for partial in (target / 'render').rglob('*.mp4'):
+                partial.unlink(missing_ok=True)
+        # Download paths in the report are provenance; raw sources are transient.
+        # Do this only after the worker/process group has stopped and rendered.
+        shutil.rmtree(ROOT / 'media_cache' / 'downloads', ignore_errors=True)
+        result['seconds'] = round(time.monotonic() - started, 1)
+        result['log'] = str(log_path)
+        write_json(target / 'report.json', result)
+        if log_path.exists():
+            lines = log_path.read_text(errors='replace').splitlines()
+            selected = [x for x in lines if any(s in x for s in ('[SOURCE', '[SELECTED', '[REJECT', '[SCENE'))]
+            print('\n'.join(selected), flush=True)
+            if result['status'] != 'ok':
+                print('\n'.join(lines[-50:]), flush=True)
+        print(f"[VIDEO END] index={index} status={result['status']}", flush=True)
+    return result
+
+
+def main():
+    out = ROOT / 'finished'
+    out.mkdir(exist_ok=True)
+    results = []
+    for index in range(1, 11):
+        raw = os.environ.get(f'INPUT_{index}', '').strip()
+        if not raw:
+            continue
+        results.append(run_job(index, raw, out))
+        write_json(ROOT / 'batch-results.json', results)
+    if not results:
+        write_json(ROOT / 'batch-results.json', [])
+        print('No video topics supplied', flush=True)
+    ok = sum(r['status'] == 'ok' for r in results)
+    print(f'[BATCH RESULT] succeeded={ok} failed={len(results)-ok}', flush=True)
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary:
+        with open(summary, 'a', encoding='utf-8') as f:
+            f.write(f'## Purffle V2\n\n{ok}/{len(results)} videos succeeded.\n\n')
+            for r in results:
+                f.write(f"- Video {r['index']}: **{r['status']}** — {r.get('error', r.get('mp4', ''))}\n")
+    return 0 if results and ok == len(results) else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
