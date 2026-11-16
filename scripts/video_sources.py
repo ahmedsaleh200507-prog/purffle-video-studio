@@ -121,3 +121,53 @@ def search_archive_videos(query, MediaItem):
     except Exception as exc:
         print(f"Internet Archive video search unavailable: {exc}",flush=True)
         return []
+
+
+def search_europeana_videos(query, MediaItem):
+    """Europeana Search API: public-domain direct MP4 only, never thumbnails."""
+    import os
+    key = os.environ.get("EUROPEANA_API_KEY", "").strip()
+    if not key:
+        print("[SOURCE CHECK] Europeana skipped: EUROPEANA_API_KEY not set", flush=True)
+        return []
+    try:
+        response = requests.get(
+            "https://api.europeana.eu/record/v2/search.json",
+            params={"query":query, "qf":"TYPE:VIDEO", "media":"true",
+                    "reusability":"open", "rows":30, "profile":"rich"},
+            headers={**HEADERS, "X-Api-Key":key}, timeout=18)
+        response.raise_for_status()
+        results = []
+        for rank, entry in enumerate(response.json().get("items", [])):
+            if str(entry.get("type", "")).upper() != "VIDEO":
+                continue
+            rights = entry.get("rights") or []
+            if isinstance(rights, str):
+                rights = [rights]
+            # Avoid licenses requiring attribution/share-alike handling until
+            # a proper video credits manifest is implemented.
+            if not any("publicdomain/zero/" in str(x).lower() or
+                       "publicdomain/mark/" in str(x).lower()
+                       for x in rights):
+                continue
+            urls = entry.get("edmIsShownBy") or []
+            if isinstance(urls, str):
+                urls = [urls]
+            urls += entry.get("edmHasView") or []
+            for url in urls:
+                if not isinstance(url, str) or not url.startswith("https://"):
+                    continue
+                if not re.search(r"\\.mp4(?:[?#]|$)", url, re.I):
+                    continue
+                title = entry.get("title") or []
+                if isinstance(title, list):
+                    title = " ".join(str(x) for x in title)
+                results.append(MediaItem(
+                    "europeana-video", str(entry.get("id") or rank), "video",
+                    url, 0, 0, credit="Europeana | "+str(entry.get("guid") or ""),
+                    query=query, rank=rank, text=title))
+                break
+        return results
+    except Exception as exc:
+        print(f"Europeana video search unavailable: {exc}", flush=True)
+        return []
