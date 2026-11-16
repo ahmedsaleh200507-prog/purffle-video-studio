@@ -36,7 +36,15 @@ def parse_topic(raw: str):
     elif raw[:3].lower() in ('de ', 'en '):
         lang, topic = raw[:2].lower(), raw[3:].strip()
     else:
-        lang, topic = 'en', raw
+        # Infer German for unprefixed German prose instead of silently
+        # synthesizing an English voice. Explicit de| / en| always wins.
+        import re
+        german_markers = re.findall(
+            r"\\b(?:die|der|das|und|eine|einer|wurden|welcher|diese|doch|vor|jahrhunderten|geheimnisse|menschen|orte)\\b",
+            raw.lower(),
+        )
+        lang, topic = ('de' if len(german_markers) >= 3 or
+                       any(ch in raw for ch in 'äöüßÄÖÜ') else 'en'), raw
     if not topic or len(topic) > 2000:
         raise ValueError('Topic must contain 1–2000 characters')
     return lang, topic
