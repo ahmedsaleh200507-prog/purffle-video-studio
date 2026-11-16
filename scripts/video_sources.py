@@ -157,7 +157,7 @@ def search_europeana_videos(query, MediaItem):
             for url in urls:
                 if not isinstance(url, str) or not url.startswith("https://"):
                     continue
-                if not re.search(r"\\.mp4(?:[?#]|$)", url, re.I):
+                if not re.search(r"\.mp4(?:[?#]|$)", url, re.I):
                     continue
                 title = entry.get("title") or []
                 if isinstance(title, list):
