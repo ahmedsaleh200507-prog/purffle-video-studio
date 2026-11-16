@@ -80,9 +80,9 @@ print("Scene-only queries and balanced 25% metadata relevance gate enabled", flu
 # If no real motion footage can be sourced, fail explicitly rather than exporting
 # a misleading 'successful' MP4 with blank/animated filler.
 search_needle = '''        ck = (source, query.lower())'''
-search_patch = '''        if source in ("wikimedia-video", "nasa-video", "coverr-video", "archive-video"):
-            from video_sources import search_wikimedia_videos, search_nasa_videos, search_coverr_videos, search_archive_videos
-            handlers = {"wikimedia-video": search_wikimedia_videos, "nasa-video": search_nasa_videos, "coverr-video": search_coverr_videos, "archive-video": search_archive_videos}
+search_patch = '''        if source in ("wikimedia-video", "nasa-video", "coverr-video", "archive-video", "europeana-video"):
+            from video_sources import search_wikimedia_videos, search_nasa_videos, search_coverr_videos, search_archive_videos, search_europeana_videos
+            handlers = {"wikimedia-video": search_wikimedia_videos, "nasa-video": search_nasa_videos, "coverr-video": search_coverr_videos, "archive-video": search_archive_videos, "europeana-video": search_europeana_videos}
             found = handlers[source](query, MediaItem)
             print(f"[SOURCE CHECK] {source}: {len(found)} video candidates for {query!r}", flush=True)
             return found
