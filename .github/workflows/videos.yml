@@ -64,6 +64,7 @@ jobs:
       SEO_KEYWORDS: 'false'
       VISUAL_SOURCES: pixabay,pexels,coverr-video,europeana-video,wikimedia-video,nasa-video,archive-video
       TTS_ENGINE: edge
+      EDGE_TTS_TIMEOUT_SECONDS: '45'
       RESOLUTION: 1080x1920
       FPS: '30'
       PRESET: medium
@@ -103,15 +104,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-dev.txt
-      - name: Restore model and API metadata cache
-        uses: actions/cache@v4
+      - name: Restore local model cache
+        id: model-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             .cache/huggingface
-            media_cache/api
-          key: purffle-v2-cache-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}-${{ github.run_id }}
+            .cache/piper
+          key: purffle-v2-model-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}
+      - name: Restore API metadata cache
+        uses: actions/cache/restore@v4
+        with:
+          path: media_cache/api
+          key: purffle-v2-api-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
-            purffle-v2-cache-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}-
+            purffle-v2-api-${{ runner.os }}-
       - name: Syntax and regression tests
         run: |
           python -m compileall -q scripts sitecustomize.py
@@ -126,6 +133,20 @@ jobs:
         env:
           PURFFLE_STRICT: '1'
         run: python scripts/batch.py
+      - name: Save local models even when production fails
+        if: always() && steps.model-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache/huggingface
+            .cache/piper
+          key: purffle-v2-model-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}
+      - name: Save API responses and quota cooldowns
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: media_cache/api
+          key: purffle-v2-api-${{ runner.os }}-${{ github.run_id }}
       - name: Remove transient render work
         if: always()
         run: find finished -type d -name work -prune -exec rm -rf {} + 2>/dev/null || true

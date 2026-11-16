@@ -70,3 +70,21 @@ def test_accepts_complete_validated_output(output):
         info, provenance = validate_result(video, {'voice': 'edge:test', 'timing': 'native'}, captions, report)
     assert info['width'] == 1080
     assert provenance['scenes'][0]['status'] == 'selected'
+
+
+def test_local_voice_requires_pinned_licensed_native_alignment(output, tmp_path):
+    from local_voice import provenance
+    video, captions, report = output
+    meta = {'voice': 'piper:en_US-ljspeech-high', 'timing': 'aligned'}
+    voice_report = tmp_path / 'voice-report.json'
+    voice_data = {'state': 'ready', 'engine': 'piper', 'voice': 'en_US-ljspeech-high',
+                  'timing': 'aligned', 'provenance': provenance('en')}
+    with patch('media_validation.QualityValidator.validate', return_value=probe()):
+        with pytest.raises(RuntimeError, match='report missing'):
+            validate_result(video, meta, captions, report, voice_report)
+        voice_report.write_text(json.dumps(voice_data))
+        validate_result(video, meta, captions, report, voice_report)
+        voice_data['provenance']['model_sha256'] = 'a' * 64
+        voice_report.write_text(json.dumps(voice_data))
+        with pytest.raises(RuntimeError, match='provenance invalid'):
+            validate_result(video, meta, captions, report, voice_report)

@@ -17,7 +17,8 @@ def test_language_and_raw_topic():
         batch.parse_topic('en| ')
 
 
-def test_nonzero_worker_never_success_even_when_partial_mp4_exists(tmp_path):
+def test_nonzero_worker_never_success_even_when_partial_mp4_exists(tmp_path, monkeypatch):
+    monkeypatch.setattr(batch, 'ROOT', tmp_path)
     target = tmp_path / 'video_01'
     target.mkdir()
     (target / 'partial.mp4').write_bytes(b'partial output')

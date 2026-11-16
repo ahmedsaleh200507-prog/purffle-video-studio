@@ -139,23 +139,42 @@ class StrictVisuals:
                 break
             candidates = self.registry.search(source, data["visual_search_query"])
             print(f"[SOURCE CHECK] {source}: {len(candidates)} candidates scene={idx+1}", flush=True)
-            for item in candidates[:max_candidates]:
-                if time.monotonic() - scene_start > 240:
-                    scene["rejections"].append({"source": source, "reason": "scene_budget_exhausted"})
-                    break
+            ranked = []
+            for item in candidates:
                 parts = urlsplit(item.url)
                 url_key = parts.netloc.lower() + parts.path
-                if item.kind != "video" or item.key in self.used or url_key in self.used_urls:
-                    scene["rejections"].append({"source": source, "id": item.id, "reason": "non_video_or_duplicate"})
-                    continue
-                path, digest = None, None
                 try:
+                    if item.kind != "video" or item.key in self.used or url_key in self.used_urls:
+                        raise ValueError("non_video_or_duplicate")
+                    if item.width > 0 and item.height > 0 and min(item.width, item.height) < 1080:
+                        raise ValueError(f"Known source below 1080 short side: {item.width}x{item.height}")
                     if not LicenseValidator.validate(item.extra.get("license")):
                         raise ValueError("Unverified or incompatible candidate license")
-                    if hasattr(self.matcher, "metadata_score"):
+                    if hasattr(self.matcher, "validate_metadata"):
+                        score = self.matcher.validate_metadata(spec, item.text)
+                    elif hasattr(self.matcher, "metadata_score"):
                         score = self.matcher.metadata_score(spec, item.text)
                         if score < .45:
                             raise ValueError(f"Unrelated metadata (score {score:.3f})")
+                    else:
+                        score = 0.0  # injected test matchers have no metadata model
+                    ranked.append((score, item, url_key))
+                except Exception as exc:
+                    reason = _redact(f"{type(exc).__name__}: {exc}")[:450]
+                    scene["rejections"].append({"source": source, "id": item.id, "reason": reason,
+                                                "stage": "metadata_preflight"})
+                    print(f"[REJECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} preflight={reason}", flush=True)
+            # Provider orientation/resolution ordering must never hide a more
+            # relevant result outside the bounded download shortlist.
+            ranked.sort(key=lambda row: (-row[0], row[1].rank,
+                                          -int(row[1].height > row[1].width),
+                                          -min(row[1].width, row[1].height)))
+            for score, item, url_key in ranked[:max_candidates]:
+                if time.monotonic() - scene_start > 240:
+                    scene["rejections"].append({"source": source, "reason": "scene_budget_exhausted"})
+                    break
+                path, digest = None, None
+                try:
                     path = self.downloader.download(item.url)
                     digest = self.downloader.digest(path)
                     if digest in self.used_hashes:
@@ -317,14 +336,14 @@ class _SpeechDeadline(BaseException):
     """Escape upstream retry loops, which catch ordinary Exception subclasses."""
 
 
-def with_edge_deadline(synthesize, timeout_seconds=180):
+def with_voice_deadline(synthesize, timeout_seconds=180, stage="Edge TTS"):
     """Bound the whole Edge stage, including upstream retry/backoff time.
 
     Actions runs the worker on Linux's main thread. Refuse unsupported invocation
     instead of silently running synthesis without the promised deadline.
     """
     if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "setitimer"):
-        raise RuntimeError("Edge TTS deadline requires a Linux/POSIX main-thread worker")
+        raise RuntimeError(f"{stage} deadline requires a Linux/POSIX main-thread worker")
     timeout_seconds = max(1, min(180, float(timeout_seconds)))
     previous_handler = signal.getsignal(signal.SIGALRM)
     previous_timer = signal.getitimer(signal.ITIMER_REAL)
@@ -339,13 +358,90 @@ def with_edge_deadline(synthesize, timeout_seconds=180):
         try:
             return synthesize()
         except _SpeechDeadline as exc:
-            raise RuntimeError(f"Edge TTS deadline exceeded ({timeout_seconds:g}s); no silent fallback permitted") from exc
+            raise RuntimeError(f"{stage} deadline exceeded ({timeout_seconds:g}s); no silent fallback permitted") from exc
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous_handler)
         if previous_timer[0] > 0:
             remaining = max(0.000001, previous_timer[0] - (time.monotonic() - started))
             signal.setitimer(signal.ITIMER_REAL, remaining, previous_timer[1])
+
+
+def with_edge_deadline(synthesize, timeout_seconds=180):
+    return with_voice_deadline(synthesize, timeout_seconds, stage="Edge TTS")
+
+
+def _validate_free_speech(speech, engine, language=None):
+    if speech.engine != engine or not speech.words or not str(speech.voice):
+        raise RuntimeError("Narration engine or native word boundaries are invalid")
+    if speech.timing not in (("native", "aligned") if engine == "edge" else ("aligned",)):
+        raise RuntimeError("Narration lacks verified native/aligned word timing")
+    if not math.isfinite(speech.duration) or speech.duration <= 0:
+        raise RuntimeError("Narration duration is invalid")
+    previous_start = -1
+    for word in speech.words:
+        if (not math.isfinite(word.start) or not math.isfinite(word.end)
+                or word.start < previous_start or word.start < 0
+                or word.end <= word.start or word.end > speech.duration + .25):
+            raise RuntimeError("Narration word boundaries are invalid")
+        previous_start = word.start
+    if not Path(speech.audio).is_file() or Path(speech.audio).stat().st_size == 0:
+        raise RuntimeError("Narration audio is missing")
+    if engine == "piper":
+        proof = getattr(speech, "provenance", {})
+        if proof.get("alignment") != "native_phoneme_samples":
+            raise RuntimeError("Piper narration has no native sample alignment provenance")
+        approved = {"en": ("en_US-ljspeech-high", "Public-Domain"),
+                    "de": ("de_DE-thorsten-medium", "CC0-1.0")}
+        expected = approved.get(language)
+        if expected is None or proof.get("model") != expected[0]:
+            raise RuntimeError("Piper model is outside the approved free model/language allowlist")
+        license_info = proof.get("license", {})
+        digest = proof.get("model_sha256", "")
+        if (not isinstance(license_info, dict) or license_info.get("id") != expected[1]
+                or not str(license_info.get("url", "")).startswith("https://")
+                or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)
+                or not str(proof.get("model_url", "")).startswith("https://")):
+            raise RuntimeError("Piper model license/hash provenance is incomplete")
+
+
+def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_synthesize):
+    """Use Edge first, then only the audited local Piper voice with real alignment."""
+    if settings.offline or settings.tts_engine != "edge" or settings.language not in ("de", "en"):
+        raise RuntimeError("Strict production requires free Edge/local narration in de/en")
+    report = {"state": "synthesizing", "language": settings.language, "attempts": []}
+    voice_report = os.getenv("VOICE_REPORT")
+    if not voice_report and os.getenv("FOOTAGE_REPORT"):
+        voice_report = str(Path(os.environ["FOOTAGE_REPORT"]).with_name("voice-report.json"))
+    if not voice_report:
+        voice_report = str(Path(work) / "voice-report.json")
+
+    def save():
+        _atomic_json(voice_report, report)
+
+    save()
+    for engine, synthesize, stage in (("edge", edge_synthesize, "Edge TTS"),
+                                      ("piper", local_synthesize, "Local Piper TTS")):
+        started = time.monotonic()
+        try:
+            timeout = os.getenv("EDGE_TTS_TIMEOUT_SECONDS", "180") if engine == "edge" else 180
+            speech = with_voice_deadline(synthesize, timeout_seconds=timeout, stage=stage)
+            _validate_free_speech(speech, engine, settings.language)
+            report["attempts"].append({"engine": engine, "status": "ok", "seconds": round(time.monotonic()-started, 3)})
+            report.update(state="ready", engine=engine, voice=speech.voice, timing=speech.timing,
+                          duration=speech.duration, word_count=len(speech.words),
+                          provenance=getattr(speech, "provenance", {}))
+            save()
+            print(f"[VOICE SELECTED] engine={engine} voice={speech.voice} timing={speech.timing}", flush=True)
+            return speech
+        except Exception as exc:
+            reason = _redact(f"{type(exc).__name__}: {exc}")[:600]
+            report["attempts"].append({"engine": engine, "status": "failed", "seconds": round(time.monotonic()-started, 3), "error": reason})
+            save()
+            print(f"[VOICE FAILED] engine={engine} reason={reason}", flush=True)
+    report["state"] = "failed"
+    save()
+    raise RuntimeError("Free narration failed for both Edge and approved local Piper; see voice-report.json")
 
 
 def install():
@@ -418,14 +514,14 @@ exact suitable footage cannot be verified; never weaken the scene to hide that f
         return system, user
 
     def speak(self, screenplay, work, settings):
-        if settings.offline or settings.tts_engine != "edge" or settings.language not in ("de", "en"):
-            raise RuntimeError("Strict production requires online free Edge narration in de/en")
-        speech = with_edge_deadline(
-            lambda: original_speak(self, screenplay, work, settings),
-            timeout_seconds=os.getenv("EDGE_TTS_TIMEOUT_SECONDS", "180"))
-        if speech.engine != "edge" or speech.timing not in ("native", "aligned") or not speech.words:
-            raise RuntimeError("Narration lacks verified native/aligned word timing")
-        return speech
+        def local_synthesize():
+            from local_voice import synthesize
+            return synthesize(screenplay.narration, Path(work) / "local-voice", settings)
+
+        return speak_with_free_fallback(
+            screenplay, work, settings,
+            edge_synthesize=lambda: original_speak(self, screenplay, work, settings),
+            local_synthesize=local_synthesize)
 
     def background(settings, seconds):
         if settings.background_video:

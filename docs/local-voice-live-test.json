@@ -1,0 +1,155 @@
+[
+  {
+    "language": "en",
+    "audio": "/tmp/purffle-piper-production-smoke/en/voice-piper.wav",
+    "duration": 3.1230839002267574,
+    "seconds": 4.128,
+    "words": [
+      {
+        "text": "These",
+        "start": 0.08126984126984127,
+        "end": 0.3599092970521542
+      },
+      {
+        "text": "fish",
+        "start": 0.3947392290249433,
+        "end": 0.592108843537415
+      },
+      {
+        "text": "swim",
+        "start": 0.6733786848072563,
+        "end": 0.9287981859410431
+      },
+      {
+        "text": "in",
+        "start": 0.9868480725623583,
+        "end": 1.1261678004535147
+      },
+      {
+        "text": "the",
+        "start": 1.1609977324263039,
+        "end": 1.230657596371882
+      },
+      {
+        "text": "sea.",
+        "start": 1.3235374149659864,
+        "end": 1.5905668934240362
+      },
+      {
+        "text": "There",
+        "start": 1.6253968253968254,
+        "end": 1.799546485260771
+      },
+      {
+        "text": "are",
+        "start": 1.8343764172335602,
+        "end": 1.9272562358276644
+      },
+      {
+        "text": "100",
+        "start": 1.9736961451247166,
+        "end": 2.449705215419501
+      },
+      {
+        "text": "fish.",
+        "start": 2.5309750566893423,
+        "end": 3.076643990929705
+      }
+    ],
+    "provenance": {
+      "engine": "piper",
+      "model": "en_US-ljspeech-high",
+      "model_revision": "e9ab671f2a0e50a701b34361136ba3e6a3a9eb0c",
+      "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/e9ab671f2a0e50a701b34361136ba3e6a3a9eb0c/en/en_US/ljspeech/high/en_US-ljspeech-high.onnx",
+      "model_sha256": "5d4f08ba6a2a48c44592eed3ce56bf85e9de3dd4e20df90541ae68a8310c029a",
+      "license": {
+        "id": "Public-Domain",
+        "source": "https://keithito.com/LJ-Speech-Dataset/",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/e9ab671f2a0e50a701b34361136ba3e6a3a9eb0c/en/en_US/ljspeech/high/MODEL_CARD"
+      },
+      "alignment": "native_phoneme_samples",
+      "software_license": "GPL-3.0-or-later",
+      "software_source": "https://github.com/OHF-Voice/piper1-gpl",
+      "method": "Original tokens phonemized separately, synthesized together; native phoneme-ID sample spans",
+      "sample_rate": 22050,
+      "audio_samples": 68864,
+      "word_count": 10,
+      "timing": "aligned",
+      "timing_source": "native_phoneme_samples"
+    }
+  },
+  {
+    "language": "de",
+    "audio": "/tmp/purffle-piper-production-smoke/de/voice-piper.wav",
+    "duration": 2.9837641723356008,
+    "seconds": 1.063,
+    "words": [
+      {
+        "text": "Diese",
+        "start": 0.2089795918367347,
+        "end": 0.4527891156462585
+      },
+      {
+        "text": "Fische",
+        "start": 0.5108390022675737,
+        "end": 0.7778684807256235
+      },
+      {
+        "text": "schwimmen",
+        "start": 0.8475283446712019,
+        "end": 1.1377777777777778
+      },
+      {
+        "text": "im",
+        "start": 1.1609977324263039,
+        "end": 1.230657596371882
+      },
+      {
+        "text": "Meer.",
+        "start": 1.253877551020408,
+        "end": 1.6370068027210884
+      },
+      {
+        "text": "Es",
+        "start": 1.6718367346938776,
+        "end": 1.7298866213151927
+      },
+      {
+        "text": "sind",
+        "start": 1.7531065759637188,
+        "end": 1.9272562358276644
+      },
+      {
+        "text": "100",
+        "start": 1.9853061224489796,
+        "end": 2.403265306122449
+      },
+      {
+        "text": "Fische.",
+        "start": 2.449705215419501,
+        "end": 2.914104308390023
+      }
+    ],
+    "provenance": {
+      "engine": "piper",
+      "model": "de_DE-thorsten-medium",
+      "model_revision": "e9ab671f2a0e50a701b34361136ba3e6a3a9eb0c",
+      "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/e9ab671f2a0e50a701b34361136ba3e6a3a9eb0c/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx",
+      "model_sha256": "fd270eb3d1ebf91d763f8a0f949b1b1bebdfefaea18c3aaf8577dd34536e064f",
+      "license": {
+        "id": "CC0-1.0",
+        "source": "https://github.com/thorstenMueller/Thorsten-Voice",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/e9ab671f2a0e50a701b34361136ba3e6a3a9eb0c/de/de_DE/thorsten/medium/MODEL_CARD"
+      },
+      "alignment": "native_phoneme_samples",
+      "software_license": "GPL-3.0-or-later",
+      "software_source": "https://github.com/OHF-Voice/piper1-gpl",
+      "method": "Original tokens phonemized separately, synthesized together; native phoneme-ID sample spans",
+      "sample_rate": 22050,
+      "audio_samples": 65792,
+      "word_count": 9,
+      "timing": "aligned",
+      "timing_source": "native_phoneme_samples"
+    }
+  }
+]

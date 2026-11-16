@@ -10,7 +10,7 @@ from pathlib import Path
 from batch import write_json
 
 
-def validate_result(video: Path, metadata: dict, captions: Path, footage_report: Path):
+def validate_result(video: Path, metadata: dict, captions: Path, footage_report: Path, voice_report: Path | None = None):
     from media_validation import QualityValidator
     info = QualityValidator().validate(video)
     if (info['width'], info['height']) != (1080, 1920):
@@ -22,8 +22,26 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
                                         capture_output=True, text=True, check=True, timeout=30).stdout)
         if not any(x.get('codec_type') == 'audio' for x in data.get('streams', [])):
             raise RuntimeError('MP4 has no narration audio stream')
-    if not str(metadata.get('voice', '')).startswith('edge:') or metadata.get('timing') not in ('native', 'aligned'):
+    voice = str(metadata.get('voice', ''))
+    if not voice.startswith(('edge:', 'piper:')) or metadata.get('timing') not in ('native', 'aligned'):
         raise RuntimeError('Narration does not have verified native/aligned timing')
+    if voice.startswith('piper:'):
+        if voice_report is None or not voice_report.is_file():
+            raise RuntimeError('Local voice alignment/license report missing')
+        proof = json.loads(voice_report.read_text(encoding='utf-8'))
+        provenance = proof.get('provenance', {})
+        approved = {'en_US-ljspeech-high': 'Public-Domain', 'de_DE-thorsten-medium': 'CC0-1.0'}
+        model = voice.partition(':')[2]
+        from local_voice import provenance as expected_provenance
+        expected = expected_provenance('en' if model == 'en_US-ljspeech-high' else 'de')
+        if (model not in approved or proof.get('state') != 'ready' or proof.get('engine') != 'piper'
+                or proof.get('voice') != model or proof.get('timing') != 'aligned'
+                or provenance.get('alignment') != 'native_phoneme_samples'
+                or provenance.get('model') != model
+                or provenance.get('license', {}).get('id') != approved[model]
+                or any(provenance.get(k) != expected[k] for k in ('model_sha256', 'model_revision', 'model_url'))
+                or provenance.get('license', {}).get('url') != expected['license']['url']):
+            raise RuntimeError('Local voice alignment/license provenance invalid')
     if not captions.is_file() or '-->' not in captions.read_text(encoding='utf-8'):
         raise RuntimeError('Synchronized captions missing')
     report = json.loads(footage_report.read_text(encoding='utf-8'))
@@ -58,11 +76,13 @@ def main():
         video = Path(made.video)
         folder = video.parent
         metadata = json.loads((folder / 'metadata.json').read_text(encoding='utf-8'))
-        info, footage = validate_result(video, metadata, folder / 'captions.srt', Path(os.environ['FOOTAGE_REPORT']))
+        voice_report = Path(os.environ['VOICE_REPORT'])
+        info, footage = validate_result(video, metadata, folder / 'captions.srt', Path(os.environ['FOOTAGE_REPORT']), voice_report)
         result.update(status='ok', mp4=str(video), output_probe=info,
                       footage_report=os.environ['FOOTAGE_REPORT'],
                       metadata=str(folder / 'metadata.json'), captions=str(folder / 'captions.srt'),
                       voice=metadata['voice'], caption_timing=metadata['timing'],
+                      voice_report=str(voice_report),
                       test_result='validated_output', sources=sorted({x['source'] for x in footage['scenes']}))
     except Exception as exc:
         logging.exception('Video production failed')

@@ -54,6 +54,7 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
         env = os.environ.copy()
         env.update(PURFFLE_STRICT='1', LANGUAGE=lang, VIDEO_TOPIC=topic,
                    FOOTAGE_REPORT=str((target / 'footage-report.json').resolve()),
+                   VOICE_REPORT=str((target / 'voice-report.json').resolve()),
                    JOB_RESULT=str((target / 'job-result.json').resolve()),
                    OUTPUT_DIR=str((target / 'render').resolve()),
                    PYTHONPATH=os.pathsep.join([str(ROOT), str(ROOT / 'scripts')]),

@@ -316,3 +316,131 @@ def test_async_edge_stream_has_its_own_deadline():
 
     with pytest.raises(TimeoutError):
         collect_edge_chunks(StalledStream(), timeout_seconds=.01)
+
+
+def fake_speech(tmp_path, engine="edge"):
+    path = tmp_path / (engine + ".wav")
+    path.write_bytes(b"mock audio; waveform decoding is tested separately")
+    speech = SimpleNamespace(engine=engine, timing="native" if engine == "edge" else "aligned",
+                             audio=path, duration=1.0, voice="test", words=[SimpleNamespace(start=0, end=.7)])
+    if engine == "piper":
+        speech.provenance = {"engine": "piper", "model": "de_DE-thorsten-medium",
+                             "model_url": "https://huggingface.co/approved-model",
+                             "model_sha256": "a" * 64,
+                             "license": {"id": "CC0-1.0", "url": "https://huggingface.co/approved-model/MODEL_CARD"},
+                             "alignment": "native_phoneme_samples"}
+    return speech
+
+
+def voice_settings():
+    return SimpleNamespace(offline=False, tts_engine="edge", language="de")
+
+
+def test_free_voice_prefers_valid_edge_and_records_report(tmp_path, monkeypatch):
+    from studio_runtime import speak_with_free_fallback
+    monkeypatch.setenv("VOICE_REPORT", str(tmp_path / "voice-report.json"))
+    expected = fake_speech(tmp_path)
+
+    def forbidden_fallback():
+        raise AssertionError("Local fallback must not run when Edge succeeded")
+
+    result = speak_with_free_fallback(None, tmp_path, voice_settings(), lambda: expected, forbidden_fallback)
+    assert result is expected
+    report = json.loads((tmp_path / "voice-report.json").read_text())
+    assert report["engine"] == "edge" and len(report["attempts"]) == 1
+
+
+def test_free_voice_falls_back_to_audited_piper_after_edge_failure(tmp_path, monkeypatch):
+    from studio_runtime import speak_with_free_fallback
+    monkeypatch.setenv("VOICE_REPORT", str(tmp_path / "voice-report.json"))
+    expected = fake_speech(tmp_path, "piper")
+
+    def refused_edge():
+        raise OSError("websocket 403")
+
+    result = speak_with_free_fallback(None, tmp_path, voice_settings(), refused_edge, lambda: expected)
+    assert result is expected
+    report = json.loads((tmp_path / "voice-report.json").read_text())
+    assert report["engine"] == "piper" and report["timing"] == "aligned"
+    assert report["attempts"][0]["status"] == "failed" and "403" in report["attempts"][0]["error"]
+    assert report["provenance"]["license"]["id"] == "CC0-1.0"
+
+
+def test_free_voice_reports_both_failures_and_throws(tmp_path, monkeypatch):
+    from studio_runtime import speak_with_free_fallback
+    monkeypatch.setenv("VOICE_REPORT", str(tmp_path / "voice-report.json"))
+
+    def failure():
+        raise RuntimeError("unavailable")
+
+    with pytest.raises(RuntimeError, match="failed for both Edge and approved local Piper"):
+        speak_with_free_fallback(None, tmp_path, voice_settings(), failure, failure)
+    report = json.loads((tmp_path / "voice-report.json").read_text())
+    assert report["state"] == "failed" and len(report["attempts"]) == 2
+
+
+@pytest.mark.parametrize("violation", ["license", "engine", "timing", "language", "samples"])
+def test_free_voice_rejects_unapproved_local_fallback(tmp_path, monkeypatch, violation):
+    from studio_runtime import speak_with_free_fallback
+    monkeypatch.setenv("VOICE_REPORT", str(tmp_path / "voice-report.json"))
+    rejected = fake_speech(tmp_path, "piper")
+    if violation == "license":
+        rejected.provenance["license"]["id"] = "Non-Commercial"
+    elif violation == "engine":
+        rejected.engine = "paid-provider"
+    elif violation == "timing":
+        rejected.timing = "estimated"
+    elif violation == "language":
+        rejected.provenance["model"] = "en_US-ljspeech-high"
+    elif violation == "samples":
+        rejected.provenance["alignment"] = "estimated_samples"
+
+    def edge_failed():
+        raise RuntimeError("Edge unavailable")
+
+    with pytest.raises(RuntimeError, match="failed for both"):
+        speak_with_free_fallback(None, tmp_path, voice_settings(), edge_failed, lambda: rejected)
+
+
+class GroundedMatcher(Matcher):
+    def validate_metadata(self, spec, metadata):
+        from media_validation import SceneMatcher
+        return SceneMatcher.validate_metadata(spec, metadata)
+
+
+@pytest.mark.parametrize("earlier_text", ["person playing guitar on a stage", "man picking euro banknote"])
+def test_relevant_fifth_result_outranks_first_four_before_download_limit(strict_env, monkeypatch, earlier_text):
+    monkeypatch.setenv("CANDIDATES_PER_SOURCE", "4")
+    initial = [candidate(str(i), text=earlier_text, width=2160, height=3840, rank=i) for i in range(4)]
+    relevant = candidate("fifth", width=1920, height=1080, rank=4)
+    obj, _, down, _ = visuals(strict_env, {"first": initial + [relevant]}, GroundedMatcher())
+    got = obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
+    assert got.id == "fifth"
+    assert down.urls == [relevant.url]
+
+
+def test_metadata_ties_follow_original_api_rank_before_portrait_size(strict_env):
+    portrait = candidate("portrait", width=2160, height=3840, rank=8)
+    original_top = candidate("original-top", width=1920, height=1080, rank=0)
+    obj, _, down, _ = visuals(strict_env, {"first": [portrait, original_top]}, GroundedMatcher())
+    got = obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
+    assert got.id == "original-top" and len(down.urls) == 1
+
+
+def test_known_720p_result_never_downloaded(strict_env):
+    low = candidate("low", width=1280, height=720)
+    obj, _, down, _ = visuals(strict_env, {"first": [low]}, GroundedMatcher())
+    with pytest.raises(RuntimeError, match="No suitable verified REAL VIDEO"):
+        obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
+    assert not down.urls
+    assert "below 1080" in obj.report["scenes"][0]["rejections"][0]["reason"]
+
+
+@pytest.mark.parametrize("metadata", ["young man picking banknote on sidewalk", "young man euro banknote on sidewalk"])
+def test_full_object_and_action_gate_runs_before_download(strict_env, metadata):
+    invalid = candidate(text=metadata)
+    obj, _, down, _ = visuals(strict_env, {"first": [invalid]}, GroundedMatcher())
+    with pytest.raises(RuntimeError, match="No suitable verified REAL VIDEO"):
+        obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
+    assert not down.urls
+    assert obj.report["scenes"][0]["rejections"][0]["stage"] == "metadata_preflight"

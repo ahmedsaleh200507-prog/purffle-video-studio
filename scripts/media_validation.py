@@ -360,6 +360,22 @@ class SceneMatcher:
         return len(wanted & have) / len(wanted)
 
     @classmethod
+    def validate_metadata(cls, spec: SceneSpec, metadata: str) -> float:
+        """Apply the full scene gate before downloading or running visual inference."""
+        if not isinstance(spec, SceneSpec):
+            spec = SceneSpec.from_dict(spec)
+        if not spec.object or not spec.action or not spec.visual_search_query:
+            raise ValidationError("Incomplete structured scene")
+        score = cls.metadata_score(spec, metadata)
+        have = _terms(metadata)
+        # A shared location or generic 'man' cannot compensate for a missing object.
+        if score < .45 or not _terms(spec.object).issubset(have):
+            raise ValidationError(f"Scene metadata lacks object/action grounding (score {score:.3f})")
+        if _terms(spec.action) and not (_terms(spec.action) & have):
+            raise ValidationError("Scene metadata does not describe the requested action")
+        return score
+
+    @classmethod
     def _load(cls):
         with cls._lock:
             if cls._model is not None:
@@ -393,15 +409,7 @@ class SceneMatcher:
     def match(self, path: Path, spec: SceneSpec, metadata="", *, duration=None) -> dict:
         if not isinstance(spec, SceneSpec):
             spec = SceneSpec.from_dict(spec)
-        if not spec.object or not spec.action or not spec.visual_search_query:
-            raise ValidationError("Incomplete structured scene")
-        metadata_score = self.metadata_score(spec, metadata)
-        have = _terms(metadata)
-        # A shared location or generic 'man' cannot compensate for a missing object.
-        if metadata_score < .45 or not _terms(spec.object).issubset(have):
-            raise ValidationError(f"Scene metadata lacks object/action grounding (score {metadata_score:.3f})")
-        if _terms(spec.action) and not (_terms(spec.action) & have):
-            raise ValidationError("Scene metadata does not describe the requested action")
+        metadata_score = self.validate_metadata(spec, metadata)
         if duration is None:
             duration = float(json.loads(_run(["ffprobe", "-v", "error", *_INPUT_GUARDS, "-show_entries", "format=duration", "-of", "json", str(path)]))["format"]["duration"])
         frames = [_frame(path, max(0, min(float(duration) - .15, t)), 448, preserve_aspect=True)

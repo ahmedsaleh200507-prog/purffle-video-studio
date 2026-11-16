@@ -25,3 +25,11 @@ GitHub Actions yeni çalışma ve gerçekMP4 sonucu, çalıştırma tamamlandı�
 ## Actions ilk V2 denemesi
 
 [43936028564](https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/runs/43936028564), commit368de7e: gerçekGitHub runner kurulumu,regresyonlar,modelyükleme veupstreamkontrolü geçti. Üretimdeki sesbeklemesi incelenirken edge-tts7.3.1 `stream_sync` hatailetiminde deadlock bulundu: işçiparçacığı hatada kuyruğa sonlandırma işareti yazmıyor, `queue.get()` sonsuza dek bekleyebiliyor. Yerelde aynıbelirti gözlendi. Harcanan süreyi sınırlamak için ilkdeneme iptaledildi; bu deneme başarılıMP4 olarak sayılmaz. Güvenli doğrudanasync sesadaptörü ve süre sınırıyla düzeltme eklendi.
+
+## İkinci Actions denemesi ve düzeltmeler
+
+[43937318999](https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/runs/43937318999), commit `d24aca5`: **99 test + 9 alt test geçti**; gerçek GitHub runner'ında model yüklendi. **Dört üretim sağlayıcısı gerçek API aramasından veri döndürdü:** Pixabay20, Wikimedia12, NASA2, Internet Archive6 aday (`ocean waves`). Pexels ve Europeana anahtarları eksikti; Coverr politika nedeniyle atlandı. Secrets değerleri dışa aktarılmadı.
+
+İngilizce ses aşaması180s sınırında açık hatayla durdu. Almanca Edge sesi üretildi; kaynak aşamasına ulaşıldı. Dört Pixabay adayı, nesne/eylem eksikliği, görsel eşleşme veya hareket kontrolü nedeniyle reddedildi; diğer kaynaklar bu uzun sorguda boş döndü. **0/2 MP4**, workflow doğru olarak başarısız. Hata sonrası ikinci videonun devam ettiği gerçek çalışmada kanıtlandı. Başarısız işin kısmiMP4'leri teslim edilmedi.
+
+Bu kanıta göre Edge kesintisine karşı [ücretsiz yerel Piper](LOCAL_VOICE_OPTIONS.md) yedeği eklendi; DE+EN gerçek sentez ve native fonem örneklerinden zamanlama doğrulandı ([ses kanıtı](local-voice-live-test.json)). Yalnız lisansı ve SHA256'sı sabitlenmiş iki model kabul edilir. Ayrıca kaynakların ilk dört dikey/yüksek çözünürlüklü adayla sınırlandırılması yerine önce sahne metadatası ve API uygunluk sırasıyla değerlendirilmesi sağlandı; eşikler düşürülmedi.
