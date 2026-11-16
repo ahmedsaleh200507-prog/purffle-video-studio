@@ -32,7 +32,7 @@ media_path = Path(media.__file__)
 media_source = media_path.read_text(encoding="utf-8")
 old = '''            else:
                 best = max(fresh, key=lambda c: _score(c, need, self.s.orientation, query))
-            print(f"[SELECTED FOOTAGE] provider={best.source} id={best.key} url={best.url} query={query!r} size={best.width}x{best.height}", flush=True)
+            print(f"[SELECTED FOOTAGE] provider={getattr(best, 'source', 'unknown')} id={getattr(best, 'key', 'unknown')} url={getattr(best, 'url', 'unknown')} query={query!r} size={getattr(best, 'width', 0)}x{getattr(best, 'height', 0)}", flush=True)
             self.used.add(best.key)'''
 new = '''            else:
                 # Pixabay/Pexels metadata is imperfect, but never knowingly select a
