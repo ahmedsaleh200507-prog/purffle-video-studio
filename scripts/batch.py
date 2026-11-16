@@ -7,6 +7,7 @@ import signal
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -16,7 +17,12 @@ ROOT = Path(__file__).resolve().parents[1]
 def write_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix('.tmp')
-    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
+    content = json.dumps(value, ensure_ascii=False, indent=2)
+    for name in ('GROQ_API_KEY', 'PIXABAY_API_KEY', 'PEXELS_API_KEY', 'COVERR_API_KEY', 'EUROPEANA_API_KEY'):
+        secret = os.environ.get(name, '')
+        if secret:
+            content = content.replace(secret, '[REDACTED]')
+    tmp.write_text(content, encoding='utf-8')
     tmp.replace(path)
 
 
@@ -57,14 +63,27 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
         print(f'[VIDEO START] index={index} language={lang} topic={topic!r}', flush=True)
         with log_path.open('w', encoding='utf-8') as log:
             proc = subprocess.Popen([sys.executable, str(ROOT / 'scripts/render_job.py')],
-                                    stdout=log, stderr=subprocess.STDOUT, env=env,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
                                     cwd=ROOT, start_new_session=True)
+            def relay():
+                for line in proc.stdout:
+                    for name in ('GROQ_API_KEY', 'PIXABAY_API_KEY', 'PEXELS_API_KEY', 'COVERR_API_KEY', 'EUROPEANA_API_KEY'):
+                        secret = env.get(name, '')
+                        if secret:
+                            line = line.replace(secret, '[REDACTED]')
+                    log.write(line)
+                    log.flush()
+                    print(line, end='', flush=True)
+            reader = threading.Thread(target=relay, daemon=True)
+            reader.start()
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
                 raise RuntimeError(f'Video timed out after {timeout}s; entire process group stopped')
+            finally:
+                reader.join(timeout=5)
         if proc.returncode:
             raise RuntimeError(f'Worker exited with status {proc.returncode}')
         job = json.loads(Path(env['JOB_RESULT']).read_text(encoding='utf-8'))

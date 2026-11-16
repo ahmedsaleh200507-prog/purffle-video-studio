@@ -26,6 +26,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
+_CONTAINERS = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,ogg,mpegts,mpeg,avi"
+_INPUT_GUARDS = ["-protocol_whitelist", "file,pipe", "-format_whitelist", _CONTAINERS]
+
+
 class ValidationError(RuntimeError):
     """A candidate cannot be accepted; callers must try another or fail the scene."""
 
@@ -139,6 +143,12 @@ class VideoDownloader:
             self.validate_url(current)
             if time.monotonic() - started > self.total_timeout:
                 raise ValidationError("Download time budget exceeded")
+            # Asset manifests (notably NASA) can contain spaces or Unicode
+            # paths. Encode those while retaining existing signed escapes.
+            parts = urllib.parse.urlsplit(current)
+            current = urllib.parse.urlunsplit((parts.scheme, parts.netloc,
+                urllib.parse.quote(parts.path, safe="/%:@!$&'()*+,;=-._~"),
+                urllib.parse.quote(parts.query, safe="=&%/?+,:;@!$'()*~-._"), ""))
             req = urllib.request.Request(current, headers={
                 "User-Agent": "PurffleVideoStudio/2.0 (+https://github.com/ahmedsaleh200507-prog/purffle-video-studio)",
                 "Accept": "video/*,application/octet-stream;q=0.8", "Accept-Encoding": "identity"})
@@ -212,7 +222,7 @@ def _frame(path: Path, at: float, size=224, *, preserve_aspect=False):
     from PIL import Image
     if preserve_aspect:
         raw = _run(["ffmpeg", "-nostdin", "-v", "error", "-threads", "1", "-ss", f"{at:.4f}",
-                    "-i", str(path), "-frames:v", "1", "-vf", f"scale={size}:{size}:force_original_aspect_ratio=decrease",
+                    *_INPUT_GUARDS, "-i", str(path), "-frames:v", "1", "-vf", f"scale={size}:{size}:force_original_aspect_ratio=decrease",
                     "-threads", "1", "-f", "image2pipe", "-c:v", "png", "-"], raw=True, timeout=25)
         try:
             with Image.open(io.BytesIO(raw)) as im:
@@ -220,7 +230,7 @@ def _frame(path: Path, at: float, size=224, *, preserve_aspect=False):
         except (OSError, ValueError) as exc:
             raise ValidationError("Video frame could not be decoded") from exc
     raw = _run(["ffmpeg", "-nostdin", "-v", "error", "-threads", "1", "-ss", f"{at:.4f}",
-                "-i", str(path), "-frames:v", "1", "-vf", f"scale={size}:{size}",
+                *_INPUT_GUARDS, "-i", str(path), "-frames:v", "1", "-vf", f"scale={size}:{size}",
                 "-threads", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"], raw=True, timeout=25)
     if len(raw) != size * size * 3:
         raise ValidationError("Video frame could not be decoded")
@@ -235,7 +245,7 @@ class QualityValidator:
 
     def validate(self, path: Path, need=0) -> dict:
         from PIL import ImageChops, ImageFilter, ImageStat
-        data = json.loads(_run(["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)]))
+        data = json.loads(_run(["ffprobe", "-v", "error", *_INPUT_GUARDS, "-show_streams", "-show_format", "-of", "json", str(path)]))
         streams = [s for s in data.get("streams", []) if s.get("codec_type") == "video"
                    and not s.get("disposition", {}).get("attached_pic")]
         if not streams:
@@ -285,7 +295,7 @@ class QualityValidator:
         # meet source-HD policy while still requiring enlargement after 9:16 crop.
         portrait_crop_width = min(width, height * 9 / 16)
         return {"width": width, "height": height, "coded_width": coded_width, "coded_height": coded_height,
-                "rotation": rotation, "fps": round(fps, 4), "duration": duration,
+                "rotation": rotation, "container": data.get("format", {}).get("format_name", ""), "fps": round(fps, 4), "duration": duration,
                 "codec": codec, "source_full_hd": min(width, height) >= 1080,
                 "source_4k": min(width, height) >= 2160,
                 "portrait_crop_width": round(portrait_crop_width),
@@ -301,9 +311,30 @@ _SYNONYMS = {"euros": "euro", "banknotes": "banknote", "cash": "money", "banknot
              "running": "run", "runs": "run", "swimming": "swim", "swims": "swim"}
 
 
+def _stem(word: str) -> str:
+    # Resolve aliases such as banknotes -> banknote -> money before stemming.
+    while word in _SYNONYMS and _SYNONYMS[word] != word:
+        word = _SYNONYMS[word]
+    if word.endswith("ies") and len(word) > 4:
+        word = word[:-3] + "y"
+    elif word.endswith(("ches", "shes", "sses", "xes", "zes")):
+        word = word[:-2]
+    elif word.endswith("s") and len(word) > 3 and not word.endswith(("ss", "us", "is")):
+        word = word[:-1]
+    if word.endswith("ing") and len(word) > 5:
+        word = word[:-3]
+    elif word.endswith("ed") and len(word) > 4:
+        word = word[:-2]
+    if len(word) > 3 and word[-1] == word[-2] and word[-1] not in "ls":
+        word = word[:-1]
+    if len(word) > 3 and word.endswith("e"):
+        word = word[:-1]
+    return _SYNONYMS.get(word, word)
+
+
 def _terms(value: str) -> set[str]:
-    words = re.findall(r"[a-z]+", value.lower())
-    return {_SYNONYMS.get(w, w) for w in words if w not in _STOP and len(w) > 1}
+    words = re.findall(r"[a-z]+|[0-9]+", value.lower())
+    return {_stem(w) for w in words if w not in _STOP and len(w) > 1}
 
 
 class SceneMatcher:
@@ -372,7 +403,7 @@ class SceneMatcher:
         if _terms(spec.action) and not (_terms(spec.action) & have):
             raise ValidationError("Scene metadata does not describe the requested action")
         if duration is None:
-            duration = float(json.loads(_run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)]))["format"]["duration"])
+            duration = float(json.loads(_run(["ffprobe", "-v", "error", *_INPUT_GUARDS, "-show_entries", "format=duration", "-of", "json", str(path)]))["format"]["duration"])
         frames = [_frame(path, max(0, min(float(duration) - .15, t)), 448, preserve_aspect=True)
                   for t in (0.2, float(duration) * .35, float(duration) * .7)]
         positive = f"A real video frame of {spec.visual_search_query}."

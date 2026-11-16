@@ -206,3 +206,113 @@ def test_duplicate_hash_does_not_delete_accepted_footage(strict_env):
     with pytest.raises(RuntimeError):
         obj.for_scene(1, "", json.dumps(PLAN), "", 3, strict_env)
     assert accepted.path.is_file()
+
+
+def mock_alarm(monkeypatch, *, prior_timer=(0, 0)):
+    import signal
+    handlers = []
+    timers = []
+    old_handler = object()
+    monkeypatch.setattr(signal, "getsignal", lambda sig: old_handler)
+    monkeypatch.setattr(signal, "getitimer", lambda kind: prior_timer)
+    monkeypatch.setattr(signal, "signal", lambda sig, handler: handlers.append(handler))
+    monkeypatch.setattr(signal, "setitimer", lambda *args: timers.append(args))
+    return handlers, timers, old_handler
+
+
+def test_edge_deadline_escapes_upstream_retries_and_restores_alarm(monkeypatch):
+    from studio_runtime import with_edge_deadline
+    from purffle_shorts.utils import with_retries
+    import signal
+    handlers, timers, old_handler = mock_alarm(monkeypatch, prior_timer=(60, 2))
+    attempts = []
+
+    def stalled_request():
+        attempts.append(1)
+        handlers[0](signal.SIGALRM, None)
+
+    with pytest.raises(RuntimeError, match="Edge TTS deadline exceeded"):
+        with_edge_deadline(lambda: with_retries(stalled_request, attempts=3), timeout_seconds=180)
+    assert attempts == [1]  # BaseException escapes all ordinary Exception retry loops
+    assert handlers[-1] is old_handler
+    assert timers[0] == (signal.ITIMER_REAL, 180)
+    assert timers[1] == (signal.ITIMER_REAL, 0)
+    assert 0 < timers[-1][1] <= 60 and timers[-1][2] == 2
+
+
+def test_edge_native_success_preserved_and_timer_removed(monkeypatch):
+    from studio_runtime import with_edge_deadline
+    import signal
+    handlers, timers, old_handler = mock_alarm(monkeypatch)
+    native = SimpleNamespace(engine="edge", timing="native", words=[SimpleNamespace(start=0, end=.5)])
+    assert with_edge_deadline(lambda: native) is native
+    assert handlers[-1] is old_handler
+    assert timers[-1] == (signal.ITIMER_REAL, 0)
+
+
+def test_edge_deadline_fails_without_main_thread(monkeypatch):
+    from studio_runtime import with_edge_deadline
+    import threading
+    monkeypatch.setattr(threading, "current_thread", lambda: object())
+    with pytest.raises(RuntimeError, match="main-thread worker"):
+        with_edge_deadline(lambda: None)
+
+
+def test_async_edge_stream_error_propagates_without_queue_deadlock():
+    from studio_runtime import collect_edge_chunks
+
+    class BrokenStream:
+        async def stream(self):
+            yield {"type": "audio", "data": b"partial"}
+            raise OSError("mock websocket refused")
+
+    with pytest.raises(OSError, match="mock websocket refused"):
+        collect_edge_chunks(BrokenStream())
+
+
+def test_async_edge_stream_preserves_audio_and_word_chunks():
+    from studio_runtime import collect_edge_chunks
+    chunks = [{"type": "audio", "data": b"speech"},
+              {"type": "WordBoundary", "text": "Hallo", "offset": 1000000, "duration": 2000000}]
+
+    class NativeStream:
+        async def stream(self):
+            for chunk in chunks:
+                yield chunk
+
+    assert collect_edge_chunks(NativeStream()) == chunks
+
+
+def test_strict_edge_adapter_returns_native_words(tmp_path, monkeypatch):
+    import edge_tts
+    import purffle_shorts.utils as utils
+    from studio_runtime import strict_edge
+
+    class NativeCommunicate:
+        def __init__(self, *args, **kwargs):
+            assert kwargs["boundary"] == "WordBoundary"
+
+        async def stream(self):
+            yield {"type": "audio", "data": b"mock-encoded-audio"}
+            yield {"type": "WordBoundary", "text": "Hallo", "offset": 1000000, "duration": 2000000}
+
+    monkeypatch.setattr(edge_tts, "Communicate", NativeCommunicate)
+    monkeypatch.setattr(utils, "with_retries", lambda fn, **kwargs: fn())
+    path, words, voice = strict_edge("Hallo", tmp_path,
+                                   SimpleNamespace(language="de", tts_voice="", tts_rate="+0%"))
+    assert path.read_bytes() == b"mock-encoded-audio"
+    assert words[0].text == "Hallo" and words[0].start == .1
+    assert words[0].end == pytest.approx(.3) and voice == "de-DE-ConradNeural"
+
+
+def test_async_edge_stream_has_its_own_deadline():
+    import asyncio
+    from studio_runtime import collect_edge_chunks
+
+    class StalledStream:
+        async def stream(self):
+            await asyncio.Event().wait()
+            yield {"type": "audio", "data": b"unreachable"}
+
+    with pytest.raises(TimeoutError):
+        collect_edge_chunks(StalledStream(), timeout_seconds=.01)

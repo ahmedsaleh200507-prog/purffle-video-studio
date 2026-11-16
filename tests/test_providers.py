@@ -227,3 +227,32 @@ def test_attribution_is_complete_string():
     assert info["attribution_required"] is True
     assert isinstance(info["attribution"], str)
     assert all(value in info["attribution"] for value in ("Camera Author", "CC-BY-4.0", "https://example.org/x", "cropped"))
+
+
+
+def test_quota_cooldown_persists_between_clients(tmp_path):
+    first_session = Mock()
+    first_session.get.return_value = response({}, 429)
+    first_session.get.return_value.headers = {"Retry-After": "120"}
+    client = JsonClient(tmp_path, session=first_session)
+    client._last_request.clear()
+    with pytest.raises(ProviderError, match="http_429"):
+        client.get("https://example.org/api")
+    second_session = Mock()
+    second = JsonClient(tmp_path, session=second_session)
+    with pytest.raises(ProviderError, match="cooldown"):
+        second.get("https://example.org/api", {"q": "different query"})
+    second_session.get.assert_not_called()
+
+
+def test_remaining_zero_still_serves_cached_search(tmp_path):
+    session = Mock()
+    session.get.return_value = response({"hits": []})
+    session.get.return_value.headers = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "120"}
+    client = JsonClient(tmp_path, session=session)
+    client._last_request.clear()
+    assert client.get("https://example.org/api", {"q": "cached"}) == {"hits": []}
+    assert client.get("https://example.org/api", {"q": "cached"}) == {"hits": []}
+    with pytest.raises(ProviderError, match="http_429"):
+        client.get("https://example.org/api", {"q": "uncached"})
+    assert session.get.call_count == 1

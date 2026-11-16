@@ -1,0 +1,81 @@
+{
+  "date": "2026-11-16",
+  "kind": "real publicly licensed footage download, ffprobe and local CLIP smoke",
+  "results": [
+    {
+      "provider": "wikimedia-video",
+      "id": "68590943",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Swimming_in_the_sea,_oblade_fishes_(Oblada_melanura),_Arcipelago_Toscano_Natural_Park,_Italy.webm",
+      "license": {
+        "id": "PDM-1.0",
+        "url": "https://creativecommons.org/publicdomain/mark/1.0/",
+        "creator": "Albarubescens",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Swimming_in_the_sea,_oblade_fishes_(Oblada_melanura),_Arcipelago_Toscano_Natural_Park,_Italy.webm",
+        "attribution_required": false,
+        "attribution": "Albarubescens | PDM-1.0 | https://creativecommons.org/publicdomain/mark/1.0/ | https://commons.wikimedia.org/wiki/File:Swimming_in_the_sea,_oblade_fishes_(Oblada_melanura),_Arcipelago_Toscano_Natural_Park,_Italy.webm | Trimmed and cropped to vertical; original audio removed",
+        "changes": "Trimmed and cropped to vertical; original audio removed"
+      },
+      "metadata": "Swimming in the sea, oblade fishes (Oblada melanura), Arcipelago Toscano Natural Park, Italy.webm swimming in the sea, oblade fishes (Oblada melanura), Arcipelago Toscano Natural Park, Italy",
+      "download": {
+        "status": "passed",
+        "bytes": 66117728,
+        "sha256": "66ba2b2c4440ff428a4d491b9297d18188d1f82706ff673e7bdfd4d7a82d5f2d",
+        "local_path": "media_cache/downloads/92226181ff1ee20d8ef9e5f5c36b7133a16367414c3bfd689a771d1778996332.bin"
+      },
+      "quality": {
+        "width": 1920,
+        "height": 1080,
+        "coded_width": 1920,
+        "coded_height": 1080,
+        "rotation": 0.0,
+        "fps": 29.97,
+        "duration": 45.045,
+        "codec": "vp8",
+        "source_full_hd": true,
+        "source_4k": false,
+        "portrait_crop_width": 608,
+        "portrait_crop_scale": 1.7778,
+        "motion_score": 5.9678,
+        "detail_score": 9.1726,
+        "sample_times": [
+          0,
+          0.24,
+          0.99,
+          1.23,
+          1.98,
+          2.2199999999999998,
+          2.73,
+          2.9699999999999998
+        ]
+      },
+      "positive_spec": {
+        "main_character": "fish",
+        "object": "fishes",
+        "action": "swimming",
+        "location": "sea",
+        "time": "daylight",
+        "visual_search_query": "fishes swimming in the sea"
+      },
+      "positive_visual": {
+        "metadata_score": 1.0,
+        "visual_score": 0.291,
+        "object_score": 0.2533,
+        "visual_margin": 0.0574,
+        "threshold": 0.26,
+        "model": "openai/clip-vit-base-patch32",
+        "sample_scores": [
+          0.29104554653167725,
+          0.2732260823249817,
+          0.3073643147945404
+        ],
+        "crop_focus_x": 0.15736607142857142,
+        "verification": "local_clip_screening",
+        "limitations": "Similarity screening cannot prove exact actions, identity or denomination."
+      },
+      "positive_status": "passed",
+      "negative_visual_status": "rejected_as_expected",
+      "negative_visual_error": "Visual scene mismatch: cosine=0.205, object=0.168, margin=-0.029"
+    }
+  ],
+  "limitations": "One clip and one negative query are a smoke test, not semantic benchmark or topic-to-video end-to-end proof. Cropping may require enlargement from landscape source; see portrait_crop_scale."
+}

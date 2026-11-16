@@ -17,3 +17,11 @@ Kod bulguları: NASA seçicisi `~small`/`~mobile` tercih ediyor ve ölçmeden128
 - Testlerde kullanılan lavfi/sentetik dosyalar yalnız yazılım doğrulamasıdır; kullanıcının gerçekgörüntü kuralını karşılayan üretim olarak sayılmaz.
 
 GitHub Actions yeni çalışma ve gerçekMP4 sonucu, çalıştırma tamamlandığında aşağıya kaydedilecek. Test edilmemiş anahtarlı bir kaynak veya uçtanuca akış bu kayıtla “çalışıyor” ilan edilmez.
+
+## Gerçek yerel görsel testi
+
+[visual-live-test.json](visual-live-test.json): Wikimedia PDM-1.0 gerçekdosya66.1MB indirildi; FFprobe1920×1080,VP8,29.97FPS,45.045s. YerelCLIP doğru balık-yüzme sorgusunu0.291 benzerlikle kabul etti; yanıltıcı uygunmetadata verilmesine rağmen aynı videoyu eurobulma sahnesi için0.205 ile reddetti. Yataykaynak dikeykırpma sonrası1.7778× büyütme gerektirir; rapor bu durumu açıkça ayırır. Bu birsemantik smoke testidir; tam konu→MP4 denemesi değildir.
+
+## Actions ilk V2 denemesi
+
+[43936028564](https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/runs/43936028564), commit368de7e: gerçekGitHub runner kurulumu,regresyonlar,modelyükleme veupstreamkontrolü geçti. Üretimdeki sesbeklemesi incelenirken edge-tts7.3.1 `stream_sync` hatailetiminde deadlock bulundu: işçiparçacığı hatada kuyruğa sonlandırma işareti yazmıyor, `queue.get()` sonsuza dek bekleyebiliyor. Yerelde aynıbelirti gözlendi. Harcanan süreyi sınırlamak için ilkdeneme iptaledildi; bu deneme başarılıMP4 olarak sayılmaz. Güvenli doğrudanasync sesadaptörü ve süre sınırıyla düzeltme eklendi.

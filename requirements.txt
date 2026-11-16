@@ -3,3 +3,4 @@ purffle-shorts @ git+https://github.com/Chamanrajragu/purffle-shorts.git@514fd25
 groq==1.7.0
 transformers==4.57.1
 Pillow>=10.1,<14
+edge-tts==7.3.1

@@ -61,7 +61,7 @@ class LicenseValidator:
     @classmethod
     def identify(cls, url, label=""):
         p = urlparse(str(url or ""))
-        if p.hostname in {"creativecommons.org", "www.creativecommons.org"}:
+        if p.scheme in {"http", "https"} and p.hostname in {"creativecommons.org", "www.creativecommons.org"}:
             path = p.path.lower()
             if re.fullmatch(r"/publicdomain/zero/1\.0/?", path):
                 return "CC0-1.0"
@@ -120,6 +120,12 @@ class JsonClient:
             except (OSError, ValueError):
                 pass
             host = urlparse(url).hostname
+            cooldown = self.cache_dir / (hashlib.sha256(str(host).encode()).hexdigest() + ".cooldown")
+            try:
+                if float(cooldown.read_text()) > time.time():
+                    raise ProviderError("http_429", "persisted API quota cooldown is active")
+            except (OSError, ValueError):
+                pass
             # <= 60 calls/minute, below Pixabay's default 100/minute.
             pause = 1.05 - (time.monotonic() - self._last_request.get(host, 0))
             if pause > 0:
@@ -131,6 +137,8 @@ class JsonClient:
                 with response:
                     if response.status_code != 200:
                         status = response.status_code
+                        if status == 429:
+                            self._save_cooldown(cooldown, response.headers)
                         raise ProviderError(f"http_{status}", "rate limited" if status == 429 else "request rejected")
                     if int(response.headers.get("Content-Length", "0")) > 4 * 1024 * 1024:
                         raise ProviderError("invalid_response", "JSON response exceeds 4 MiB")
@@ -145,6 +153,8 @@ class JsonClient:
                         raise ProviderError("invalid_response", "expected JSON object")
                     if data.get("error"):
                         raise ProviderError("api_error", "API returned an error object")
+                    if response.headers.get("X-RateLimit-Remaining") == "0":
+                        self._save_cooldown(cooldown, response.headers)
             except ProviderError:
                 raise
             except (requests.RequestException, ValueError, OSError):
@@ -155,6 +165,20 @@ class JsonClient:
             temp.write_text(json.dumps(data), encoding="utf-8")
             temp.replace(cache)
             return data
+
+    @staticmethod
+    def _save_cooldown(path, headers):
+        # Pixabay uses seconds-until-reset; Pexels can use an epoch reset. Retry-After
+        # is preferred. Invalid/date-only headers conservatively wait one minute.
+        now = time.time()
+        delay = 60.0
+        try:
+            reset = float(headers.get("Retry-After") or headers.get("X-RateLimit-Reset") or 60)
+            delay = reset - now if reset > 1000000 else reset
+        except (TypeError, ValueError):
+            pass
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(now + max(1, min(delay, 86400))))
 
 
 @dataclass(frozen=True)

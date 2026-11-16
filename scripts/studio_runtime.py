@@ -6,11 +6,14 @@ must be reviewed and the digests deliberately refreshed before it can render any
 from __future__ import annotations
 
 from dataclasses import dataclass
+import asyncio
 import hashlib
 import importlib.util
 import json
 import math
 import os
+import signal
+import threading
 from pathlib import Path
 import time
 from urllib.parse import urlsplit
@@ -256,6 +259,95 @@ def bounded_ffmpeg_args(args):
     return result
 
 
+def collect_edge_chunks(communicate, timeout_seconds=70):
+    """Collect the short native Edge stream while propagating async failures.
+
+    edge-tts 7.3.1's synchronous queue adapter can hang after its worker raises,
+    because no completion sentinel is enqueued on errors. Using its public async
+    stream directly avoids that queue and its executor entirely.
+    """
+    async def collect():
+        chunks, audio_bytes = [], 0
+        async for chunk in communicate.stream():
+            chunks.append(chunk)
+            if chunk.get("type") == "audio":
+                audio_bytes += len(chunk.get("data", b""))
+            if len(chunks) > 5000 or audio_bytes > 16 * 1024 * 1024:
+                raise RuntimeError("Edge speech exceeded short-video memory budget")
+        return chunks
+
+    async def bounded():
+        return await asyncio.wait_for(collect(), timeout=float(timeout_seconds))
+
+    return asyncio.run(bounded())
+
+
+def strict_edge(text, out, settings):
+    """Free neural speech and native WordBoundary timings, with bounded retries."""
+    import edge_tts
+    from purffle_shorts.tts import EDGE_VOICES, _pick_voice
+    from purffle_shorts.timing import Word
+    from purffle_shorts.utils import with_retries
+    voice = _pick_voice(settings, EDGE_VOICES[settings.language])
+    path = Path(out) / "voice.mp3"
+
+    def attempt():
+        communicate = edge_tts.Communicate(text, voice, rate=settings.tts_rate,
+                                          boundary="WordBoundary", connect_timeout=10, receive_timeout=45)
+        chunks = collect_edge_chunks(communicate)
+        words = []
+        audio_bytes = 0
+        with path.open("wb") as stream:
+            for chunk in chunks:
+                if chunk["type"] == "audio":
+                    stream.write(chunk["data"])
+                    audio_bytes += len(chunk["data"])
+                elif chunk["type"] == "WordBoundary":
+                    start = chunk["offset"] / 1e7
+                    words.append(Word(chunk["text"], start, start + chunk["duration"] / 1e7))
+        if not audio_bytes or not words:
+            path.unlink(missing_ok=True)
+            raise RuntimeError("Edge returned no audio or native word boundaries")
+        return path, words, voice
+
+    return with_retries(attempt, attempts=2, label=f"bounded Edge {voice}")
+
+
+class _SpeechDeadline(BaseException):
+    """Escape upstream retry loops, which catch ordinary Exception subclasses."""
+
+
+def with_edge_deadline(synthesize, timeout_seconds=180):
+    """Bound the whole Edge stage, including upstream retry/backoff time.
+
+    Actions runs the worker on Linux's main thread. Refuse unsupported invocation
+    instead of silently running synthesis without the promised deadline.
+    """
+    if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "setitimer"):
+        raise RuntimeError("Edge TTS deadline requires a Linux/POSIX main-thread worker")
+    timeout_seconds = max(1, min(180, float(timeout_seconds)))
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+    started = time.monotonic()
+
+    def expired(signum, frame):
+        raise _SpeechDeadline()
+
+    signal.signal(signal.SIGALRM, expired)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+        try:
+            return synthesize()
+        except _SpeechDeadline as exc:
+            raise RuntimeError(f"Edge TTS deadline exceeded ({timeout_seconds:g}s); no silent fallback permitted") from exc
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer[0] > 0:
+            remaining = max(0.000001, previous_timer[0] - (time.monotonic() - started))
+            signal.setitimer(signal.ITIMER_REAL, remaining, previous_timer[1])
+
+
 def install():
     global _INSTALLED
     if _INSTALLED:
@@ -266,6 +358,7 @@ def install():
     import purffle_shorts.render as render
     import purffle_shorts.pipeline as pipeline
     import purffle_shorts.ffmpeg as ffmpeg
+    import purffle_shorts.tts as tts
 
     @dataclass
     class PlannedScene(script.Scene):
@@ -327,7 +420,9 @@ exact suitable footage cannot be verified; never weaken the scene to hide that f
     def speak(self, screenplay, work, settings):
         if settings.offline or settings.tts_engine != "edge" or settings.language not in ("de", "en"):
             raise RuntimeError("Strict production requires online free Edge narration in de/en")
-        speech = original_speak(self, screenplay, work, settings)
+        speech = with_edge_deadline(
+            lambda: original_speak(self, screenplay, work, settings),
+            timeout_seconds=os.getenv("EDGE_TTS_TIMEOUT_SECONDS", "180"))
         if speech.engine != "edge" or speech.timing not in ("native", "aligned") or not speech.words:
             raise RuntimeError("Narration lacks verified native/aligned word timing")
         return speech
@@ -348,5 +443,6 @@ exact suitable footage cannot be verified; never weaken the scene to hide that f
     media.background_item = pipeline.background_item = background
     render.prepare_segment = strict_prepare_segment
     pipeline.Studio._speak = speak
+    tts._edge = strict_edge
     ffmpeg.run = ffmpeg_run
     _INSTALLED = True

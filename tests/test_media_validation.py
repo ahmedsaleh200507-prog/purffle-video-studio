@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from PIL import Image
 from scripts.media_validation import (QualityValidator, SceneMatcher, SceneSpec, ValidationError,
-                                      VideoDownloader)
+                                      VideoDownloader, _frame)
 
 
 class Reply(io.BytesIO):
@@ -66,6 +66,17 @@ class DownloaderTests(unittest.TestCase):
             self.assertFalse(list(Path(root).glob("*.part")))
 
     @patch.object(VideoDownloader, "validate_url")
+    def test_manifest_urls_with_spaces_are_encoded(self, validate):
+        with tempfile.TemporaryDirectory() as root:
+            class RecordingOpener:
+                def open(self, request, timeout):
+                    self.url = request.full_url
+                    return Reply()
+            opener = RecordingOpener()
+            VideoDownloader(root, opener=opener).download("https://media.example/NASA Earth/vidéo%20original.mp4?token=a%2Fb")
+            self.assertEqual(opener.url, "https://media.example/NASA%20Earth/vid%C3%A9o%20original.mp4?token=a%2Fb")
+
+    @patch.object(VideoDownloader, "validate_url")
     def test_http_errors_never_succeed(self, validate):
         with tempfile.TemporaryDirectory() as root:
             for status in (403, 404, 429, 500):
@@ -73,6 +84,18 @@ class DownloaderTests(unittest.TestCase):
                 with self.subTest(status=status), self.assertRaisesRegex(ValidationError, str(status)):
                     VideoDownloader(root, opener=opener).download("https://media.example/a")
             self.assertFalse(list(Path(root).glob("*.bin")))
+
+    @patch.object(VideoDownloader, "validate_url")
+    def test_cache_and_free_disk_budgets_fail_before_network(self, validate):
+        with tempfile.TemporaryDirectory() as root:
+            opener = Opener(Reply())
+            with self.assertRaisesRegex(ValidationError, "cache byte budget"):
+                VideoDownloader(root, max_bytes=4096, max_cache_bytes=1024, opener=opener).download("https://media.example/a")
+            self.assertEqual(opener.calls, 0)
+            with patch("shutil.disk_usage", return_value=__import__("collections").namedtuple("Usage", "total used free")(100, 99, 1)):
+                with self.assertRaisesRegex(ValidationError, "free disk"):
+                    VideoDownloader(root, opener=opener).download("https://media.example/a")
+            self.assertEqual(opener.calls, 0)
 
     def test_redirect_target_validated(self):
         error = urllib.error.HTTPError("https://media.example/a", 302, "redirect",
@@ -103,6 +126,15 @@ class SceneTests(unittest.TestCase):
                                         "action": "picking up", "location": "sidewalk", "time": "daylight",
                                         "visual_search_query": "young man picking up euro banknote on sidewalk"})
         self.metadata = "young man picking up euro banknote on sidewalk"
+
+    def test_basic_morphology_does_not_reject_real_actions(self):
+        spec = SceneSpec.from_dict({"object": "fish", "action": "swim", "search_query": "fish swim in sea"})
+        self.assertEqual(SceneMatcher.metadata_score(spec, "fishes swimming in the sea"), 1)
+        spec = SceneSpec.from_dict({"object": "wave", "action": "break", "search_query": "wave breaking"})
+        self.assertEqual(SceneMatcher.metadata_score(spec, "waves break"), 1)
+        self.assertEqual(SceneMatcher.metadata_score(spec, "waves breaking"), 1)
+        spec = SceneSpec.from_dict({"object": "euro banknotes", "action": "pick", "search_query": "picking euro banknotes"})
+        self.assertEqual(SceneMatcher.metadata_score(spec, "picks euro banknote"), 1)
 
     def test_spec_requires_object_and_action(self):
         with self.assertRaises(ValidationError):
@@ -160,6 +192,9 @@ class QualityTests(unittest.TestCase):
                         "-vf", "loop=loop=-1:size=1:start=0", "-t", "1.2", "-an", "-c:v", "libx264",
                         "-threads", "1", "-preset", "ultrafast", str(cls.root / "static.mp4")], check=True, timeout=30)
 
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-display_rotation", "90", "-i", str(cls.root / "motion.mp4"),
+                        "-c", "copy", str(cls.root / "rotated.mp4")], check=True, timeout=30)
+
     @classmethod
     def tearDownClass(cls):
         cls.temp.cleanup()
@@ -172,6 +207,22 @@ class QualityTests(unittest.TestCase):
         self.assertFalse(info["source_4k"])
         self.assertGreater(info["portrait_crop_scale"], 1)
         self.assertGreater(info["motion_score"], .65)
+
+    def test_matching_frame_preserves_source_aspect(self):
+        frame = _frame(self.root / "motion.mp4", 0, 448, preserve_aspect=True)
+        self.assertEqual(frame.size, (448, 252))
+
+    def test_rotation_measures_display_geometry(self):
+        info = QualityValidator().validate(self.root / "rotated.mp4", need=1)
+        self.assertEqual((info["coded_width"], info["coded_height"]), (1920, 1080))
+        self.assertEqual((info["width"], info["height"]), (1080, 1920))
+        self.assertEqual(info["portrait_crop_scale"], 1)
+
+    def test_playlist_containers_refused(self):
+        playlist = self.root / "untrusted.bin"
+        playlist.write_text("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nhttps://127.0.0.1/private.ts\n#EXT-X-ENDLIST\n")
+        with self.assertRaisesRegex(ValidationError, "ffprobe"):
+            QualityValidator().validate(playlist)
 
     def test_720p_or_lower_never_reported_full_hd(self):
         with self.assertRaisesRegex(ValidationError, "short side"):
