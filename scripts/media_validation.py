@@ -368,6 +368,17 @@ class SceneMatcher:
             raise ValidationError("Incomplete structured scene")
         score = cls.metadata_score(spec, metadata)
         have = _terms(metadata)
+        # Stock descriptions rarely mention camera movement or lighting.
+        # A named landmark is sufficient for metadata preflight ONLY when its
+        # distinctive name occurs in the provider's description. The downloaded
+        # frames must still pass the separate local CLIP visual verifier.
+        landmark_names = ("stonehenge", "machu picchu", "giza", "easter island", "moai")
+        query_text = spec.visual_search_query.lower()
+        metadata_text = metadata.lower()
+        named_landmark = next((name for name in landmark_names
+                               if name in query_text and name in metadata_text), None)
+        if named_landmark and score >= .20:
+            return score
         # A shared location or generic 'man' cannot compensate for a missing object.
         if score < .45 or not _terms(spec.object).issubset(have):
             raise ValidationError(f"Scene metadata lacks object/action grounding (score {score:.3f})")
