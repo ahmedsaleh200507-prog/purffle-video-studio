@@ -137,7 +137,23 @@ class StrictVisuals:
         for source in self.sources:
             if time.monotonic() - scene_start > 240:
                 break
-            candidates = self.registry.search(source, data["visual_search_query"])
+            # Search a concise, subject-focused variant when verbose camera/action
+            # directions cause stock providers to return unrelated footage.
+            queries = [data["visual_search_query"]]
+            short_query = " ".join(part for part in
+                                   (data.get("object", ""), data.get("location", ""))
+                                   if part).strip()
+            if short_query and short_query.lower() != queries[0].lower():
+                queries.append(short_query[:120])
+            candidates = []
+            seen_candidates = set()
+            for search_query in queries:
+                for candidate in self.registry.search(source, search_query):
+                    if candidate.key not in seen_candidates:
+                        seen_candidates.add(candidate.key)
+                        candidates.append(candidate)
+                if time.monotonic() - scene_start > 240:
+                    break
             print(f"[SOURCE CHECK] {source}: {len(candidates)} candidates scene={idx+1}", flush=True)
             ranked = []
             for item in candidates:
