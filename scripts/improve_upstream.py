@@ -32,6 +32,7 @@ media_path = Path(media.__file__)
 media_source = media_path.read_text(encoding="utf-8")
 old = '''            else:
                 best = max(fresh, key=lambda c: _score(c, need, self.s.orientation, query))
+            print(f"[SELECTED FOOTAGE] provider={best.source} id={best.key} url={best.url} query={query!r} size={best.width}x{best.height}", flush=True)
             self.used.add(best.key)'''
 new = '''            else:
                 # Pixabay/Pexels metadata is imperfect, but never knowingly select a
@@ -82,7 +83,9 @@ search_needle = '''        ck = (source, query.lower())'''
 search_patch = '''        if source in ("wikimedia-video", "nasa-video", "coverr-video", "archive-video"):
             from video_sources import search_wikimedia_videos, search_nasa_videos, search_coverr_videos, search_archive_videos
             handlers = {"wikimedia-video": search_wikimedia_videos, "nasa-video": search_nasa_videos, "coverr-video": search_coverr_videos, "archive-video": search_archive_videos}
-            return handlers[source](query, MediaItem)
+            found = handlers[source](query, MediaItem)
+            print(f"[SOURCE CHECK] {source}: {len(found)} video candidates for {query!r}", flush=True)
+            return found
         ck = (source, query.lower())'''
 if search_needle not in media_source:
     raise SystemExit("Upstream search method changed; cannot enforce video-only mode")
@@ -100,4 +103,4 @@ if fallback_needle not in media_source:
     raise SystemExit("Upstream fallback changed; cannot enforce video-only mode")
 media_source = media_source.replace(fallback_needle, fallback_patch, 1)
 media_path.write_text(media_source, encoding="utf-8")
-print("STRICT VIDEO ONLY: Pixabay/Pexels/Wikimedia videos; no photos or gradients", flush=True)
+print("STRICT VIDEO ONLY: video sources only; source selection logging enabled", flush=True)
