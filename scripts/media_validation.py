@@ -309,7 +309,12 @@ _STOP = set("a an the and or in on at of to with from for is are as by into up y
 _SYNONYMS = {"euros": "euro", "banknotes": "banknote", "cash": "money", "banknote": "money", "bill": "money",
              "sidewalk": "pavement", "street": "pavement", "road": "pavement", "male": "man", "person": "human",
              "picks": "pick", "picking": "pick", "pickingup": "pick", "walking": "walk", "walks": "walk",
-             "running": "run", "runs": "run", "swimming": "swim", "swims": "swim"}
+             "running": "run", "runs": "run", "swimming": "swim", "swims": "swim",
+             "volcanic": "volcano", "volcanoes": "volcano", "volcanos": "volcano",
+             "erupting": "erupt", "eruption": "erupt", "eruptions": "erupt",
+             "exploding": "explod", "explosion": "explod", "explosions": "explod",
+             "burning": "burn", "blazing": "burn", "flames": "fire", "flame": "fire",
+             "flying": "fly", "flight": "fly", "flights": "fly"}
 
 
 def _stem(word: str) -> str:
