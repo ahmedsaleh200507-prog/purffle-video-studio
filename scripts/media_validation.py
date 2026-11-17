@@ -380,8 +380,7 @@ class SceneMatcher:
         if named_landmark and score >= .20:
             return score
         # A shared location or generic 'man' cannot compensate for a missing object.
-        # Search tags are terse: a four-of-five keyword match (0.400
-        # when two of five words match) can still be useful when the
+        # Search tags are terse: a two-of-five keyword match (0.400) can still be useful when the
         # actual object AND action are explicitly named. Require both;
         # the downloaded frames must independently pass local CLIP.
         object_terms = _terms(spec.object)
