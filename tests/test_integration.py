@@ -96,7 +96,12 @@ def test_fallback_checks_next_source_without_broadening(strict_env):
     obj, registry, down, quality = visuals(strict_env, {"first": [candidate("bad", kind="image")], "second": [candidate()]})
     got = obj.for_scene(0, "ignored query", json.dumps(PLAN), "unrelated broad topic", 4, strict_env)
     assert got.kind == "video" and got.extra["strict_validated"]
-    assert registry.queries == [("first", PLAN["visual_search_query"]), ("second", PLAN["visual_search_query"])]
+    # Each provider gets the exact request plus subject-focused search variants.
+    # Query broadening must not weaken the separate metadata and visual gates.
+    expected = [PLAN["visual_search_query"], "euro banknote",
+                "euro banknote picking up", "euro banknote sidewalk"]
+    assert registry.queries == [(source, query) for source in ("first", "second") for query in expected]
+    assert all("euro banknote" in query for _, query in registry.queries)
     assert len(down.urls) == 1 and quality.calls == [4.1]
     report = json.loads((strict_env / "report.json").read_text())
     assert report["scenes"][0]["status"] == "selected"
