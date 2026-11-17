@@ -160,5 +160,6 @@ jobs:
             finished/
             batch-results.json
             PURFFLE_DIAGNOSTICS.txt
+            PURFFLE_DIAGNOSTICS.json
           if-no-files-found: warn
           retention-days: 7
