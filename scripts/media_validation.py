@@ -479,11 +479,15 @@ class SceneMatcher:
         frames = [_frame(path, max(0, min(float(duration) - .15, t)), 448, preserve_aspect=True)
                   for t in (0.2, float(duration) * .35, float(duration) * .7)]
         positive = f"A real video frame of {spec.visual_search_query}."
-        object_caption = f"A photograph showing {spec.main_character} {spec.object}."
+        object_caption = (f"A real outdoor photograph of {spec.object}." if not spec.main_character.strip()
+                          else f"A photograph showing {spec.main_character} {spec.object}.")
         negatives = ["A person playing a guitar.", "Electronic devices on a desk.", "A person riding a skateboard.",
                      "A static illustration or abstract colorful background."]
         negatives = [c for c in negatives if not (_terms(spec.object) & _terms(c))]
-        negatives.append(f"An empty {spec.location or 'location'} with nobody present.")
+        if spec.main_character.strip():
+            negatives.append(f"An empty {spec.location or 'location'} with nobody present.")
+        else:
+            negatives.append("A close-up portrait of a person indoors.")
         captions = [positive, object_caption] + negatives
         scores = self._similarities(frames, captions)
         positive_scores = [row[0] for row in scores]
