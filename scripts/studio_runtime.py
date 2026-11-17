@@ -159,6 +159,13 @@ class StrictVisuals:
             if "kitchen doorway" in queries[0].lower():
                 queries.append("person entering kitchen")
                 queries.append("walking through doorway")
+            # Use the scene's own object/action as a fallback for ordinary
+            # stock searches too. Keep the strict per-candidate metadata and
+            # frame checks, rather than accepting unrelated footage.
+            if not landmark_scene and short_query and short_query.lower() != queries[0].lower():
+                queries.append(short_query[:120])
+            # Avoid repeated API requests for identical queries.
+            queries = list(dict.fromkeys(queries))
             if landmark_scene:
                 if short_query and short_query.lower() != queries[0].lower():
                     queries.append(short_query[:120])
