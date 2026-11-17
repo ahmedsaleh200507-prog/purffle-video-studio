@@ -96,7 +96,12 @@ def test_fallback_checks_next_source_without_broadening(strict_env):
     obj, registry, down, quality = visuals(strict_env, {"first": [candidate("bad", kind="image")], "second": [candidate()]})
     got = obj.for_scene(0, "ignored query", json.dumps(PLAN), "unrelated broad topic", 4, strict_env)
     assert got.kind == "video" and got.extra["strict_validated"]
-    assert registry.queries == [("first", PLAN["visual_search_query"]), ("second", PLAN["visual_search_query"])]
+    # Each provider gets the exact request plus subject-focused search variants.
+    # Query broadening must not weaken the separate metadata and visual gates.
+    expected = [PLAN["visual_search_query"], "euro banknote",
+                "euro banknote picking up", "euro banknote sidewalk"]
+    assert registry.queries == [(source, query) for source in ("first", "second") for query in expected]
+    assert all("euro banknote" in query for _, query in registry.queries)
     assert len(down.urls) == 1 and quality.calls == [4.1]
     report = json.loads((strict_env / "report.json").read_text())
     assert report["scenes"][0]["status"] == "selected"
@@ -427,13 +432,21 @@ def test_metadata_ties_follow_original_api_rank_before_portrait_size(strict_env)
     assert got.id == "original-top" and len(down.urls) == 1
 
 
-def test_known_720p_result_never_downloaded(strict_env):
-    low = candidate("low", width=1280, height=720)
+def test_known_720p_result_is_allowed(strict_env):
+    minimum = candidate("minimum", width=1280, height=720)
+    obj, _, down, _ = visuals(strict_env, {"first": [minimum]}, GroundedMatcher())
+    got = obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
+    assert got.id == "minimum"
+    assert down.urls == [minimum.url]
+
+
+def test_known_below_720p_result_never_downloaded(strict_env):
+    low = candidate("low", width=1278, height=719)
     obj, _, down, _ = visuals(strict_env, {"first": [low]}, GroundedMatcher())
     with pytest.raises(RuntimeError, match="No suitable verified REAL VIDEO"):
         obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
     assert not down.urls
-    assert "below 1080" in obj.report["scenes"][0]["rejections"][0]["reason"]
+    assert "below 720" in obj.report["scenes"][0]["rejections"][0]["reason"]
 
 
 @pytest.mark.parametrize("metadata", ["young man picking banknote on sidewalk", "young man euro banknote on sidewalk"])
@@ -444,3 +457,88 @@ def test_full_object_and_action_gate_runs_before_download(strict_env, metadata):
         obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
     assert not down.urls
     assert obj.report["scenes"][0]["rejections"][0]["stage"] == "metadata_preflight"
+
+
+def test_atmospheric_sky_metadata_does_not_require_action_tag():
+    from media_validation import SceneMatcher, SceneSpec
+    spec = SceneSpec(object="sky", action="glowing", visual_search_query="sky glowing",
+                     location="open field")
+    assert SceneMatcher.validate_metadata(spec, "blue sky clouds above field") >= .25
+
+
+def test_atmospheric_exception_never_allows_missing_subject():
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    spec = SceneSpec(object="sky", action="glowing", visual_search_query="sky glowing")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(spec, "green grass above a field")
+
+
+def test_atmospheric_exception_does_not_override_human_action():
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    spec = SceneSpec(main_character="young man", object="sky", action="picking up",
+                     visual_search_query="young man picking up sky")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(spec, "blue sky and clouds")
+
+
+@pytest.mark.parametrize("metadata", [
+    "blue sky clouds above field",
+    "sky nature background",
+    "blue sky overhead",
+])
+def test_sky_overhead_accepts_subject_without_action_tag(metadata):
+    from media_validation import SceneMatcher, SceneSpec
+    spec = SceneSpec(object="sky", action="overhead",
+                     visual_search_query="blue sky overhead")
+    assert SceneMatcher.validate_metadata(spec, metadata) >= .25
+
+
+def test_sky_exception_requires_real_sky_and_no_character():
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    spec = SceneSpec(object="sky", action="overhead",
+                     visual_search_query="blue sky overhead")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(spec, "blue ocean overhead")
+    human = SceneSpec(main_character="young man", object="sky", action="picking up",
+                      visual_search_query="young man picking up sky")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(human, "blue sky overhead")
+
+
+def test_natural_water_droplets_allow_stock_subject_tags():
+    from media_validation import SceneMatcher, SceneSpec
+    spec = SceneSpec(object="water droplets", action="sunlight filtering through",
+                     visual_search_query="sunlight filtering through water droplets in a lake")
+    assert SceneMatcher.validate_metadata(spec, "water droplets rain drops nature lake") >= .15
+
+
+def test_natural_water_droplets_reject_missing_droplets():
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    spec = SceneSpec(object="water droplets", action="sunlight filtering through",
+                     visual_search_query="sunlight filtering through water droplets in a lake")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(spec, "water lake sunshine landscape")
+
+
+def test_natural_water_droplets_never_override_character_action():
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    spec = SceneSpec(main_character="woman", object="water droplets", action="collecting",
+                     visual_search_query="woman collecting water droplets")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(spec, "water droplets rain drops nature")
+
+
+
+def test_v4_nature_search_expands_droplet_queries(strict_env):
+    plan = dict(PLAN, main_character="", object="water droplets",
+                action="sunlight filtering through",
+                location="lake",
+                visual_search_query="sunlight filtering through water droplets in a lake")
+    obj, registry, _, _ = visuals(strict_env, {"first": []})
+    with pytest.raises(RuntimeError, match="No suitable verified REAL VIDEO"):
+        obj.for_scene(0, "", json.dumps(plan), "", 3, strict_env)
+    queries = [query for source, query in registry.queries]
+    assert "water droplets sunlight" in queries
+    assert "water drops in sunlight" in queries
+    assert "sunlight reflecting on water" in queries
+    assert plan["visual_search_query"] in queries

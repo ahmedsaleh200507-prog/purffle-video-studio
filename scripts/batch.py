@@ -50,6 +50,25 @@ def parse_topic(raw: str):
     return lang, topic
 
 
+def classify_failure(message: str, log_text: str = "") -> str:
+    """Group failures without masking the original exception."""
+    combined = message.lower() or log_text[-12000:].lower()
+    checks = (
+        ("missing_api_key", ("api_key missing", "api key missing", "groq_api_key missing")),
+        ("provider_quota", ("rate limit", "quota exceeded", "http 429")),
+        ("provider_access", ("http 401", "http 403", "unauthorized", "forbidden")),
+        ("source_not_found", ("no suitable", "no matching", "no footage", "no candidates")),
+        ("source_quality", ("requires short side", "insufficiently moving", "visual scene mismatch", "metadata lacks")),
+        ("voice_failure", ("edge tts", "piper", "narration", "voice alignment")),
+        ("render_failure", ("ffmpeg", "ffprobe", "render failed")),
+        ("timeout", ("timed out", "time budget exceeded")),
+    )
+    for category, patterns in checks:
+        if any(pattern in combined for pattern in patterns):
+            return category
+    return "unknown"
+
+
 def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
     target = out / f'video_{index:02d}'
     target.mkdir(parents=True, exist_ok=True)
@@ -114,6 +133,9 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
         write_json(target / 'report.json', result)
         if log_path.exists():
             lines = log_path.read_text(errors='replace').splitlines()
+            if result['status'] != 'ok':
+                result['failure_category'] = classify_failure(result.get('error', ''), '\n'.join(lines))
+                write_json(target / 'report.json', result)
             selected = [x for x in lines if any(s in x for s in ('[SOURCE', '[SELECTED', '[REJECT', '[SCENE'))]
             print('\n'.join(selected), flush=True)
             if result['status'] != 'ok':

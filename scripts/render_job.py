@@ -13,8 +13,11 @@ from batch import write_json
 def validate_result(video: Path, metadata: dict, captions: Path, footage_report: Path, voice_report: Path | None = None):
     from media_validation import QualityValidator
     info = QualityValidator().validate(video)
-    if (info['width'], info['height']) != (1080, 1920):
-        raise RuntimeError('Output is not 1080x1920')
+    expected = tuple(int(v) for v in os.environ.get('RESOLUTION', '720x1280').lower().split('x'))
+    if len(expected) != 2 or min(expected) < 720:
+        raise RuntimeError('RESOLUTION must specify width x height, minimum dimension 720')
+    if (info['width'], info['height']) != expected:
+        raise RuntimeError(f'Output resolution mismatch: expected {expected}, got {(info["width"], info["height"])}')
     if not info.get('has_audio'):
         # FFprobe explicitly checks audio; never infer it from a filename.
         import subprocess
@@ -65,7 +68,7 @@ def main():
                     llm_provider='groq', llm_model='openai/gpt-oss-20b', llm_fallbacks=[],
                     openai_api_key='', llm_api_key='',
                     tts_engine='edge', offline=False, script_review='off', seo_keywords=False,
-                    resolution=(1080, 1920), fps=30, max_shot_seconds=0, transition='none',
+                    resolution=tuple(int(v) for v in os.environ.get('RESOLUTION', '720x1280').lower().split('x')), fps=30, max_shot_seconds=0, transition='none',
                     background_video='', music_volume=0, sound_effects=False,
                     caption_emoji=False, color_grade='none', ken_burns=False,
                     upload=False, also_languages=[], localize_metadata=[], notify_webhook='',

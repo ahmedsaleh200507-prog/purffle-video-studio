@@ -135,6 +135,55 @@ class StrictVisuals:
         if ("stone circle" in descriptive and "england" in descriptive
                 and "stonehenge" in topic.lower()):
             data["visual_search_query"] = "Stonehenge standing stones"
+        # Prefer verifiable atmospheric B-roll over an invented actor for a
+        # sky-looking-up establishing shot. Stock libraries have plentiful
+        # moving skies but rarely tag the exact age/gender/gaze of a person.
+        # Restrict this fallback to a sky-focused shot; do not weaken actor
+        # requirements for human actions elsewhere in the story.
+        initial_query = data.get("visual_search_query", "").lower()
+        initial_action = data.get("action", "").lower()
+        if ("sky" in initial_query and ("looking up" in initial_query
+                or "look up" in initial_query or "gazing" in initial_query)
+                and "sky" in (data.get("object", "") + " " + initial_query).lower()
+                and any(word in initial_action for word in ("look", "gaze", "watch", "stare", "observ"))):
+            data["main_character"] = ""
+            data["object"] = "sky"
+            data["action"] = "clouds moving"
+            data["visual_search_query"] = "blue sky clouds"
+            print(f"[SCENE B-ROLL] scene={idx+1} actor gaze replaced with verifiable sky footage", flush=True)
+        # Neural/physiological explanations are not directly filmable in stock footage.
+        # Show the real animal instead; the narration conveys the invisible process.
+        # Keep metadata, CLIP, license, motion and 720p checks intact.
+        abstract = (data.get("visual_search_query", "") + " " + data.get("object", "")).lower()
+        if ("dolphin" in abstract or "delfin" in abstract) and any(
+                term in abstract for term in ("brain", "neural", "hemisphere", "cerebral")):
+            data["main_character"] = ""
+            data["object"] = "dolphin"
+            data["action"] = "swimming"
+            data["location"] = "ocean"
+            data["visual_search_query"] = "dolphin swimming underwater"
+            print(f"[SCENE B-ROLL] scene={idx+1} invisible dolphin brain activity replaced with filmable dolphin footage", flush=True)
+        # Hybrid stock-first planning: a scientific concept belongs in narration,
+        # not in a literal stock-video search. Preserve a concrete visible subject.
+        invisible = ("brain", "neural", "neuron", "hemisphere", "molecule",
+                     "microscopic", "atom", "photon", "memory", "thought",
+                     "consciousness", "oxygen exchange", "electrical signal")
+        search_text = data["visual_search_query"].lower()
+        if any(term in search_text for term in invisible):
+            subject = data.get("object", "").strip()
+            # Prefer a concrete known visual subject from the original query.
+            concrete = ("dolphin", "whale", "shark", "turtle", "bird", "dog",
+                        "cat", "human", "person", "ocean", "sea", "sky",
+                        "cloud", "forest", "tree", "river", "sunset", "sunrise")
+            chosen = next((word for word in concrete if word in search_text.split()), None)
+            if chosen and (not subject or any(term in subject.lower() for term in invisible)):
+                subject = chosen
+            if subject and not any(term in subject.lower() for term in invisible):
+                data["main_character"] = ""
+                data["object"] = subject
+                data["action"] = "swimming" if subject.lower() in ("dolphin", "whale", "shark", "turtle") else "moving"
+                data["visual_search_query"] = (subject + " " + data["action"])[:120]
+                print(f"[STOCK-FIRST] scene={idx+1} abstract query simplified to {data['visual_search_query']!r}", flush=True)
         spec = SceneSpec.from_dict(data)
         scene = {"index": idx + 1, "plan": data, "required_seconds": need,
                  "status": "searching", "rejections": []}
@@ -165,6 +214,37 @@ class StrictVisuals:
             if ("kitchen doorway" in queries[0].lower()
                     and short_query and short_query.lower() != queries[0].lower()):
                 queries.append(short_query[:120])
+            # Stock APIs index short subject phrases better than long scene prose.
+            # Try these automatically, while retaining the same metadata, license,
+            # quality and frame-verification gates for every candidate.
+            if not landmark_scene:
+                subject = data.get("object", "").strip()
+                action = data.get("action", "").strip()
+                if subject:
+                    queries.append(subject[:90])
+                if subject and action:
+                    queries.append((subject + " " + action)[:120])
+                if short_query:
+                    queries.append(short_query[:120])
+            # V4: cinematic natural-scene search expansion. Stock catalogues
+            # index simple visual subjects much better than long AI descriptions.
+            # These alternatives are only discovery queries: the original
+            # structured scene still controls license, metadata, motion and
+            # frame-level visual verification.
+            if not landmark_scene and not data.get("main_character", "").strip():
+                natural_query = (data.get("visual_search_query", "") + " "
+                                 + data.get("object", "")).lower()
+                if "droplet" in natural_query or "water drop" in natural_query:
+                    queries.extend(["water droplets sunlight", "water drops in sunlight",
+                                    "sunlight reflecting on water", "water drops close up"])
+                elif "sunlight" in natural_query and ("lake" in natural_query or "water" in natural_query):
+                    queries.extend(["sunlight reflecting on water", "sun rays over lake",
+                                    "sunlight on water surface"])
+                elif "sky" in natural_query or "cloud" in natural_query:
+                    queries.extend(["blue sky clouds", "clouds moving sky",
+                                    "sunlight through clouds"])
+                elif "sunset" in natural_query or "sunrise" in natural_query:
+                    queries.extend(["sunrise sky", "sunset horizon", "golden hour sky"])
             # Avoid repeated API requests for identical queries.
             queries = list(dict.fromkeys(queries))
             if landmark_scene:
@@ -278,7 +358,39 @@ class StrictVisuals:
         Path(dest_dir).mkdir(parents=True, exist_ok=True)
         items = []
         for idx, (query, prompt, need) in enumerate(jobs):
-            items.append(self.for_scene(idx, query, prompt, topic, need, dest_dir))
+            try:
+                item = self.for_scene(idx, query, prompt, topic, need, dest_dir)
+            except RuntimeError as first_error:
+                # Retry only when footage discovery failed. Never conceal license,
+                # rendering or configuration failures with a generic fallback.
+                if "No suitable verified REAL VIDEO" not in str(first_error):
+                    raise
+                try:
+                    data = _scene_data(json.loads(prompt))
+                except (ValueError, TypeError):
+                    raise first_error
+                subject = data.get("object", "").strip()
+                # An exact subject remains mandatory: never substitute an
+                # unrelated image merely to make the pipeline complete.
+                if not subject or len(subject.split()) > 3:
+                    raise first_error
+                original = data.get("visual_search_query", "").strip()
+                if subject.lower() == original.lower():
+                    raise first_error
+                data["main_character"] = ""
+                data["action"] = "moving"
+                data["location"] = ""
+                data["visual_search_query"] = subject[:90]
+                print(f"[AUTO REPLAN] scene={idx+1} query={original!r} -> {subject!r}", flush=True)
+                self.report["state"] = "searching"
+                self.report.pop("error", None)
+                try:
+                    item = self.for_scene(idx, subject, json.dumps(data), topic, need, dest_dir)
+                except RuntimeError:
+                    self.report["state"] = "failed"
+                    self._save()
+                    raise first_error
+            items.append(item)
             if progress:
                 progress((idx + 1) / len(jobs))
         self.report["state"] = "footage_ready"
@@ -549,14 +661,32 @@ time, visual_search_query. These values are ALWAYS English. Use empty main_chara
 there is no human/animal character; use empty time when irrelevant. A visible subject
 in object (including a natural subject such as ocean), and a concrete action are required. search_query MUST equal visual_search_query. Set
 image_prompt to an empty string: images and synthetic imagery are not permitted.
-visual_search_query should describe the exact visible subject, key object, action and
-place in 5–14 words, e.g. young man picking up euro banknote on sidewalk.
+visual_search_query must use concise searchable stock-video tags (ideally 2–5 English words), e.g. dolphin swimming underwater. Never include invisible processes in footage queries.
 Preserve the user's concrete story, action, currency and chronology; do not replace
 banknotes with gold, people with devices or actions with metaphors. Keep the same
 character and object descriptions across adjacent scenes. Describe real recordable
 motion, never diagrams, animation, visualizations, text-only shots or generic filler.
-Narration must match these visible actions. Do not invent factual claims or an ending
-for an underspecified real event. Use 3–5 scenes for a 25-second video, at most 6 scenes. The system will fail a scene when
+IMPORTANT: Every proposed scene must be achievable using ordinary real-world
+stock camera footage. NEVER request microscopic air molecules, molecular-scale
+Rayleigh scattering, invisible photons, scientific simulations, diagrams, or
+other subjects that ordinary cameras cannot film. For explanations of invisible
+physics, show directly filmable related real phenomena instead (blue sky,
+sunlight through clouds, atmospheric haze, sunset sky), and narrate the invisible
+mechanism accurately without pretending the footage depicts molecules.
+Choose search-friendly English subject/action descriptions commonly used as
+stock-video titles and tags. Prefer diverse visually relevant footage over
+unfindable literal representations of abstract scientific concepts.
+HYBRID STOCK-FIRST: First outline the essential truthful facts of the topic, then choose only common, directly filmable stock shots for every scene, then write narration that explains those facts while the shots support them. A shot need not literally depict invisible mechanisms. Avoid over-specific footage requests; prioritize diverse concrete shots. Do not sacrifice factual accuracy just to match footage. Narration must be compatible with these visible actions. Do not invent factual claims or an ending
+for an underspecified real event.
+For educational, science, documentary, or explanatory topics, EVERY scene
+including the final scene must stay on the requested subject. Finish with a
+relevant visual conclusion, not a social-media call to action. NEVER generate
+scenes of people commenting, liking, subscribing, sharing, clicking buttons,
+scrolling social media, or watching a video unless the user explicitly asks
+for that exact subject. Avoid generic engagement-bait endings such as
+"comment below", "like and subscribe", or "what do you think?".
+For a blue-sky explanation, end with directly filmable sky, clouds, sunset,
+or sunlight footage, never people commenting on the explanation. Use 3–5 scenes for a 25-second video, at most 6 scenes. The system will fail a scene when
 exact suitable footage cannot be verified; never weaken the scene to hide that failure.
 """
         return system, user

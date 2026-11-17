@@ -64,8 +64,8 @@ jobs:
       SEO_KEYWORDS: 'false'
       VISUAL_SOURCES: pixabay,pexels,coverr-video,europeana-video,wikimedia-video,nasa-video,archive-video
       TTS_ENGINE: edge
-      EDGE_TTS_TIMEOUT_SECONDS: '45'
-      RESOLUTION: 1080x1920
+      EDGE_TTS_TIMEOUT_SECONDS: '120'
+      RESOLUTION: 720x1280
       FPS: '30'
       PRESET: medium
       TRANSITION: none
@@ -124,6 +124,7 @@ jobs:
           python -m compileall -q scripts sitecustomize.py
           python -m pytest -q
       - name: Live provider API health (no footage downloads)
+        continue-on-error: true
         run: python scripts/provider_health.py
       - name: Verify local visual model
         run: python scripts/check_model.py

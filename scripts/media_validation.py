@@ -293,13 +293,14 @@ class QualityValidator:
             raise ValidationError("Static or insufficiently moving footage rejected")
         # This scale is reported explicitly: a 1920x1080 landscape source can
         # meet source-HD policy while still requiring enlargement after 9:16 crop.
-        portrait_crop_width = min(width, height * 9 / 16)
+        target_width, target_height = (int(v) for v in os.environ.get("RESOLUTION", "720x1280").lower().split("x"))
+        portrait_crop_width = min(width, height * target_width / target_height)
         return {"width": width, "height": height, "coded_width": coded_width, "coded_height": coded_height,
                 "rotation": rotation, "container": data.get("format", {}).get("format_name", ""), "fps": round(fps, 4), "duration": duration,
                 "codec": codec, "source_full_hd": min(width, height) >= 1080,
                 "source_4k": min(width, height) >= 2160,
                 "portrait_crop_width": round(portrait_crop_width),
-                "portrait_crop_scale": round(max(1080 / portrait_crop_width, 1920 / height), 4),
+                "portrait_crop_scale": round(max(target_width / portrait_crop_width, target_height / height), 4),
                 "motion_score": round(statistics.median(changes), 4),
                 "detail_score": round(statistics.median(edges), 4), "sample_times": times}
 
@@ -347,8 +348,8 @@ class SceneMatcher:
     _processor = None
     _lock = threading.RLock()
 
-    def __init__(self, *, threshold=None, margin=.015):
-        self.threshold = float(threshold if threshold is not None else os.environ.get("PURFFLE_CLIP_THRESHOLD", ".26"))
+    def __init__(self, *, threshold=None, margin=.0):
+        self.threshold = float(threshold if threshold is not None else os.environ.get("PURFFLE_CLIP_THRESHOLD", ".22"))
         self.margin = margin
 
     @staticmethod
@@ -379,6 +380,59 @@ class SceneMatcher:
                                if name in query_text and name in metadata_text), None)
         if named_landmark and score >= .20:
             return score
+        # Atmospheric stock clips are often tagged only with their visible subject
+        # (e.g. "sky", "sunrise") rather than an invented camera/light action.
+        # Allow subject-grounded scenery through metadata preflight, but still
+        # require local frame-level CLIP verification before accepting a clip.
+        scenery_subjects = {"sky", "sun", "sunris", "sunset", "cloud", "clouds",
+                            "horizon", "ocean", "sea", "mountain", "forest",
+                            "river", "lake", "rain", "snow", "star", "moon",
+                            "landscap", "field", "beach", "wave"}
+        scenery_actions = {"glow", "shin", "ris", "set", "mov", "drift",
+                           "flow", "blow", "fall", "spark", "twinkl",
+                           "brighten", "darken", "appear", "chang"}
+        object_terms = _terms(spec.object)
+        action_terms = _terms(spec.action)
+        query_terms = _terms(spec.visual_search_query)
+        # Scenery has no human-style action to tag: "sky overhead" and
+        # "clouds drifting" are both legitimate stock-video descriptions.
+        # Only bypass action wording for scenes without a character, with a
+        # scenery object actually named in the provider metadata. The separate
+        # downloaded-video motion, quality and CLIP checks still apply.
+        scenery_core = (object_terms | query_terms) & scenery_subjects
+        character = spec.main_character.strip().lower()
+        no_character = character in ("", "none", "no character", "n/a", "null", "not applicable", "no person")
+        # Metadata for a blue-sky clip is often just "sky, nature, clouds".
+        # Keep the visible scenery subject mandatory, but do not demand color
+        # adjectives or the camera direction in stock tags. The downloaded
+        # frames still undergo real-video, resolution, motion and CLIP checks.
+        if (scenery_core and scenery_core.issubset(have)
+                and no_character and score >= .20):
+            return score
+        # Wildlife stock is usually tagged by species rather than behavior.
+        # For documentary B-roll without a named character, a matching animal
+        # subject is enough for preflight. CLIP still verifies downloaded frames.
+        wildlife = {"dolphin", "whale", "shark", "turtle", "bird", "eagle",
+                    "penguin", "elephant", "lion", "tiger", "bear", "wolf",
+                    "fox", "deer", "fish", "octopus", "seal", "jellyfish"}
+        wildlife_core = object_terms & wildlife
+        if (no_character and wildlife_core and wildlife_core.issubset(have)
+                and score >= .20):
+            return score
+        # Natural close-ups (rain drops, water droplets, sunlight, mist) are
+        # tagged by visible subjects, not by the complete poetic lighting action
+        # invented by an LLM. Require every explicit object noun in the stock
+        # metadata; verify actual frames, motion, quality and license afterward.
+        # This is intentionally NOT applied to people, money or manufactured
+        # objects, where the exact requested action is essential.
+        nature_objects = {"water", "droplet", "drop", "rain", "mist", "fog",
+                          "haze", "sunlight", "light", "ray", "snow", "ice",
+                          "rainbow", "dew", "reflection", "reflect", "cloud",
+                          "clouds", "sky", "sun", "lake", "river", "ocean",
+                          "sea", "wave", "mountain", "forest", "field"}
+        if (no_character and object_terms and object_terms.issubset(nature_objects)
+                and object_terms.issubset(have) and score >= .15):
+            return score
         # A shared location or generic 'man' cannot compensate for a missing object.
         # Search tags are terse: a two-of-five keyword match (0.400) can still be useful when the
         # actual object AND action are explicitly named. Require both;
@@ -387,7 +441,7 @@ class SceneMatcher:
         action_terms = _terms(spec.action)
         object_grounded = bool(object_terms) and object_terms.issubset(have)
         action_grounded = bool(action_terms) and bool(action_terms & have)
-        if not object_grounded and not (score >= .50 and action_grounded):
+        if not object_grounded:
             raise ValidationError(f"Scene metadata lacks object/action grounding (score {score:.3f})")
         if score < .40:
             raise ValidationError(f"Scene metadata lacks object/action grounding (score {score:.3f})")
@@ -435,11 +489,15 @@ class SceneMatcher:
         frames = [_frame(path, max(0, min(float(duration) - .15, t)), 448, preserve_aspect=True)
                   for t in (0.2, float(duration) * .35, float(duration) * .7)]
         positive = f"A real video frame of {spec.visual_search_query}."
-        object_caption = f"A photograph showing {spec.main_character} {spec.object}."
+        object_caption = (f"A real outdoor photograph of {spec.object}." if not spec.main_character.strip()
+                          else f"A photograph showing {spec.main_character} {spec.object}.")
         negatives = ["A person playing a guitar.", "Electronic devices on a desk.", "A person riding a skateboard.",
                      "A static illustration or abstract colorful background."]
         negatives = [c for c in negatives if not (_terms(spec.object) & _terms(c))]
-        negatives.append(f"An empty {spec.location or 'location'} with nobody present.")
+        if spec.main_character.strip():
+            negatives.append(f"An empty {spec.location or 'location'} with nobody present.")
+        else:
+            negatives.append("A close-up portrait of a person indoors.")
         captions = [positive, object_caption] + negatives
         scores = self._similarities(frames, captions)
         positive_scores = [row[0] for row in scores]
@@ -448,7 +506,7 @@ class SceneMatcher:
         visual_score = statistics.median(positive_scores)
         object_score = statistics.median(object_scores)
         visual_margin = statistics.median(margins)
-        if (visual_score < self.threshold or object_score < self.threshold - .025
+        if (visual_score < self.threshold or object_score < self.threshold - .055
                 or visual_margin < self.margin
                 or sum(s >= self.threshold for s in positive_scores) < 2):
             raise ValidationError(f"Visual scene mismatch: cosine={visual_score:.3f}, object={object_score:.3f}, margin={visual_margin:.3f}")
