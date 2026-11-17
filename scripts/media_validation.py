@@ -293,13 +293,14 @@ class QualityValidator:
             raise ValidationError("Static or insufficiently moving footage rejected")
         # This scale is reported explicitly: a 1920x1080 landscape source can
         # meet source-HD policy while still requiring enlargement after 9:16 crop.
-        portrait_crop_width = min(width, height * 9 / 16)
+        target_width, target_height = (int(v) for v in os.environ.get("RESOLUTION", "720x1280").lower().split("x"))
+        portrait_crop_width = min(width, height * target_width / target_height)
         return {"width": width, "height": height, "coded_width": coded_width, "coded_height": coded_height,
                 "rotation": rotation, "container": data.get("format", {}).get("format_name", ""), "fps": round(fps, 4), "duration": duration,
                 "codec": codec, "source_full_hd": min(width, height) >= 1080,
                 "source_4k": min(width, height) >= 2160,
                 "portrait_crop_width": round(portrait_crop_width),
-                "portrait_crop_scale": round(max(1080 / portrait_crop_width, 1920 / height), 4),
+                "portrait_crop_scale": round(max(target_width / portrait_crop_width, target_height / height), 4),
                 "motion_score": round(statistics.median(changes), 4),
                 "detail_score": round(statistics.median(edges), 4), "sample_times": times}
 
