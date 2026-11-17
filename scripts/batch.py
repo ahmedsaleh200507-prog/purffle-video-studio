@@ -52,7 +52,7 @@ def parse_topic(raw: str):
 
 def classify_failure(message: str, log_text: str = "") -> str:
     """Group failures without masking the original exception."""
-    combined = (message + "\n" + log_text[-12000:]).lower()
+    combined = message.lower() or log_text[-12000:].lower()
     checks = (
         ("missing_api_key", ("api_key missing", "api key missing", "groq_api_key missing")),
         ("provider_quota", ("rate limit", "quota exceeded", "http 429")),
