@@ -65,7 +65,7 @@ jobs:
       VISUAL_SOURCES: pixabay,pexels,coverr-video,europeana-video,wikimedia-video,nasa-video,archive-video
       TTS_ENGINE: edge
       EDGE_TTS_TIMEOUT_SECONDS: '45'
-      RESOLUTION: 1080x1920
+      RESOLUTION: 720x1280
       FPS: '30'
       PRESET: medium
       TRANSITION: none
