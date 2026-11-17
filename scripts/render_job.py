@@ -48,8 +48,18 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
     if not captions.is_file() or '-->' not in captions.read_text(encoding='utf-8'):
         raise RuntimeError('Synchronized captions missing')
     report = json.loads(footage_report.read_text(encoding='utf-8'))
-    if not report.get('scenes') or any(x.get('status') != 'selected' for x in report['scenes']):
-        raise RuntimeError('Not every scene has verified moving footage')
+    scenes = report.get('scenes') or []
+    if (not scenes or any(scene.get('status') != 'selected' for scene in scenes)
+            or [scene.get('index') for scene in scenes] != list(range(1, len(scenes) + 1))):
+        raise RuntimeError('Not every scene has verified moving footage: final scene reports are missing or inconsistent')
+    if any(not scene.get('source') or not scene.get('sha256')
+           or not scene.get('match') or not scene.get('license') for scene in scenes):
+        raise RuntimeError('Footage provenance or frame verification missing in scene report')
+    if any(float(scene.get('quality', {}).get('portrait_crop_scale', float('inf'))) > 1.0001
+           for scene in scenes):
+        raise RuntimeError('insufficient_native_resolution: verified footage would upscale after portrait crop')
+    if len({scene['sha256'] for scene in scenes}) != len(scenes):
+        raise RuntimeError('Duplicate footage repeated across scenes')
     return info, report
 
 
@@ -57,6 +67,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
     target = Path(os.environ['JOB_RESULT'])
     result = {'status': 'failed', 'mp4': None}
+    stage = 'setup'
     try:
         from studio_runtime import install
         install()
@@ -73,6 +84,7 @@ def main():
                     caption_emoji=False, color_grade='none', ken_burns=False,
                     upload=False, also_languages=[], localize_metadata=[], notify_webhook='',
                     workers=1, crf=18, preset='medium', target_seconds=25)
+        stage = 'production'
         made = Studio(s).make(os.environ['VIDEO_TOPIC'], upload=False)
         if not made.ok or not made.video:
             raise RuntimeError(made.error or made.status or 'Upstream production failed')
@@ -80,8 +92,9 @@ def main():
         folder = video.parent
         metadata = json.loads((folder / 'metadata.json').read_text(encoding='utf-8'))
         voice_report = Path(os.environ['VOICE_REPORT'])
+        stage = 'output_validation'
         info, footage = validate_result(video, metadata, folder / 'captions.srt', Path(os.environ['FOOTAGE_REPORT']), voice_report)
-        result.update(status='ok', mp4=str(video), output_probe=info,
+        result.update(status='ok', stage='complete', mp4=str(video), output_probe=info,
                       footage_report=os.environ['FOOTAGE_REPORT'],
                       metadata=str(folder / 'metadata.json'), captions=str(folder / 'captions.srt'),
                       voice=metadata['voice'], caption_timing=metadata['timing'],
@@ -89,7 +102,7 @@ def main():
                       test_result='validated_output', sources=sorted({x['source'] for x in footage['scenes']}))
     except Exception as exc:
         logging.exception('Video production failed')
-        result.update(error=str(exc))
+        result.update(error=str(exc), exception_type=type(exc).__name__, stage=stage)
     finally:
         write_json(target, result)
     return 0 if result['status'] == 'ok' else 1
