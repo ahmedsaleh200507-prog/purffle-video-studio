@@ -399,10 +399,15 @@ class SceneMatcher:
         # Only bypass action wording for scenes without a character, with a
         # scenery object actually named in the provider metadata. The separate
         # downloaded-video motion, quality and CLIP checks still apply.
-        scenery_core = object_terms & scenery_subjects
+        scenery_core = (object_terms | query_terms) & scenery_subjects
+        character = spec.main_character.strip().lower()
+        no_character = character in ("", "none", "no character", "n/a", "null", "not applicable", "no person")
+        # Metadata for a blue-sky clip is often just "sky, nature, clouds".
+        # Keep the visible scenery subject mandatory, but do not demand color
+        # adjectives or the camera direction in stock tags. The downloaded
+        # frames still undergo real-video, resolution, motion and CLIP checks.
         if (scenery_core and scenery_core.issubset(have)
-                and not _terms(spec.main_character)
-                and score >= .25):
+                and no_character and score >= .20):
             return score
         # A shared location or generic 'man' cannot compensate for a missing object.
         # Search tags are terse: a two-of-five keyword match (0.400) can still be useful when the
