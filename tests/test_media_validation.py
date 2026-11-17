@@ -216,7 +216,7 @@ class QualityTests(unittest.TestCase):
         info = QualityValidator().validate(self.root / "rotated.mp4", need=1)
         self.assertEqual((info["coded_width"], info["coded_height"]), (1920, 1080))
         self.assertEqual((info["width"], info["height"]), (1080, 1920))
-        self.assertEqual(info["portrait_crop_scale"], 1)
+        self.assertEqual(info["portrait_crop_scale"], 0.6667)
 
     def test_playlist_containers_refused(self):
         playlist = self.root / "untrusted.bin"
