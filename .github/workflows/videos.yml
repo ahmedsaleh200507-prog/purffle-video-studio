@@ -124,6 +124,7 @@ jobs:
           python -m compileall -q scripts sitecustomize.py
           python -m pytest -q
       - name: Live provider API health (no footage downloads)
+        continue-on-error: true
         run: python scripts/provider_health.py
       - name: Verify local visual model
         run: python scripts/check_model.py
