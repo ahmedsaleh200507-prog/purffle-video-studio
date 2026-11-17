@@ -11,6 +11,9 @@ def test_language_and_raw_topic():
     assert batch.parse_topic('en|A | B') == ('en', 'A | B')
     assert batch.parse_topic('de Thema') == ('de', 'Thema')
     assert batch.parse_topic('hello') == ('en', 'hello')
+    assert batch.parse_topic('Kennst du das? Du gehst in die Küche und plötzlich weißt du nicht mehr, warum du dort bist.') [0] == 'de'
+    assert batch.parse_topic('The answer is A | B') == ('en', 'The answer is A | B')
+    assert batch.parse_topic('de|Warum? | Wieso?') == ('de', 'Warum? | Wieso?')
     with pytest.raises(ValueError):
         batch.parse_topic('fr|bonjour')
     with pytest.raises(ValueError):
