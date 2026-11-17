@@ -597,7 +597,16 @@ Choose search-friendly English subject/action descriptions commonly used as
 stock-video titles and tags. Prefer diverse visually relevant footage over
 unfindable literal representations of abstract scientific concepts.
 Narration must match these visible actions. Do not invent factual claims or an ending
-for an underspecified real event. Use 3–5 scenes for a 25-second video, at most 6 scenes. The system will fail a scene when
+for an underspecified real event.
+For educational, science, documentary, or explanatory topics, EVERY scene
+including the final scene must stay on the requested subject. Finish with a
+relevant visual conclusion, not a social-media call to action. NEVER generate
+scenes of people commenting, liking, subscribing, sharing, clicking buttons,
+scrolling social media, or watching a video unless the user explicitly asks
+for that exact subject. Avoid generic engagement-bait endings such as
+"comment below", "like and subscribe", or "what do you think?".
+For a blue-sky explanation, end with directly filmable sky, clouds, sunset,
+or sunlight footage, never people commenting on the explanation. Use 3–5 scenes for a 25-second video, at most 6 scenes. The system will fail a scene when
 exact suitable footage cannot be verified; never weaken the scene to hide that failure.
 """
         return system, user
