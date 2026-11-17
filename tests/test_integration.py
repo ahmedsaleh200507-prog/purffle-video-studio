@@ -457,3 +457,25 @@ def test_full_object_and_action_gate_runs_before_download(strict_env, metadata):
         obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
     assert not down.urls
     assert obj.report["scenes"][0]["rejections"][0]["stage"] == "metadata_preflight"
+
+
+def test_atmospheric_sky_metadata_does_not_require_action_tag():
+    from media_validation import SceneMatcher, SceneSpec
+    spec = SceneSpec(object="sky", action="glowing", visual_search_query="sky glowing",
+                     location="open field")
+    assert SceneMatcher.validate_metadata(spec, "blue sky clouds above field") >= .25
+
+
+def test_atmospheric_exception_never_allows_missing_subject():
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    spec = SceneSpec(object="sky", action="glowing", visual_search_query="sky glowing")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(spec, "green grass above a field")
+
+
+def test_atmospheric_exception_does_not_override_human_action():
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    spec = SceneSpec(main_character="young man", object="sky", action="picking up",
+                     visual_search_query="young man picking up sky")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(spec, "blue sky and clouds")
