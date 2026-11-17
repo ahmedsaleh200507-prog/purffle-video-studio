@@ -526,3 +526,19 @@ def test_natural_water_droplets_never_override_character_action():
                      visual_search_query="woman collecting water droplets")
     with pytest.raises(ValidationError):
         SceneMatcher.validate_metadata(spec, "water droplets rain drops nature")
+
+
+
+def test_v4_nature_search_expands_droplet_queries(strict_env):
+    plan = dict(PLAN, main_character="", object="water droplets",
+                action="sunlight filtering through",
+                location="lake",
+                visual_search_query="sunlight filtering through water droplets in a lake")
+    obj, registry, _, _ = visuals(strict_env, {"first": []})
+    with pytest.raises(RuntimeError, match="No suitable verified REAL VIDEO"):
+        obj.for_scene(0, "", json.dumps(plan), "", 3, strict_env)
+    queries = [query for source, query in registry.queries]
+    assert "water droplets sunlight" in queries
+    assert "water drops in sunlight" in queries
+    assert "sunlight reflecting on water" in queries
+    assert plan["visual_search_query"] in queries
