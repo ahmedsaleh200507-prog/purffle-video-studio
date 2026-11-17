@@ -388,7 +388,7 @@ class SceneMatcher:
         action_terms = _terms(spec.action)
         object_grounded = bool(object_terms) and object_terms.issubset(have)
         action_grounded = bool(action_terms) and bool(action_terms & have)
-        if not object_grounded and not (score >= .50 and action_grounded):
+        if not object_grounded:
             raise ValidationError(f"Scene metadata lacks object/action grounding (score {score:.3f})")
         if score < .40:
             raise ValidationError(f"Scene metadata lacks object/action grounding (score {score:.3f})")
