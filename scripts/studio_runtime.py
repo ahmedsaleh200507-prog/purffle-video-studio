@@ -151,6 +151,18 @@ class StrictVisuals:
             data["action"] = "clouds moving"
             data["visual_search_query"] = "blue sky clouds"
             print(f"[SCENE B-ROLL] scene={idx+1} actor gaze replaced with verifiable sky footage", flush=True)
+        # Neural/physiological explanations are not directly filmable in stock footage.
+        # Show the real animal instead; the narration conveys the invisible process.
+        # Keep metadata, CLIP, license, motion and 720p checks intact.
+        abstract = (data.get("visual_search_query", "") + " " + data.get("object", "")).lower()
+        if ("dolphin" in abstract or "delfin" in abstract) and any(
+                term in abstract for term in ("brain", "neural", "hemisphere", "cerebral")):
+            data["main_character"] = ""
+            data["object"] = "dolphin"
+            data["action"] = "swimming"
+            data["location"] = "ocean"
+            data["visual_search_query"] = "dolphin swimming underwater"
+            print(f"[SCENE B-ROLL] scene={idx+1} invisible dolphin brain activity replaced with filmable dolphin footage", flush=True)
         spec = SceneSpec.from_dict(data)
         scene = {"index": idx + 1, "plan": data, "required_seconds": need,
                  "status": "searching", "rejections": []}
