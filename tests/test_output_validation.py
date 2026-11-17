@@ -19,14 +19,14 @@ def output(tmp_path):
     return video, captions, report
 
 
-def probe(width=1080, height=1920):
+def probe(width=720, height=1280):
     return {'width': width, 'height': height, 'duration': 1.2, 'has_audio': True}
 
 
 def test_output_requires_exact_size(output):
     video, captions, report = output
-    with patch('media_validation.QualityValidator.validate', return_value=probe(720, 1280)):
-        with pytest.raises(RuntimeError, match='1080x1920'):
+    with patch('media_validation.QualityValidator.validate', return_value=probe(1080, 1920)):
+        with pytest.raises(RuntimeError, match='Output resolution mismatch'):
             validate_result(video, {'voice': 'edge:test', 'timing': 'native'}, captions, report)
 
 
@@ -68,7 +68,7 @@ def test_accepts_complete_validated_output(output):
     video, captions, report = output
     with patch('media_validation.QualityValidator.validate', return_value=probe()):
         info, provenance = validate_result(video, {'voice': 'edge:test', 'timing': 'native'}, captions, report)
-    assert info['width'] == 1080
+    assert info['width'] == 720
     assert provenance['scenes'][0]['status'] == 'selected'
 
 
