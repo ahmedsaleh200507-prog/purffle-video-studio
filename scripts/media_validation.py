@@ -409,6 +409,20 @@ class SceneMatcher:
         if (scenery_core and scenery_core.issubset(have)
                 and no_character and score >= .20):
             return score
+        # Natural close-ups (rain drops, water droplets, sunlight, mist) are
+        # tagged by visible subjects, not by the complete poetic lighting action
+        # invented by an LLM. Require every explicit object noun in the stock
+        # metadata; verify actual frames, motion, quality and license afterward.
+        # This is intentionally NOT applied to people, money or manufactured
+        # objects, where the exact requested action is essential.
+        nature_objects = {"water", "droplet", "drop", "rain", "mist", "fog",
+                          "haze", "sunlight", "light", "ray", "snow", "ice",
+                          "rainbow", "dew", "reflection", "reflect", "cloud",
+                          "clouds", "sky", "sun", "lake", "river", "ocean",
+                          "sea", "wave", "mountain", "forest", "field"}
+        if (no_character and object_terms and object_terms.issubset(nature_objects)
+                and object_terms.issubset(have) and score >= .15):
+            return score
         # A shared location or generic 'man' cannot compensate for a missing object.
         # Search tags are terse: a two-of-five keyword match (0.400) can still be useful when the
         # actual object AND action are explicitly named. Require both;
