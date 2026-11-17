@@ -409,6 +409,16 @@ class SceneMatcher:
         if (scenery_core and scenery_core.issubset(have)
                 and no_character and score >= .20):
             return score
+        # Wildlife stock is usually tagged by species rather than behavior.
+        # For documentary B-roll without a named character, a matching animal
+        # subject is enough for preflight. CLIP still verifies downloaded frames.
+        wildlife = {"dolphin", "whale", "shark", "turtle", "bird", "eagle",
+                    "penguin", "elephant", "lion", "tiger", "bear", "wolf",
+                    "fox", "deer", "fish", "octopus", "seal", "jellyfish"}
+        wildlife_core = object_terms & wildlife
+        if (no_character and wildlife_core and wildlife_core.issubset(have)
+                and score >= .20):
+            return score
         # Natural close-ups (rain drops, water droplets, sunlight, mist) are
         # tagged by visible subjects, not by the complete poetic lighting action
         # invented by an LLM. Require every explicit object noun in the stock
