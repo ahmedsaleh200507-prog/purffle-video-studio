@@ -45,7 +45,7 @@ def verify_upstream(root=None):
 
 def _redact(value):
     text = str(value)
-    for key in ("GROQ_API_KEY", "PIXABAY_API_KEY", "PEXELS_API_KEY", "COVERR_API_KEY", "EUROPEANA_API_KEY"):
+    for key in ("GROQ_API_KEY", "PIXABAY_API_KEY", "PEXELS_API_KEY", "COVERR_API_KEY", "EUROPEANA_API_KEY", "GITHUB_TOKEN", "GH_TOKEN", "HF_TOKEN"):
         secret = os.getenv(key, "")
         if secret:
             text = text.replace(secret, "[REDACTED]")
