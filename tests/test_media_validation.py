@@ -14,6 +14,19 @@ from scripts.media_validation import (QualityValidator, SceneMatcher, SceneSpec,
                                       VideoDownloader, _frame)
 
 
+class WildlifeMetadataTests(unittest.TestCase):
+    def test_dolphin_species_tag_is_sufficient_for_preflight(self):
+        spec = SceneSpec(object="dolphin", action="swimming",
+                         visual_search_query="dolphin swimming underwater")
+        self.assertGreaterEqual(SceneMatcher.validate_metadata(spec, "dolphin ocean wildlife"), .20)
+
+    def test_wrong_species_still_rejected(self):
+        spec = SceneSpec(object="dolphin", action="swimming",
+                         visual_search_query="dolphin swimming underwater")
+        with self.assertRaises(ValidationError):
+            SceneMatcher.validate_metadata(spec, "shark swimming underwater")
+
+
 class Reply(io.BytesIO):
     def __init__(self, raw=b"v" * 2048, headers=None, url="https://media.example/video.mp4"):
         super().__init__(raw)
