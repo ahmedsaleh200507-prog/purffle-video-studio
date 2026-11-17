@@ -135,6 +135,22 @@ class StrictVisuals:
         if ("stone circle" in descriptive and "england" in descriptive
                 and "stonehenge" in topic.lower()):
             data["visual_search_query"] = "Stonehenge standing stones"
+        # Prefer verifiable atmospheric B-roll over an invented actor for a
+        # sky-looking-up establishing shot. Stock libraries have plentiful
+        # moving skies but rarely tag the exact age/gender/gaze of a person.
+        # Restrict this fallback to a sky-focused shot; do not weaken actor
+        # requirements for human actions elsewhere in the story.
+        initial_query = data.get("visual_search_query", "").lower()
+        initial_action = data.get("action", "").lower()
+        if ("sky" in initial_query and ("looking up" in initial_query
+                or "look up" in initial_query or "gazing" in initial_query)
+                and "sky" in (data.get("object", "") + " " + initial_query).lower()
+                and any(word in initial_action for word in ("look", "gaze", "watch", "stare", "observ"))):
+            data["main_character"] = ""
+            data["object"] = "sky"
+            data["action"] = "clouds moving"
+            data["visual_search_query"] = "blue sky clouds"
+            print(f"[SCENE B-ROLL] scene={idx+1} actor gaze replaced with verifiable sky footage", flush=True)
         spec = SceneSpec.from_dict(data)
         scene = {"index": idx + 1, "plan": data, "required_seconds": need,
                  "status": "searching", "rejections": []}
