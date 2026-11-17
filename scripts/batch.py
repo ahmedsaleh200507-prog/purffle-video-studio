@@ -28,11 +28,11 @@ def write_json(path: Path, value):
 
 def parse_topic(raw: str):
     raw = raw.strip()
-    if '|' in raw:
+    if raw.lower().startswith(('de|', 'en|')):
         lang, topic = raw.split('|', 1)
-        if lang.strip().lower() not in ('de', 'en'):
-            raise ValueError('Language prefix must be en| or de|')
         lang, topic = lang.strip().lower(), topic.strip()
+    elif '|' in raw and raw.split('|', 1)[0].strip().lower() in ('fr', 'es', 'it'):
+        raise ValueError('Language prefix must be en| or de|')
     elif raw[:3].lower() in ('de ', 'en '):
         lang, topic = raw[:2].lower(), raw[3:].strip()
     else:
