@@ -503,3 +503,26 @@ def test_sky_exception_requires_real_sky_and_no_character():
                       visual_search_query="young man picking up sky")
     with pytest.raises(ValidationError):
         SceneMatcher.validate_metadata(human, "blue sky overhead")
+
+
+def test_natural_water_droplets_allow_stock_subject_tags():
+    from media_validation import SceneMatcher, SceneSpec
+    spec = SceneSpec(object="water droplets", action="sunlight filtering through",
+                     visual_search_query="sunlight filtering through water droplets in a lake")
+    assert SceneMatcher.validate_metadata(spec, "water droplets rain drops nature lake") >= .15
+
+
+def test_natural_water_droplets_reject_missing_droplets():
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    spec = SceneSpec(object="water droplets", action="sunlight filtering through",
+                     visual_search_query="sunlight filtering through water droplets in a lake")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(spec, "water lake sunshine landscape")
+
+
+def test_natural_water_droplets_never_override_character_action():
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    spec = SceneSpec(main_character="woman", object="water droplets", action="collecting",
+                     visual_search_query="woman collecting water droplets")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(spec, "water droplets rain drops nature")
