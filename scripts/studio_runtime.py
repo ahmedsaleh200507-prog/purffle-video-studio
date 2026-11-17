@@ -358,7 +358,39 @@ class StrictVisuals:
         Path(dest_dir).mkdir(parents=True, exist_ok=True)
         items = []
         for idx, (query, prompt, need) in enumerate(jobs):
-            items.append(self.for_scene(idx, query, prompt, topic, need, dest_dir))
+            try:
+                item = self.for_scene(idx, query, prompt, topic, need, dest_dir)
+            except RuntimeError as first_error:
+                # Retry only when footage discovery failed. Never conceal license,
+                # rendering or configuration failures with a generic fallback.
+                if "No suitable verified REAL VIDEO" not in str(first_error):
+                    raise
+                try:
+                    data = _scene_data(json.loads(prompt))
+                except (ValueError, TypeError):
+                    raise first_error
+                subject = data.get("object", "").strip()
+                # An exact subject remains mandatory: never substitute an
+                # unrelated image merely to make the pipeline complete.
+                if not subject or len(subject.split()) > 3:
+                    raise first_error
+                original = data.get("visual_search_query", "").strip()
+                if subject.lower() == original.lower():
+                    raise first_error
+                data["main_character"] = ""
+                data["action"] = "moving"
+                data["location"] = ""
+                data["visual_search_query"] = subject[:90]
+                print(f"[AUTO REPLAN] scene={idx+1} query={original!r} -> {subject!r}", flush=True)
+                self.report["state"] = "searching"
+                self.report.pop("error", None)
+                try:
+                    item = self.for_scene(idx, subject, json.dumps(data), topic, need, dest_dir)
+                except RuntimeError:
+                    self.report["state"] = "failed"
+                    self._save()
+                    raise first_error
+            items.append(item)
             if progress:
                 progress((idx + 1) / len(jobs))
         self.report["state"] = "footage_ready"
