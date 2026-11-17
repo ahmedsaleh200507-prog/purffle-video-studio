@@ -154,6 +154,11 @@ class StrictVisuals:
             # Only landmark footage benefits from a shorter subject query.
             landmark_terms = ("stonehenge", "machu picchu", "giza", "easter island", "moai")
             landmark_scene = any(name in queries[0].lower() for name in landmark_terms)
+            # Kitchen-doorway footage is often tagged with short stock terms;
+            # retain the original exact search and add a focused alternative.
+            if "kitchen doorway" in queries[0].lower():
+                queries.append("person entering kitchen")
+                queries.append("walking through doorway")
             if landmark_scene:
                 if short_query and short_query.lower() != queries[0].lower():
                     queries.append(short_query[:120])
