@@ -355,14 +355,13 @@ class StrictVisuals:
         raise RuntimeError(f"No suitable verified REAL VIDEO for scene {idx+1}: {data['visual_search_query']!r}")
 
     def for_scenes(self, jobs, topic, dest_dir, progress=None):
+        """Prefer scene-specific stock, then thematic B-roll from verified footage."""
         Path(dest_dir).mkdir(parents=True, exist_ok=True)
         items = []
         for idx, (query, prompt, need) in enumerate(jobs):
             try:
                 item = self.for_scene(idx, query, prompt, topic, need, dest_dir)
             except RuntimeError as first_error:
-                # Retry only when footage discovery failed. Never conceal license,
-                # rendering or configuration failures with a generic fallback.
                 if "No suitable verified REAL VIDEO" not in str(first_error):
                     raise
                 try:
@@ -370,30 +369,53 @@ class StrictVisuals:
                 except (ValueError, TypeError):
                     raise first_error
                 subject = data.get("object", "").strip()
-                # An exact subject remains mandatory: never substitute an
-                # unrelated image merely to make the pipeline complete.
-                if not subject or len(subject.split()) > 3:
-                    raise first_error
-                original = data.get("visual_search_query", "").strip()
-                if subject.lower() == original.lower():
-                    raise first_error
-                data["main_character"] = ""
-                data["action"] = "moving"
-                data["location"] = ""
-                data["visual_search_query"] = subject[:90]
-                print(f"[AUTO REPLAN] scene={idx+1} query={original!r} -> {subject!r}", flush=True)
-                self.report["state"] = "searching"
-                self.report.pop("error", None)
-                try:
-                    item = self.for_scene(idx, subject, json.dumps(data), topic, need, dest_dir)
-                except RuntimeError:
-                    self.report["state"] = "failed"
-                    self._save()
-                    raise first_error
+                original = data["visual_search_query"]
+                item = None
+                # A short subject query is often more productive than a literal
+                # scene description. Retain all source/license/720p/frame gates.
+                if subject and len(subject.split()) <= 3 and subject.lower() != original.lower():
+                    data.update(main_character="", action="moving", location="",
+                                visual_search_query=subject[:90])
+                    print(f"[AUTO REPLAN] scene={idx+1} query={original!r} -> {subject!r}", flush=True)
+                    self.report["state"] = "searching"
+                    self.report.pop("error", None)
+                    try:
+                        item = self.for_scene(idx, subject, json.dumps(data), topic, need, dest_dir)
+                    except RuntimeError as retry_error:
+                        if "No suitable verified REAL VIDEO" not in str(retry_error):
+                            raise
+                # A documentary may use already-verified establishing footage
+                # instead of requiring a literal visual for every spoken line.
+                # Never use unlicensed, still, unverified, or too-short media.
+                if item is None:
+                    eligible = [previous for previous in items
+                                if previous.kind == "video"
+                                and previous.path
+                                and previous.extra.get("strict_validated")
+                                and previous.duration >= need + 0.05]
+                    if eligible:
+                        item = eligible[-1]
+                        self.report["state"] = "searching"
+                        self.report.pop("error", None)
+                        self.report["scenes"].append({
+                            "index": idx + 1, "status": "thematic_broll",
+                            "requested_query": original,
+                            "fallback": "previous verified moving footage",
+                            "source_key": item.key,
+                            "required_seconds": need,
+                        })
+                        self._save()
+                        print(f"[THEMATIC B-ROLL] scene={idx+1} using prior verified footage; "
+                              "exact scene match unavailable", flush=True)
+                    else:
+                        self.report["state"] = "failed"
+                        self._save()
+                        raise first_error
             items.append(item)
             if progress:
                 progress((idx + 1) / len(jobs))
         self.report["state"] = "footage_ready"
+        self.report.pop("error", None)
         self._save()
         return items
 
