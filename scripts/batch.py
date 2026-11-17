@@ -40,7 +40,7 @@ def parse_topic(raw: str):
         # synthesizing an English voice. Explicit de| / en| always wins.
         import re
         german_markers = re.findall(
-            r"\\b(?:die|der|das|und|eine|einer|wurden|welcher|diese|doch|vor|jahrhunderten|geheimnisse|menschen|orte)\\b",
+            r"\b(?:die|der|das|und|eine|einer|wurden|welcher|diese|doch|vor|jahrhunderten|geheimnisse|menschen|orte|ich|du|wir|nicht|mehr|warum|beim|zwischen|wieder|plötzlich|gehst|weißt|vergessen|küche|gehirn)\b",
             raw.lower(),
         )
         lang, topic = ('de' if len(german_markers) >= 3 or
