@@ -380,9 +380,17 @@ class SceneMatcher:
         if named_landmark and score >= .20:
             return score
         # A shared location or generic 'man' cannot compensate for a missing object.
-        if score < .45 or not _terms(spec.object).issubset(have):
+        # Search tags are terse: a four-of-five keyword match (0.400
+        # when two of five words match) can still be useful when the
+        # actual object AND action are explicitly named. Require both;
+        # the downloaded frames must independently pass local CLIP.
+        object_terms = _terms(spec.object)
+        action_terms = _terms(spec.action)
+        object_grounded = bool(object_terms) and object_terms.issubset(have)
+        action_grounded = bool(action_terms) and bool(action_terms & have)
+        if not object_grounded or score < .40:
             raise ValidationError(f"Scene metadata lacks object/action grounding (score {score:.3f})")
-        if _terms(spec.action) and not (_terms(spec.action) & have):
+        if not action_grounded:
             raise ValidationError("Scene metadata does not describe the requested action")
         return score
 
