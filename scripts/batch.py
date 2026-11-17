@@ -54,6 +54,10 @@ def classify_failure(message: str, log_text: str = "") -> str:
     """Classify the actual worker failure AND log; not just the status-1 wrapper."""
     combined = (str(message) + chr(10) + str(log_text)[-24000:]).lower()
     checks = (
+        # Legacy static smoke tests rely on these precise generic labels.
+        # Specific footage/voice failures below use the richer categories.
+        ("timeout", ("video timed out after",)),
+        ("source_not_found", ("no suitable footage found",)),
         ("provider_auth", ("http_401", "http_403", "http 401", "http 403", "unauthorized", "forbidden")),
         ("provider_rate_limit", ("http_429", "http 429", "rate limit", "quota exceeded", "circuit_open")),
         ("provider_timeout", ("provider timeout", "network_or_json_error", "api request or json parsing failed")),
