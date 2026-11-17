@@ -60,6 +60,15 @@ def _atomic_json(path, data):
     temp.replace(path)
 
 
+def _native_portrait_scale(quality, target_width, target_height):
+    """Actual crop-to-output scale from measured dimensions (no metadata trust)."""
+    width, height = int(quality["width"]), int(quality["height"])
+    if width <= 0 or height <= 0 or target_width <= 0 or target_height <= 0:
+        return float("inf")
+    crop_width = min(width, height * target_width / target_height)
+    return max(target_width / crop_width, target_height / height)
+
+
 def _scene_data(raw):
     """No guessed scene requirements: the writer must explicitly provide the plan."""
     if not isinstance(raw, dict):
@@ -298,9 +307,11 @@ class StrictVisuals:
                 """Known native 9:16 footage first; unknown sizes still get probed."""
                 if item.width <= 0 or item.height <= 0:
                     return 1
-                ratio = self.s.width / self.s.height
+                required_width = getattr(self.s, "width", 720)
+                required_height = getattr(self.s, "height", 1280)
+                ratio = required_width / required_height
                 crop_width = min(item.width, item.height * ratio)
-                return 0 if crop_width >= self.s.width and item.height >= self.s.height else 2
+                return 0 if crop_width >= required_width and item.height >= required_height else 2
 
             ranked.sort(key=lambda row: (crop_rank(row[1]), -row[0], row[1].rank,
                                           -int(row[1].height > row[1].width),
@@ -319,12 +330,15 @@ class StrictVisuals:
                     # Source HD is not enough: portrait cropping of 1920x1080
                     # leaves only ~608x1080 native pixels for a 720x1280 output.
                     # Reject upscaling rather than reporting false native 720p.
-                    if float(quality.get("portrait_crop_scale", float("inf"))) > 1.0001:
+                    required_width = getattr(self.s, "width", 720)
+                    required_height = getattr(self.s, "height", 1280)
+                    native_scale = _native_portrait_scale(quality, required_width, required_height)
+                    quality["portrait_crop_scale"] = round(native_scale, 5)
+                    if native_scale > 1.0001:
                         raise ValueError(
                             "insufficient_native_resolution: 9:16 crop would upscale "
                             f"{quality.get('width')}x{quality.get('height')} source "
-                            f"to {self.s.width}x{self.s.height}; "
-                            f"crop width={quality.get('portrait_crop_width')}"
+                            f"to {required_width}x{required_height}"
                         )
                     match = self.matcher.match(path, spec, metadata=item.text, duration=need)
                     item.path = path
@@ -447,9 +461,9 @@ def strict_prepare_segment(item, seconds, idx, settings, work):
         raise RuntimeError("Render refused unvalidated footage or generated/still content")
     if item.duration < seconds + 0.05:
         raise RuntimeError("Source too short; refusing footage loop")
-    if float(item.extra.get("quality", {}).get("portrait_crop_scale", float("inf"))) > 1.0001:
-        raise RuntimeError("insufficient_native_resolution: portrait crop requires upscaling")
     W, H, F = settings.width, settings.height, settings.fps
+    if _native_portrait_scale({"width": item.width, "height": item.height}, W, H) > 1.0001:
+        raise RuntimeError("insufficient_native_resolution: portrait crop requires upscaling")
     focus = float(item.extra.get("match", {}).get("crop_focus_x", 0.5))
     if not math.isfinite(focus):
         raise RuntimeError("Invalid crop focus")
