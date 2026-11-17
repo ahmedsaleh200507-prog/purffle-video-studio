@@ -143,7 +143,11 @@ class StrictVisuals:
             short_query = " ".join(part for part in
                                    (data.get("object", ""), data.get("location", ""))
                                    if part).strip()
-            if short_query and short_query.lower() != queries[0].lower():
+            # Preserve strict action-specific searches for ordinary scenes.
+            # Only landmark footage benefits from a shorter subject query.
+            landmark_terms = ("stonehenge", "machu picchu", "giza", "easter island", "moai")
+            landmark_scene = any(name in queries[0].lower() for name in landmark_terms)
+            if landmark_scene and short_query and short_query.lower() != queries[0].lower():
                 queries.append(short_query[:120])
             candidates = []
             seen_candidates = set()
