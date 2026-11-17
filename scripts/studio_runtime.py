@@ -85,7 +85,7 @@ class StrictVisuals:
             raise RuntimeError("Offline/synthetic visuals are forbidden in strict production")
         self.registry = registry if registry is not None else ProviderRegistry()
         self.downloader = downloader if downloader is not None else VideoDownloader(Path("media_cache/downloads"))
-        self.quality = quality if quality is not None else QualityValidator(min_short_side=1080)
+        self.quality = quality if quality is not None else QualityValidator(min_short_side=720)
         self.matcher = matcher if matcher is not None else SceneMatcher()
         self.sources = [x for x in settings.visual_sources if x in self.registry.enabled]
         self.credits = set()
@@ -99,7 +99,7 @@ class StrictVisuals:
         self.used_urls = set(state.get("urls", []))
         self.used_hashes = set(state.get("hashes", []))
         self.report = {"state": "searching", "upstream_commit": UPSTREAM_COMMIT,
-                       "policy": "real video; verified license; native source short side >=1080; local visual validation",
+                       "policy": "real video; verified license; native source short side >=720; local visual validation",
                        "sources": self.registry.health(), "scenes": [], "provider_events": []}
         print("[SOURCE HEALTH] " + _redact(json.dumps(self.report["sources"], ensure_ascii=False)), flush=True)
         self._save()
@@ -194,8 +194,8 @@ class StrictVisuals:
                 try:
                     if item.kind != "video" or item.key in self.used or url_key in self.used_urls:
                         raise ValueError("non_video_or_duplicate")
-                    if item.width > 0 and item.height > 0 and min(item.width, item.height) < 1080:
-                        raise ValueError(f"Known source below 1080 short side: {item.width}x{item.height}")
+                    if item.width > 0 and item.height > 0 and min(item.width, item.height) < 720:
+                        raise ValueError(f"Known source below 720 short side: {item.width}x{item.height}")
                     if not LicenseValidator.validate(item.extra.get("license")):
                         raise ValueError("Unverified or incompatible candidate license")
                     if hasattr(self.matcher, "validate_metadata"):
