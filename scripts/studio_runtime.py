@@ -163,6 +163,27 @@ class StrictVisuals:
             data["location"] = "ocean"
             data["visual_search_query"] = "dolphin swimming underwater"
             print(f"[SCENE B-ROLL] scene={idx+1} invisible dolphin brain activity replaced with filmable dolphin footage", flush=True)
+        # Hybrid stock-first planning: a scientific concept belongs in narration,
+        # not in a literal stock-video search. Preserve a concrete visible subject.
+        invisible = ("brain", "neural", "neuron", "hemisphere", "molecule",
+                     "microscopic", "atom", "photon", "memory", "thought",
+                     "consciousness", "oxygen exchange", "electrical signal")
+        search_text = data["visual_search_query"].lower()
+        if any(term in search_text for term in invisible):
+            subject = data.get("object", "").strip()
+            # Prefer a concrete known visual subject from the original query.
+            concrete = ("dolphin", "whale", "shark", "turtle", "bird", "dog",
+                        "cat", "human", "person", "ocean", "sea", "sky",
+                        "cloud", "forest", "tree", "river", "sunset", "sunrise")
+            chosen = next((word for word in concrete if word in search_text.split()), None)
+            if chosen and (not subject or any(term in subject.lower() for term in invisible)):
+                subject = chosen
+            if subject and not any(term in subject.lower() for term in invisible):
+                data["main_character"] = ""
+                data["object"] = subject
+                data["action"] = "swimming" if subject.lower() in ("dolphin", "whale", "shark", "turtle") else "moving"
+                data["visual_search_query"] = (subject + " " + data["action"])[:120]
+                print(f"[STOCK-FIRST] scene={idx+1} abstract query simplified to {data['visual_search_query']!r}", flush=True)
         spec = SceneSpec.from_dict(data)
         scene = {"index": idx + 1, "plan": data, "required_seconds": need,
                  "status": "searching", "rejections": []}
@@ -608,8 +629,7 @@ time, visual_search_query. These values are ALWAYS English. Use empty main_chara
 there is no human/animal character; use empty time when irrelevant. A visible subject
 in object (including a natural subject such as ocean), and a concrete action are required. search_query MUST equal visual_search_query. Set
 image_prompt to an empty string: images and synthetic imagery are not permitted.
-visual_search_query should describe the exact visible subject, key object, action and
-place in 5–14 words, e.g. young man picking up euro banknote on sidewalk.
+visual_search_query must use concise searchable stock-video tags (ideally 2–5 English words), e.g. dolphin swimming underwater. Never include invisible processes in footage queries.
 Preserve the user's concrete story, action, currency and chronology; do not replace
 banknotes with gold, people with devices or actions with metaphors. Keep the same
 character and object descriptions across adjacent scenes. Describe real recordable
@@ -624,7 +644,7 @@ mechanism accurately without pretending the footage depicts molecules.
 Choose search-friendly English subject/action descriptions commonly used as
 stock-video titles and tags. Prefer diverse visually relevant footage over
 unfindable literal representations of abstract scientific concepts.
-Narration must match these visible actions. Do not invent factual claims or an ending
+HYBRID STOCK-FIRST: First outline the essential truthful facts of the topic, then choose only common, directly filmable stock shots for every scene, then write narration that explains those facts while the shots support them. A shot need not literally depict invisible mechanisms. Avoid over-specific footage requests; prioritize diverse concrete shots. Do not sacrifice factual accuracy just to match footage. Narration must be compatible with these visible actions. Do not invent factual claims or an ending
 for an underspecified real event.
 For educational, science, documentary, or explanatory topics, EVERY scene
 including the final scene must stay on the requested subject. Finish with a
