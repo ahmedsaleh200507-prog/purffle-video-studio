@@ -149,6 +149,16 @@ class SceneTests(unittest.TestCase):
         spec = SceneSpec.from_dict({"object": "euro banknotes", "action": "pick", "search_query": "picking euro banknotes"})
         self.assertEqual(SceneMatcher.metadata_score(spec, "picks euro banknote"), 1)
 
+    def test_volcano_and_eruption_stock_synonyms(self):
+        spec = SceneSpec.from_dict({
+            "object": "volcano", "action": "erupting",
+            "visual_search_query": "volcano erupting smoke",
+        })
+        score = SceneMatcher.validate_metadata(spec, "volcanic eruption releasing smoke")
+        self.assertGreaterEqual(score, 0.9)
+        with self.assertRaises(ValidationError):
+            SceneMatcher.validate_metadata(spec, "dormant volcanic mountain at sunrise")
+
     def test_spec_requires_object_and_action(self):
         with self.assertRaises(ValidationError):
             SceneSpec.from_dict({"search_query": "money"})
