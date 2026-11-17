@@ -64,7 +64,7 @@ jobs:
       SEO_KEYWORDS: 'false'
       VISUAL_SOURCES: pixabay,pexels,coverr-video,europeana-video,wikimedia-video,nasa-video,archive-video
       TTS_ENGINE: edge
-      EDGE_TTS_TIMEOUT_SECONDS: '45'
+      EDGE_TTS_TIMEOUT_SECONDS: '120'
       RESOLUTION: 720x1280
       FPS: '30'
       PRESET: medium
