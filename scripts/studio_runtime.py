@@ -147,8 +147,16 @@ class StrictVisuals:
             # Only landmark footage benefits from a shorter subject query.
             landmark_terms = ("stonehenge", "machu picchu", "giza", "easter island", "moai")
             landmark_scene = any(name in queries[0].lower() for name in landmark_terms)
-            if landmark_scene and short_query and short_query.lower() != queries[0].lower():
-                queries.append(short_query[:120])
+            if landmark_scene:
+                if short_query and short_query.lower() != queries[0].lower():
+                    queries.append(short_query[:120])
+                # A named landmark is more searchable than a generated action
+                # description. Keep strict metadata, license, resolution and
+                # visual validation unchanged for every returned candidate.
+                for landmark in landmark_terms:
+                    if landmark in queries[0].lower() and landmark not in {q.lower() for q in queries}:
+                        queries.append(landmark)
+                        break
             candidates = []
             seen_candidates = set()
             for search_query in queries:
