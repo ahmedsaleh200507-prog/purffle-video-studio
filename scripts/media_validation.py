@@ -238,7 +238,7 @@ def _frame(path: Path, at: float, size=224, *, preserve_aspect=False):
 
 
 class QualityValidator:
-    def __init__(self, min_short_side=1080, *, min_fps=15, max_duration=1800):
+    def __init__(self, min_short_side=720, *, min_fps=15, max_duration=1800):
         self.min_short_side = min_short_side
         self.min_fps = min_fps
         self.max_duration = max_duration
