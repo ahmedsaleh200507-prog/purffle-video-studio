@@ -128,6 +128,13 @@ class StrictVisuals:
             self.report["error"] = "Missing structured scene plan"
             self._save()
             raise RuntimeError("Missing structured scene plan; refusing broad topic fallback") from exc
+        # Recover an explicit landmark from a descriptive LLM query. The
+        # provider may otherwise return generic stones and the strict metadata
+        # gate rejects even correctly tagged Stonehenge footage.
+        descriptive = data["visual_search_query"].lower()
+        if ("stone circle" in descriptive and "england" in descriptive
+                and "stonehenge" in topic.lower()):
+            data["visual_search_query"] = "Stonehenge standing stones"
         spec = SceneSpec.from_dict(data)
         scene = {"index": idx + 1, "plan": data, "required_seconds": need,
                  "status": "searching", "rejections": []}
