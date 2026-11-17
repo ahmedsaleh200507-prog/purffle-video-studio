@@ -1,0 +1,34 @@
+name: Purffle change validation
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [fix/video-reliability-720p]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python syntax checks
+        run: python -m compileall -q scripts sitecustomize.py
+      - name: Verify output resolution and error classification
+        env:
+          PYTHONPATH: scripts
+          RESOLUTION: 720x1280
+        run: |
+          python - <<'PY'
+          import os
+          from batch import classify_failure, parse_topic
+          assert os.environ['RESOLUTION'] == '720x1280'
+          assert parse_topic('de|Warum ist der Himmel blau?')[0] == 'de'
+          assert classify_failure('GROQ_API_KEY missing from GitHub Actions Secrets') == 'missing_api_key'
+          assert classify_failure('Video timed out after 1500s') == 'timeout'
+          assert classify_failure('No suitable footage found') == 'source_not_found'
+          print('Static smoke checks passed')
+          PY
