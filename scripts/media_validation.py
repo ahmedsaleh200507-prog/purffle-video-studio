@@ -348,8 +348,8 @@ class SceneMatcher:
     _processor = None
     _lock = threading.RLock()
 
-    def __init__(self, *, threshold=None, margin=.015):
-        self.threshold = float(threshold if threshold is not None else os.environ.get("PURFFLE_CLIP_THRESHOLD", ".26"))
+    def __init__(self, *, threshold=None, margin=.0):
+        self.threshold = float(threshold if threshold is not None else os.environ.get("PURFFLE_CLIP_THRESHOLD", ".22"))
         self.margin = margin
 
     @staticmethod
@@ -496,7 +496,7 @@ class SceneMatcher:
         visual_score = statistics.median(positive_scores)
         object_score = statistics.median(object_scores)
         visual_margin = statistics.median(margins)
-        if (visual_score < self.threshold or object_score < self.threshold - .025
+        if (visual_score < self.threshold or object_score < self.threshold - .055
                 or visual_margin < self.margin
                 or sum(s >= self.threshold for s in positive_scores) < 2):
             raise ValidationError(f"Visual scene mismatch: cosine={visual_score:.3f}, object={object_score:.3f}, margin={visual_margin:.3f}")
