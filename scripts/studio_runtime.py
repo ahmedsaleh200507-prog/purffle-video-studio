@@ -177,6 +177,25 @@ class StrictVisuals:
                     queries.append((subject + " " + action)[:120])
                 if short_query:
                     queries.append(short_query[:120])
+            # V4: cinematic natural-scene search expansion. Stock catalogues
+            # index simple visual subjects much better than long AI descriptions.
+            # These alternatives are only discovery queries: the original
+            # structured scene still controls license, metadata, motion and
+            # frame-level visual verification.
+            if not landmark_scene and not data.get("main_character", "").strip():
+                natural_query = (data.get("visual_search_query", "") + " "
+                                 + data.get("object", "")).lower()
+                if "droplet" in natural_query or "water drop" in natural_query:
+                    queries.extend(["water droplets sunlight", "water drops in sunlight",
+                                    "sunlight reflecting on water", "water drops close up"])
+                elif "sunlight" in natural_query and ("lake" in natural_query or "water" in natural_query):
+                    queries.extend(["sunlight reflecting on water", "sun rays over lake",
+                                    "sunlight on water surface"])
+                elif "sky" in natural_query or "cloud" in natural_query:
+                    queries.extend(["blue sky clouds", "clouds moving sky",
+                                    "sunlight through clouds"])
+                elif "sunset" in natural_query or "sunrise" in natural_query:
+                    queries.extend(["sunrise sky", "sunset horizon", "golden hour sky"])
             # Avoid repeated API requests for identical queries.
             queries = list(dict.fromkeys(queries))
             if landmark_scene:
