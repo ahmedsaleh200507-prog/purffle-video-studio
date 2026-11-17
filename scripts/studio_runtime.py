@@ -165,6 +165,18 @@ class StrictVisuals:
             if ("kitchen doorway" in queries[0].lower()
                     and short_query and short_query.lower() != queries[0].lower()):
                 queries.append(short_query[:120])
+            # Stock APIs index short subject phrases better than long scene prose.
+            # Try these automatically, while retaining the same metadata, license,
+            # quality and frame-verification gates for every candidate.
+            if not landmark_scene:
+                subject = data.get("object", "").strip()
+                action = data.get("action", "").strip()
+                if subject:
+                    queries.append(subject[:90])
+                if subject and action:
+                    queries.append((subject + " " + action)[:120])
+                if short_query:
+                    queries.append(short_query[:120])
             # Avoid repeated API requests for identical queries.
             queries = list(dict.fromkeys(queries))
             if landmark_scene:
@@ -555,6 +567,16 @@ Preserve the user's concrete story, action, currency and chronology; do not repl
 banknotes with gold, people with devices or actions with metaphors. Keep the same
 character and object descriptions across adjacent scenes. Describe real recordable
 motion, never diagrams, animation, visualizations, text-only shots or generic filler.
+IMPORTANT: Every proposed scene must be achievable using ordinary real-world
+stock camera footage. NEVER request microscopic air molecules, molecular-scale
+Rayleigh scattering, invisible photons, scientific simulations, diagrams, or
+other subjects that ordinary cameras cannot film. For explanations of invisible
+physics, show directly filmable related real phenomena instead (blue sky,
+sunlight through clouds, atmospheric haze, sunset sky), and narrate the invisible
+mechanism accurately without pretending the footage depicts molecules.
+Choose search-friendly English subject/action descriptions commonly used as
+stock-video titles and tags. Prefer diverse visually relevant footage over
+unfindable literal representations of abstract scientific concepts.
 Narration must match these visible actions. Do not invent factual claims or an ending
 for an underspecified real event. Use 3–5 scenes for a 25-second video, at most 6 scenes. The system will fail a scene when
 exact suitable footage cannot be verified; never weaken the scene to hide that failure.
