@@ -427,13 +427,21 @@ def test_metadata_ties_follow_original_api_rank_before_portrait_size(strict_env)
     assert got.id == "original-top" and len(down.urls) == 1
 
 
-def test_known_720p_result_never_downloaded(strict_env):
-    low = candidate("low", width=1280, height=720)
+def test_known_720p_result_is_allowed(strict_env):
+    minimum = candidate("minimum", width=1280, height=720)
+    obj, _, down, _ = visuals(strict_env, {"first": [minimum]}, GroundedMatcher())
+    got = obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
+    assert got.id == "minimum"
+    assert down.urls == [minimum.url]
+
+
+def test_known_below_720p_result_never_downloaded(strict_env):
+    low = candidate("low", width=1278, height=719)
     obj, _, down, _ = visuals(strict_env, {"first": [low]}, GroundedMatcher())
     with pytest.raises(RuntimeError, match="No suitable verified REAL VIDEO"):
         obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
     assert not down.urls
-    assert "below 1080" in obj.report["scenes"][0]["rejections"][0]["reason"]
+    assert "below 720" in obj.report["scenes"][0]["rejections"][0]["reason"]
 
 
 @pytest.mark.parametrize("metadata", ["young man picking banknote on sidewalk", "young man euro banknote on sidewalk"])
