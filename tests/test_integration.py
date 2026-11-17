@@ -479,3 +479,27 @@ def test_atmospheric_exception_does_not_override_human_action():
                      visual_search_query="young man picking up sky")
     with pytest.raises(ValidationError):
         SceneMatcher.validate_metadata(spec, "blue sky and clouds")
+
+
+@pytest.mark.parametrize("metadata", [
+    "blue sky clouds above field",
+    "sky nature background",
+    "blue sky overhead",
+])
+def test_sky_overhead_accepts_subject_without_action_tag(metadata):
+    from media_validation import SceneMatcher, SceneSpec
+    spec = SceneSpec(object="sky", action="overhead",
+                     visual_search_query="blue sky overhead")
+    assert SceneMatcher.validate_metadata(spec, metadata) >= .25
+
+
+def test_sky_exception_requires_real_sky_and_no_character():
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    spec = SceneSpec(object="sky", action="overhead",
+                     visual_search_query="blue sky overhead")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(spec, "blue ocean overhead")
+    human = SceneSpec(main_character="young man", object="sky", action="picking up",
+                      visual_search_query="young man picking up sky")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(human, "blue sky overhead")
