@@ -380,6 +380,26 @@ class SceneMatcher:
                                if name in query_text and name in metadata_text), None)
         if named_landmark and score >= .20:
             return score
+        # Atmospheric stock clips are often tagged only with their visible subject
+        # (e.g. "sky", "sunrise") rather than an invented camera/light action.
+        # Allow subject-grounded scenery through metadata preflight, but still
+        # require local frame-level CLIP verification before accepting a clip.
+        scenery_subjects = {"sky", "sun", "sunris", "sunset", "cloud", "clouds",
+                            "horizon", "ocean", "sea", "mountain", "forest",
+                            "river", "lake", "rain", "snow", "star", "moon",
+                            "landscap", "field", "beach", "wave"}
+        scenery_actions = {"glow", "shin", "ris", "set", "mov", "drift",
+                           "flow", "blow", "fall", "spark", "twinkl",
+                           "brighten", "darken", "appear", "chang"}
+        object_terms = _terms(spec.object)
+        action_terms = _terms(spec.action)
+        query_terms = _terms(spec.visual_search_query)
+        if (object_terms and object_terms.issubset(have)
+                and object_terms & scenery_subjects
+                and action_terms and action_terms <= scenery_actions
+                and not _terms(spec.main_character)
+                and score >= .25):
+            return score
         # A shared location or generic 'man' cannot compensate for a missing object.
         # Search tags are terse: a two-of-five keyword match (0.400) can still be useful when the
         # actual object AND action are explicitly named. Require both;
