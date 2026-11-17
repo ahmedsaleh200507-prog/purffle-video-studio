@@ -294,7 +294,15 @@ class StrictVisuals:
                     print(f"[REJECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} preflight={reason}", flush=True)
             # Provider orientation/resolution ordering must never hide a more
             # relevant result outside the bounded download shortlist.
-            ranked.sort(key=lambda row: (-row[0], row[1].rank,
+            def crop_rank(item):
+                """Known native 9:16 footage first; unknown sizes still get probed."""
+                if item.width <= 0 or item.height <= 0:
+                    return 1
+                ratio = self.s.width / self.s.height
+                crop_width = min(item.width, item.height * ratio)
+                return 0 if crop_width >= self.s.width and item.height >= self.s.height else 2
+
+            ranked.sort(key=lambda row: (crop_rank(row[1]), -row[0], row[1].rank,
                                           -int(row[1].height > row[1].width),
                                           -min(row[1].width, row[1].height)))
             for score, item, url_key in ranked[:max_candidates]:
@@ -355,7 +363,8 @@ class StrictVisuals:
                         except OSError:
                             pass  # aggregate cache budget still fails safely when full
                     reason = _redact(f"{type(exc).__name__}: {exc}")[:450]
-                    scene["rejections"].append({"source": source, "id": item.id, "reason": reason})
+                    scene["rejections"].append({"source": source, "id": item.id,
+                                                "reason": reason, "stage": "download_quality_or_visual"})
                     print(f"[REJECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} reason={reason}", flush=True)
             self._save()
         scene["status"] = "failed"
