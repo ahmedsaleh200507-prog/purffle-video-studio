@@ -59,7 +59,7 @@ def test_workflow_contract():
     inputs = workflow.get('on', workflow.get(True))['workflow_dispatch']['inputs']
     assert len(inputs) == 10
     job = workflow['jobs']['create-videos']
-    assert job['env']['RESOLUTION'] == '1080x1920'
+    assert job['env']['RESOLUTION'] == '720x1280'
     assert job['permissions'] if 'permissions' in job else workflow['permissions'] == {'contents': 'read'}
     production = next(x for x in job['steps'] if x.get('name') == 'Produce up to 10 videos')
     assert production['env']['PURFFLE_STRICT'] == '1'
