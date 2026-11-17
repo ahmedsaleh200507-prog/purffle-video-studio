@@ -394,9 +394,13 @@ class SceneMatcher:
         object_terms = _terms(spec.object)
         action_terms = _terms(spec.action)
         query_terms = _terms(spec.visual_search_query)
-        if (object_terms and object_terms.issubset(have)
-                and object_terms & scenery_subjects
-                and action_terms and action_terms <= scenery_actions
+        # Scenery has no human-style action to tag: "sky overhead" and
+        # "clouds drifting" are both legitimate stock-video descriptions.
+        # Only bypass action wording for scenes without a character, with a
+        # scenery object actually named in the provider metadata. The separate
+        # downloaded-video motion, quality and CLIP checks still apply.
+        scenery_core = object_terms & scenery_subjects
+        if (scenery_core and scenery_core.issubset(have)
                 and not _terms(spec.main_character)
                 and score >= .25):
             return score
