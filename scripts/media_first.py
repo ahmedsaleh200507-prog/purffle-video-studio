@@ -218,10 +218,14 @@ def footage_prompt(palette) -> str:
         "experiments, witnesses, exact measurements or dramatic invented facts. "
         "The image illustrates the subject; it is not a recording of the exact event.",
     ]
-    for index, plan in enumerate(palette.plans, 1):
+    for index, (plan, clip) in enumerate(zip(palette.plans, palette.items), 1):
+        duration = float(getattr(clip, "duration", 12) or 12)
+        max_words = max(10, min(21, int((duration - 1.5) * 2.0)))
         lines.append(f"SCENE {index}: verified real B-roll of {plan['object']} "
                      f"(stock query: {plan['visual_search_query']}). "
-                     f"Use visual_search_query exactly: {plan['visual_search_query']}.")
+                     f"Use visual_search_query exactly: {plan['visual_search_query']}. "
+                     f"Narration maximum {max_words} words to fit this "
+                     f"{duration:.1f}-second unlooped clip.")
     return "\n".join(lines)
 
 
@@ -239,6 +243,25 @@ def _fit_scene_count(raw_scenes, size):
             str(scenes[-1]["narration"]).rstrip() + " " +
             str(tail.get("narration", "")).strip()).strip()
     return scenes
+
+
+def validate_narration_timing(palette, script, language="en"):
+    """Catch source-too-short errors before TTS and render, using a conservative
+    speech-rate estimate. Real TTS timing is still validated by the renderer.
+    """
+    if not palette:
+        return
+    if len(script.scenes) != len(palette.items):
+        raise RuntimeError("media_first_script_mismatch: scene count differs from validated clips")
+    words_per_sec = 2.0 if str(language).startswith("de") else 2.25
+    for index, (scene, item) in enumerate(zip(script.scenes, palette.items), 1):
+        words = len(re.findall(r"\b[\w'-]+\b", scene.narration))
+        duration = float(getattr(item, "duration", 0) or 0)
+        estimate = words / words_per_sec + 1.2
+        if duration < estimate:
+            raise RuntimeError(
+                f"media_first_narration_too_long: scene {index} "
+                f"estimated {estimate:.1f}s of speech for {duration:.1f}s of verified footage")
 
 
 def align_script_to_palette(data, palette):
