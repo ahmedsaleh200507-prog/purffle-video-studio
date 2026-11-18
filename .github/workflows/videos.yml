@@ -161,5 +161,6 @@ jobs:
             batch-results.json
             PURFFLE_DIAGNOSTICS.txt
             PURFFLE_DIAGNOSTICS.json
+            YOUTUBE_SHORTS_TITLES.txt
           if-no-files-found: warn
           retention-days: 7
