@@ -233,10 +233,21 @@ def _fit_scene_count(raw_scenes, size):
     """Merge surplus lines without losing narration; never invent missing lines."""
     scenes = [dict(x) for x in raw_scenes if isinstance(x, dict)
               and str(x.get("narration", "")).strip()]
-    if len(scenes) < size:
-        raise ValueError(
-            f"media_first_script_mismatch: LLM produced {len(scenes)} scenes; "
-            f"{size} verified clips available")
+    if not scenes:
+        raise ValueError("media_first_script_mismatch: LLM produced no narration")
+    # If the model under-produces scenes, split an existing long line into
+    # contiguous spoken segments. This preserves ALL original words and facts
+    # without inventing commentary or discarding a verified clip.
+    while len(scenes) < size:
+        index = max(range(len(scenes)),
+                    key=lambda i: len(scenes[i]["narration"].split()))
+        words = scenes[index]["narration"].split()
+        if len(words) < 8:
+            raise ValueError("media_first_script_mismatch: insufficient narration to split")
+        mid = len(words) // 2
+        first = dict(scenes[index], narration=" ".join(words[:mid]))
+        second = dict(scenes[index], narration=" ".join(words[mid:]))
+        scenes[index:index+1] = [first, second]
     while len(scenes) > size:
         tail = scenes.pop()
         scenes[-1]["narration"] = (
