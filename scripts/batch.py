@@ -207,6 +207,9 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
         env = os.environ.copy()
         env.update(PURFFLE_STRICT='1', LANGUAGE=lang, VIDEO_TOPIC=topic,
                    FOOTAGE_REPORT=str((target / 'footage-report.json').resolve()),
+                   MEDIA_FIRST_REPORT=str((target / 'media-first-plan.json').resolve()),
+                   MEDIA_FIRST_WORK_DIR=str((target / 'media-first-work').resolve()),
+                   PURFFLE_MEDIA_FIRST=os.environ.get('PURFFLE_MEDIA_FIRST', '1'),
                    VOICE_REPORT=str((target / 'voice-report.json').resolve()),
                    JOB_RESULT=str((target / 'job-result.json').resolve()),
                    OUTPUT_DIR=str((target / 'render').resolve()),
