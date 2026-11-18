@@ -158,3 +158,16 @@ def test_render_job_has_media_first_before_voice_by_contract():
     assert start < draft < production
     assert "palette.media_map" in code
     assert "PURFFLE_MEDIA_FIRST" in code
+
+
+@pytest.mark.parametrize("scene_count", [3, 4])
+def test_preapproved_lightning_script_fits_verified_clip_count(scene_count):
+    from fact_checked_topics import ground_lightning_explainer
+    original = {"scenes": [{"narration": "Invented Elm Street 12 hits"}]}
+    topic = "Why Does Lightning Strike the Same Place Again and Again?"
+    prepared = ground_lightning_explainer(original, topic, "en",
+                                          scene_count=scene_count)
+    assert len(prepared["scenes"]) == scene_count
+    assert "Elm Street" not in json.dumps(prepared)
+    assert all(len(s["narration"].split()) <= 25
+               for s in prepared["scenes"])
