@@ -814,7 +814,9 @@ def _validate_free_speech(speech, engine, language=None):
 
 
 def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_synthesize):
-    """Use Edge first, then only the audited local Piper voice with real alignment."""
+    """Use Edge/Piper only in non-reference production (or German)."""
+    from english_reference_policy import enforce_english_reference_only
+    enforce_english_reference_only(settings.language)
     if settings.offline or settings.tts_engine != "edge" or settings.language not in ("de", "en"):
         raise RuntimeError("Strict production requires free Edge/local narration in de/en")
     male_lock = os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1'

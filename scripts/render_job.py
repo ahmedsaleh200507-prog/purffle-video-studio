@@ -26,6 +26,11 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
         if not any(x.get('codec_type') == 'audio' for x in data.get('streams', [])):
             raise RuntimeError('MP4 has no narration audio stream')
     voice = str(metadata.get('voice', ''))
+    # A rendered MP4 with old Piper Joe must not pass a STRICT English
+    # workflow, even if the caller bypasses the early voice preflight.
+    from english_reference_policy import enforce_english_reference_only
+    enforce_english_reference_only(
+        metadata.get('language') or os.environ.get('LANGUAGE', 'en'))
     if not voice.startswith(('edge:', 'piper:')) or metadata.get('timing') not in ('native', 'aligned'):
         raise RuntimeError('Narration does not have verified native/aligned timing')
     narrator_locked = os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1'
@@ -87,6 +92,13 @@ def main():
     result = {'status': 'failed', 'mp4': None}
     stage = 'setup'
     try:
+        # Avoid expensive footage/model work when the only approved English
+        # speaker has not been validated for this runner. Never use Joe as a
+        # substitute merely to make the video job appear successful.
+        stage = 'voice_identity_preflight'
+        from english_reference_policy import enforce_english_reference_only
+        enforce_english_reference_only(os.environ.get('LANGUAGE', 'en'))
+        stage = 'setup'
         from studio_runtime import install
         install()
         from purffle_shorts.config import Settings

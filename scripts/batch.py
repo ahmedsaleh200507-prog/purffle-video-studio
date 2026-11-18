@@ -77,6 +77,7 @@ def classify_failure(message: str, log_text: str = "", details=None) -> str:
         ("unverified_quantitative_claim", "unverified_factual_claim"),
         ("science_sources_unavailable", "science_reference_unavailable"),
         ("science_claim_unverified", "science_claim_unsupported"),
+        ("reference_voice_not_ready", "approved_english_voice_unavailable"),
     ):
         if prefix in direct:
             return category
