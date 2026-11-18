@@ -103,14 +103,18 @@ def main():
                     screenplay, pick, writer = studio.draft(
                         os.environ['VIDEO_TOPIC'], style='facts')
                 try:
+                    from science_fact_guard import validate_unsourced_quantities
+                    validate_unsourced_quantities(
+                        screenplay, os.environ['VIDEO_TOPIC'])
                     validate_narration_timing(palette, screenplay, s.language)
                     break
-                except RuntimeError:
+                except RuntimeError as script_error:
                     if attempt:
                         raise
                     logging.warning(
-                        'Verified source is too short for the narration; '
-                        'retrying one more compact, footage-locked script')
+                        'V3 factuality or timing preflight rejected draft (%s); '
+                        'requesting one more verified-footage-locked script',
+                        str(script_error)[:200])
             stage = 'production'
             # The footage has already been downloaded, visually checked and
             # deduplicated. Do not ask the providers to search again after TTS.
