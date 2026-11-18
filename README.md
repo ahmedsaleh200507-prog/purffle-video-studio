@@ -32,3 +32,11 @@ Başarılı MP4 dosyalarının yanında `YouTube_Title.txt` bulunur. Tek ZIP iç
 Upstream [514fd254](https://github.com/Chamanrajragu/purffle-shorts/commit/514fd2547227b98d951dfc1489fc8c7ce72f1b68) sürümüne sabitlenmiştir. Runtime uyumluluğu SHA256 ile doğrulanır; bilinmeyen upstream sessizce yamalanmaz. İş akışında syntax, mock/API hata, lisans, medya, sahne ve toplu durum testleri çalışır.
 
 Yerel geliştirici testleri: `pip install -r requirements-dev.txt`, CPU PyTorch (`torch==2.6.0+cpu`, resmî PyTorch CPU index), FFmpeg/FFprobe ardından `python -m pytest -q`. Bu testlerdeki sentetik dosyalar yalnız olumsuz kalite/render testleridir; gerçek kaynak veya uçtan uca üretim kanıtı değildir. [Doğrulama kaydı](docs/VALIDATION_V2.md).
+
+## 10 farklı konuda video üretimi — görüntü kalitesi
+
+Özel/soyut konuların her cümlesi birebir canlandırılmaz. Önce birebir gerçek stok görüntü aranır; bulunamazsa konuya özgü, gerçek hareketli **temsili B-roll** kullanılır. Kara delik, tsunami, Antarktika, volkan, derin deniz, Dünya'nın dönüşü, Bermuda, terk edilmiş şehirler ve kasırga gibi konular desteklenir. Temsili görüntüler özgün olayın birebir kaydı olarak sunulmaz, raporda işaretlenir. Rastgele alakasız görüntü alınmaz.
+
+Görüntü kaynağının kısa kenarı en az 720px olmalı. Dikey 720×1280 çıktı tercih edilir; gerçek Full HD (1920×1080) yatay görüntü 9:16 kırpıldığında **en fazla 1,20× büyütmeye** izin verilir; `portrait_crop_scale` ve `upscaled_after_crop` alanlarında açıkça kaydedilir. 1280×720 gibi düşük netlikli yatay görüntü bu kurala uymaz. `PURFFLE_MAX_PORTRAIT_UPSCALE=1.0` tam yerel kırpma şartını geri getirir.
+
+Bir sahne için toplam arama süresi yaklaşık 210 saniye ile sınırlandırılmıştır; sürenin dolması durumunda tamamlanamayan video, diğer videoların çalışmasını engellemez. Toplam 10 video 10 bağımsız Actions görevidir ve en fazla ikisi paralel çalışır. Kod testlerinin geçmesi canlı stok kaynağı bulunacağını garanti etmez.

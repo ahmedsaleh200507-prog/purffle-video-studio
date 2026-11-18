@@ -55,9 +55,13 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
     if any(not scene.get('source') or not scene.get('sha256')
            or not scene.get('match') or not scene.get('license') for scene in scenes):
         raise RuntimeError('Footage provenance or frame verification missing in scene report')
-    if any(float(scene.get('quality', {}).get('portrait_crop_scale', float('inf'))) > 1.0001
-           for scene in scenes):
-        raise RuntimeError('insufficient_native_resolution: verified footage would upscale after portrait crop')
+    # A bounded <=20% landscape-to-portrait resize is explicitly recorded as
+    # such, rather than being misrepresented as native portrait resolution.
+    maximum_scale = min(1.20, max(1.0, float(
+        os.environ.get('PURFFLE_MAX_PORTRAIT_UPSCALE', '1.20'))))
+    if any(float(scene.get('quality', {}).get('portrait_crop_scale', float('inf')))
+           > maximum_scale + 0.0001 for scene in scenes):
+        raise RuntimeError('insufficient_native_resolution: portrait crop upscale exceeds quality limit')
     if len({scene['sha256'] for scene in scenes}) != len(scenes):
         raise RuntimeError('Duplicate footage repeated across scenes')
     return info, report

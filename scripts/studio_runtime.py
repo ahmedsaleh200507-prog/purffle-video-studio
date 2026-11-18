@@ -149,6 +149,27 @@ def thematic_scene_plans(raw, topic):
     # These alternatives represent visible context, not any alleged event.
     # One subject per clip helps stock API metadata retrieval and CLIP checks.
     families = (
+        # The user can narrate a hypothetical event without pretending to have
+        # literal footage. Astronomy uses REAL night-sky/telescope recordings,
+        # not a fabricated recording of somebody falling into a black hole.
+        (("black hole", "event horizon", "singularity", "cosmic mystery"),
+         (("sky", "night sky stars"), ("star", "stars night sky"),
+          ("telescope", "observatory telescope"), ("sky", "milky way night sky"))),
+        (("tsunami", "tidal wave", "giant wave", "ocean disaster"),
+         (("wave", "storm waves"), ("wave", "ocean waves"),
+          ("coast", "ocean coastline"), ("ocean", "rough ocean sea"))),
+        (("earth stopped", "earth stop", "planet earth", "earth spin", "earth rotation"),
+         (("earth", "earth from space"), ("cloud", "clouds moving sky"),
+          ("sky", "night sky stars"), ("earth", "earth horizon from space"))),
+        (("bermuda", "triangle mystery", "lost ships", "lost planes"),
+         (("ocean", "ocean waves"), ("ship", "ship sailing sea"),
+          ("airplane", "airplane flying sky"), ("ocean", "ocean aerial view"))),
+        (("abandoned cit", "ghost town", "empty city", "deserted city", "abandoned town"),
+         (("building", "abandoned building"), ("street", "empty city street"),
+          ("ruins", "abandoned ruins"), ("city", "empty city streets"))),
+        (("hurricane", "cyclone", "typhoon", "tropical storm", "eye of a storm"),
+         (("storm", "storm clouds"), ("cloud", "storm clouds moving"),
+          ("ocean", "rough ocean sea"), ("tree", "trees blowing in wind"))),
         (("biolumines", "ocean glow", "sea glow", "ocean light", "meer nachts"),
          (("ocean", "ocean waves at night"), ("ocean", "ocean waves"),
           ("coast", "sea coastline at night"), ("ocean", "underwater sea"))),
@@ -309,9 +330,14 @@ class StrictVisuals:
                  "status": "searching", "rejections": []}
         self.report["scenes"].append(scene)
         scene_start = time.monotonic()
+        # Each scene has a bounded shared budget across all search strategies.
+        # Without this, exact scene + five fallbacks can exhaust the entire
+        # 25-minute worker timeout before subsequent scenes are attempted.
+        attempt_deadline = min(scene_start + 75,
+                               getattr(self, "_shot_deadline", float("inf")))
         max_candidates = max(1, min(12, int(os.getenv("CANDIDATES_PER_SOURCE", "4"))))
         for source in self.sources:
-            if time.monotonic() - scene_start > 240:
+            if time.monotonic() >= attempt_deadline:
                 break
             # Search a concise, subject-focused variant when verbose camera/action
             # directions cause stock providers to return unrelated footage.
@@ -384,7 +410,7 @@ class StrictVisuals:
                     if candidate.key not in seen_candidates:
                         seen_candidates.add(candidate.key)
                         candidates.append(candidate)
-                if time.monotonic() - scene_start > 240:
+                if time.monotonic() >= attempt_deadline:
                     break
             print(f"[SOURCE CHECK] {source}: {len(candidates)} candidates scene={idx+1}", flush=True)
             ranked = []
@@ -428,7 +454,7 @@ class StrictVisuals:
                                           -int(row[1].height > row[1].width),
                                           -min(row[1].width, row[1].height)))
             for score, item, url_key in ranked[:max_candidates]:
-                if time.monotonic() - scene_start > 240:
+                if time.monotonic() >= attempt_deadline:
                     scene["rejections"].append({"source": source, "reason": "scene_budget_exhausted"})
                     break
                 path, digest = None, None
@@ -445,9 +471,15 @@ class StrictVisuals:
                     required_height = getattr(self.s, "height", 1280)
                     native_scale = _native_portrait_scale(quality, required_width, required_height)
                     quality["portrait_crop_scale"] = round(native_scale, 5)
-                    if native_scale > 1.0001:
+                    # Prefer native portrait clips. Permit a tiny, explicitly
+                    # reported enlargement when cropping real 1080p landscape:
+                    # 1920x1080 -> 720x1280 needs about 1.185x, common in Shorts.
+                    # Never accept low-res video or unlimited fake HD scaling.
+                    allowed_scale = min(1.20, max(1.0, float(
+                        os.environ.get("PURFFLE_MAX_PORTRAIT_UPSCALE", "1.20"))))
+                    if native_scale > allowed_scale + 0.0001:
                         raise ValueError(
-                            "insufficient_native_resolution: 9:16 crop would upscale "
+                            "insufficient_native_resolution: 9:16 crop would upscale beyond safe limit "
                             f"{quality.get('width')}x{quality.get('height')} source "
                             f"to {required_width}x{required_height}"
                         )
@@ -470,8 +502,8 @@ class StrictVisuals:
                                   "crop": {"focus_x": match.get("crop_focus_x", .5),
                                            "effective_source_width": round(min(item.width, item.height * 9 / 16)),
                                            "effective_source_height": round(min(item.height, item.width * 16 / 9)),
-                                           "upscaled_after_crop": min(item.width, item.height * 9 / 16) < 1080
-                                                                  or min(item.height, item.width * 16 / 9) < 1920}})
+                                           "upscaled_after_crop": native_scale > 1.0001,
+                                           "crop_scale": round(native_scale, 4)}})
                     self._save()
                     print(f"[SELECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} "
                           f"actual={item.width}x{item.height} visual_score={match.get('visual_score')} "
@@ -507,6 +539,7 @@ class StrictVisuals:
         Path(dest_dir).mkdir(parents=True, exist_ok=True)
         items = []
         for idx, (query, prompt, need) in enumerate(jobs):
+            self._shot_deadline = time.monotonic() + 210
             report_start = len(self.report["scenes"])
             mode = "exact_scene"
             try:
