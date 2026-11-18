@@ -98,3 +98,47 @@ GitHub Actions artifact içeriğinde:
 **Sonraki kanıt adımı:** Aynı 10 başlıkla yeni `workflow_dispatch` çalıştırıp
 özellikle başarısız video 2, 3, 5, 6, 8, 9'un yeni tanı kayıtlarını,
 başarılı videoların ses/süre/çözünürlük çıktılarını karşılaştırmak.
+
+## Doğrudan incelenen toplu tanılar (iki kullanıcı ZIP dosyası, 2026-11-18)
+
+Bu bölüm önceki görev özetinin tersine gerçek üretim raporlarından çıkarılmıştır:
+`PURFFLE_DIAGNOSTICS.json` ile `PURFFLE_DIAGNOSTICS.txt` aynı koşuya aittir.
+`summary`: **10 istendi, 2 başarılı, 8 başarısız**. Başarılı video **3 ve 9**.
+10 videonun **tamamında Edge TTS başarılı** (`voice.state=ready`).
+Başarısız videolarda `RuntimeError: No suitable verified REAL VIDEO for scene N`
+hatası bulunur. Bu koşuda görüntü kaynağı arama ve metadata eylem/nesne
+uyumsuzluğu ana engeldir; `provider_rate_limit` etiketleri **yanlış pozitif**
+çıkmıştır: kayıtlarda birçok `pixabay:ok` ve başka sonuçlar vardır,
+başarısız sahnelerin büyük çoğunluğu
+`Scene metadata lacks object/action grounding` veya
+`Scene metadata does not describe the requested action` nedeniyle elenmiştir.
+
+| Video | Sonuç | Somut başarısız sahne | Bulgular |
+|---|---|---|---|
+| 1 Bermuda | FAILED | 2, `naval planes departing port` | Çok özel tarihî uçak/eylem, metadata eşleşmedi |
+| 2 Mağara | FAILED | 1, `deep cave exploration` | Eylem ve mağara meta verisi uyumsuz, bazı kaynaklar 720p altında |
+| 3 Deniz altı şelale | OK | 5 doğrulanmış sahne | Pixabay / Edge TTS |
+| 4 Mariana | FAILED | 3, `sonar light algae` | Algae/sonar görüntüsünün eylem/nesne tanımı çok dar |
+| 5 Etiyopya | FAILED | 1, `harar national park` | Gerçek yeri kanıtlanmamış spesifik ad, meta eşleşmedi |
+| 6 Göl gazı | FAILED | 2, `lake bottom sediment` | Tortu görünümü anlatılırken çekimde bulunmayan eylem aranıyor |
+| 7 Çöl daireleri | FAILED | 1, `sand dunes circle` | 'Kumullar daire oluşturuyor' eylemi istenmiş, 1920x1080 kırpma da reddedilmiş |
+| 8 Deniz parıltısı | FAILED | 2, `bioluminescent bacteria` | Bakteriyi görselde arama ve eylem metadata uyuşmazlığı |
+| 9 Tunguska | OK | 5 doğrulanmış sahne | Pixabay / Edge TTS |
+| 10 Kırmızı şelale | FAILED | 1, `glacier meltwater waterfall` | Buzul erime suyu eylem/nesne metadata uyuşmazlığı |
+
+Bu kanıta dayanarak `contextual_scene_plans` eklendi. Önce birebir
+eşleşen görüntüyü arar. Başarısızsa yalnızca tanımlanmış, **konuya
+ilişkili** doğal manzara/tematik video alternatiflerini arar; özel
+olayların gerçek kaydı olduklarını iddia etmez. Başarı halinde
+`visual_mode=illustrative_context` ve
+`illustrative_not_exact_event=true` şeklinde ayrı işaretlenir.
+Görüntü her durumda lisans, yerel CLIP, hareket, benzersizlik, süre ve
+dikey 720p doğal kırpma kontrollerini geçmelidir.
+
+Kök-neden sınıflandırması artık asıl `No suitable verified REAL VIDEO`
+hatada `provider_rate_limit` gibi önceki önemsiz kaynak olaylarına
+bakmaz; başarısız sahnenin gerçek ret nedenlerini sayar.
+
+**Gerçek üretim başarı garantisi yoktur:** Bu yeni değişiklikler ile aynı
+10 videoluk batch **henüz yeniden üretilmemiştir**. Yeni tanı ZIP'i
+alındığında başarı sayısı ve semantik uygunluk tekrar karşılaştırılmalıdır.
