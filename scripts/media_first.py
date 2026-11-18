@@ -53,8 +53,10 @@ def _grounded_candidates(topic, llm=None):
                     action="ambient", location="", time="",
                     visual_search_query="topic")
     curated = thematic_scene_plans(template, topic)
-    if len(curated) >= 3:
-        return curated
+    # Ask for extra stock-query vocabulary even for recognized subjects.
+    # Otherwise one provider outage can exhaust the only four known queries.
+    # These remain candidate queries: only actually downloaded, inspected,
+    # licensed, moving clips can ever enter the validated palette.
     # New, unrecognised subjects get one inexpensive visual vocabulary query
     # to the existing free Groq LLM; narration is NOT requested at this point.
     if llm is None:
@@ -87,6 +89,12 @@ def _grounded_candidates(topic, llm=None):
         print(f"[MEDIA FIRST] palette model unavailable: {type(exc).__name__}", flush=True)
         return curated
     seen = {x["visual_search_query"].lower() for x in curated}
+    allowed_objects = {x["object"].casefold() for x in curated}
+    topic_words = {x.casefold().rstrip("s") for x in re.findall(r"[a-z]{4,}", topic)
+                   if x.casefold() not in {"what", "when", "where", "which",
+                   "does", "would", "happen", "really", "again", "from",
+                   "with", "that", "this", "your", "have", "into", "there",
+                   "many", "some", "world", "most", "ever", "more", "same"}}
     for raw in data.get("shots", [])[:9]:
         obj = str(raw.get("object") or "").strip()[:60]
         query = re.sub(r"\s+", " ", str(raw.get("query") or "")).strip()[:100]
@@ -94,6 +102,16 @@ def _grounded_candidates(topic, llm=None):
                 or not (2 <= len(query.split()) <= 6) or query.lower() in seen
                 or any(x in query.lower() for x in ("animation", "simulation",
                               "infographic", "reenactment", "rendering"))):
+            continue
+        # Don't let the visual-planning LLM pivot a science documentary to
+        # unrelated footage. For known topics only extend the same visible
+        # subject families; for unknown topics require a topic-noun overlap.
+        query_words = {x.casefold().rstrip("s") for x in re.findall(r"[a-z]{4,}",
+                         obj + " " + query)}
+        if curated and not (obj.casefold() in allowed_objects or
+                            any(x in query_words for x in allowed_objects)):
+            continue
+        if not curated and topic_words and not (query_words & topic_words):
             continue
         seen.add(query.lower())
         curated.append(dict(main_character="", object=obj, action="ambient",
