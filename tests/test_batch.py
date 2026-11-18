@@ -61,8 +61,26 @@ def test_workflow_contract():
     job = workflow['jobs']['create-videos']
     assert job['env']['RESOLUTION'] == '720x1280'
     assert job['permissions'] if 'permissions' in job else workflow['permissions'] == {'contents': 'read'}
-    production = next(x for x in job['steps'] if x.get('name') == 'Produce up to 10 videos')
+    # Ten slots are queued independently. At most two share provider quotas.
+    strategy = job['strategy']
+    assert strategy['fail-fast'] is False
+    assert strategy['max-parallel'] == 2
+    slots = strategy['matrix']['include']
+    assert [s['slot'] for s in slots] == list(range(1, 11))
+    assert [s['input'] for s in slots] == [f'video_{i}' for i in range(1, 11)]
+    assert all(f'INPUT_{i}' in job['env'] for i in range(1, 11))
+    production = next(x for x in job['steps'] if x.get('name') == 'Produce selected video')
     assert production['env']['PURFFLE_STRICT'] == '1'
+    assert production['if'] == "steps.selected.outputs.render == 'true'"
     artifact = next(x for x in job['steps'] if x.get('uses', '').startswith('actions/upload-artifact'))
-    assert artifact['if'] == 'always()'
+    assert artifact['if'].startswith('always()')
+    assert 'finished/' in artifact['with']['path']
+    collector = workflow['jobs']['collect-results']
+    assert collector['needs'] == 'create-videos'
+    assert collector['if'] == 'always()'
+    merged = next(x for x in collector['steps'] if x.get('uses', '').startswith('actions/download-artifact'))
+    assert merged['with']['merge-multiple'] is True
+    assert merged['with']['path'] == 'finished'
+    combined = next(x for x in collector['steps'] if x.get('uses', '').startswith('actions/upload-artifact'))
+    assert 'YOUTUBE_SHORTS_TITLES.txt' in combined['with']['path']
     assert '${{ inputs.' not in str([x.get('run', '') for x in job['steps']])

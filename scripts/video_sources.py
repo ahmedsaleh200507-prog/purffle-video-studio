@@ -127,7 +127,14 @@ class JsonClient:
             except (OSError, ValueError):
                 pass
             # <= 60 calls/minute, below Pixabay's default 100/minute.
-            pause = 1.05 - (time.monotonic() - self._last_request.get(host, 0))
+            # Independent matrix runners have separate API clocks. At two
+            # concurrent workers, 1.6s per host stays under 100 queries/min.
+            try:
+                requested = float(os.environ.get("PURFFLE_API_INTERVAL_SECONDS", "1.05"))
+            except (TypeError, ValueError):
+                requested = 1.05
+            interval = min(8.0, max(1.05, requested))
+            pause = interval - (time.monotonic() - self._last_request.get(host, 0))
             if pause > 0:
                 time.sleep(pause)
             try:
