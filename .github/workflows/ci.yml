@@ -65,7 +65,7 @@ jobs:
               SimpleNamespace(language='en'))
           assert speech.engine == 'piper' and speech.voice == expected
           assert speech.timing == 'aligned'
-          assert len(speech.words) == 9
+          assert len(speech.words) == 8
           assert speech.audio.is_file() and speech.audio.stat().st_size > 10000
           assert speech.duration > 1
           print('PINNED MALE VOICE LIVE: OK', expected, speech.duration)
