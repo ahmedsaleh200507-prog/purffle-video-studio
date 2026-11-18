@@ -48,3 +48,33 @@ jobs:
         run: |
           python -m compileall -q scripts sitecustomize.py
           python -m pytest -q
+      - name: Verify actual pinned CC0 male voice model and native captions
+        env:
+          PURFFLE_NARRATOR_LOCK: '1'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from types import SimpleNamespace
+          from local_voice import synthesize, provenance
+          expected = 'en_US-joe-medium'
+          voice = provenance('en')
+          assert voice['model'] == expected and voice['license']['id'] == 'CC0'
+          speech = synthesize(
+              'The northern lights glow above the mountains tonight.',
+              Path('male-voice-smoke'),
+              SimpleNamespace(language='en'))
+          assert speech.engine == 'piper' and speech.voice == expected
+          assert speech.timing == 'aligned'
+          assert len(speech.words) == 9
+          assert speech.audio.is_file() and speech.audio.stat().st_size > 10000
+          assert speech.duration > 1
+          print('PINNED MALE VOICE LIVE: OK', expected, speech.duration)
+          PY
+      - name: Upload male narrator listening sample
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: male-narrator-sample
+          path: male-voice-smoke/voice-piper.wav
+          if-no-files-found: error
+          retention-days: 7
