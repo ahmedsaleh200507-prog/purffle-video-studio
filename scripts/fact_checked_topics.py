@@ -59,7 +59,8 @@ _GERMAN_SCENES = [
 ]
 
 
-def ground_lightning_explainer(data: dict, topic: str, language: str) -> dict:
+def ground_lightning_explainer(data: dict, topic: str, language: str,
+                              scene_count: int | None = None) -> dict:
     """Replace hallucinated invented lightning cases in this generic explainer.
 
     This replaces narration, visuals AND description together so a fabricated
@@ -69,6 +70,32 @@ def ground_lightning_explainer(data: dict, topic: str, language: str) -> dict:
     if not _lightning_repeated_topic(topic):
         return data
     source_scenes = _GERMAN_SCENES if language == "de" else _ENGLISH_SCENES
+    if scene_count in (3, 4):
+        # A footage-first production may have fewer verified clips than the
+        # five beats of the original script. Use prewritten shorter, factual
+        # beats instead of concatenating long narration beyond clip duration.
+        if language == "de":
+            short_scenes = [
+                ("Ein Blitz kann dieselbe Stelle mehrfach treffen. Hohe, freistehende Objekte sind besonders gefährdet.",
+                 "lightning", "lightning storm"),
+                ("Ein nahender Blitzkanal kann sich mit einem Funken verbinden, der von einem hohen Objekt nach oben steigt.",
+                 "cloud", "storm clouds"),
+                ("Bei dieser Verbindung fließt sehr starker Strom. Bei Donner geh ins Haus, niemals unter einen einzelnen Baum.",
+                 "tree", "trees blowing in wind"),
+            ]
+        else:
+            short_scenes = [
+                ("Lightning can hit the same place repeatedly. Tall, isolated objects are struck more often.",
+                 "lightning", "lightning storm"),
+                ("A descending lightning channel can connect with an upward spark from a tall object.",
+                 "cloud", "storm clouds"),
+                ("That connection carries a powerful current. When you hear thunder, go indoors, never beneath an isolated tree.",
+                 "tree", "trees blowing in wind"),
+            ]
+        if scene_count == 4:
+            short_scenes = [source_scenes[0], source_scenes[1],
+                            source_scenes[2], source_scenes[-1]]
+        source_scenes = short_scenes
     scenes = []
     for narration, subject, query in source_scenes:
         plan = {
