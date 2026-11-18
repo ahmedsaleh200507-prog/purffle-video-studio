@@ -154,12 +154,6 @@ def thematic_scene_plans(raw, topic):
         # The user can narrate a hypothetical event without pretending to have
         # literal footage. Astronomy uses REAL night-sky/telescope recordings,
         # not a fabricated recording of somebody falling into a black hole.
-        # #70: a literal tree-root action is not necessary to explain why
-        # lightning repeatedly strikes tall isolated objects. Keep the
-        # footage genuinely related: actual storms, lightning and trees.
-        (("lightning", "thunderbolt", "blitzschlag", "blitze"),
-         (("lightning", "lightning storm"), ("cloud", "storm clouds"),
-          ("tree", "trees blowing in wind"), ("sky", "dark storm sky"))),
         (("black hole", "event horizon", "singularity", "cosmic mystery"),
          (("sky", "night sky stars"), ("star", "stars night sky"),
           ("telescope", "observatory telescope"), ("sky", "milky way night sky"))),
@@ -190,6 +184,12 @@ def thematic_scene_plans(raw, topic):
         (("volcano", "volcanic", "volkan"),
          (("volcano", "volcano erupting"), ("lava", "volcanic lava"),
           ("volcano", "volcano landscape"), ("lightning", "lightning storm"))),
+        # #70: a literal tree-root action is not necessary to explain why
+        # lightning repeatedly strikes tall isolated objects. Keep the
+        # footage genuinely related: actual storms, lightning and trees.
+        (("lightning", "thunderbolt", "blitzschlag", "blitze"),
+         (("lightning", "lightning storm"), ("cloud", "storm clouds"),
+          ("tree", "trees blowing in wind"), ("sky", "dark storm sky"))),
         (("snake", "serpent", "yılan"),
          (("snake", "snake slithering"), ("snake", "snake in nature"),
           ("snake", "snake close up"), ("island", "tropical island"))),
