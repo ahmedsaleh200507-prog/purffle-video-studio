@@ -28,7 +28,8 @@ _EMOJI = (
 
 def _clean(value: str, limit: int = MAX_TITLE) -> str:
     """One copyable line, no Markdown/quotes, safely within platform limit."""
-    value = str(value or "").splitlines()[0].strip()
+    lines = str(value or "").splitlines()
+    value = lines[0].strip() if lines else ""
     value = re.sub(r"^(?:youtube\s+shorts?\s+)?title\s*:\s*", "", value, flags=re.I)
     value = re.sub(r"^[#*\s]+", "", value)
     value = value.strip(' \'"\u201c\u201d\u2018\u2019')
