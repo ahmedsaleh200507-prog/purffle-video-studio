@@ -262,7 +262,7 @@ class StrictVisuals:
                                       "hashes": sorted(self.used_hashes)})
 
     def for_scene(self, idx, query, image_prompt, topic, need, dest_dir):
-        from media_validation import SceneSpec
+        from media_validation import SceneSpec, reject_offtopic_science_source
         from video_sources import LicenseValidator
         try:
             data = _scene_data(json.loads(image_prompt))
@@ -426,6 +426,14 @@ class StrictVisuals:
                         raise ValueError(f"Known source below 720 short side: {item.width}x{item.height}")
                     if not LicenseValidator.validate(item.extra.get("license")):
                         raise ValueError("Unverified or incompatible candidate license")
+                    license_info = item.extra.get("license") or {}
+                    # Source IDs and source-page slugs can reveal an unrelated
+                    # planet even when the provider's short metadata says
+                    # 'volcano magma'. The #69 archive clip is one such case.
+                    reject_offtopic_science_source(
+                        topic, " ".join((
+                            str(item.id), str(item.text),
+                            str(license_info.get("source_page", "")))))
                     if hasattr(self.matcher, "validate_metadata"):
                         score = self.matcher.validate_metadata(spec, item.text)
                     elif hasattr(self.matcher, "metadata_score"):
