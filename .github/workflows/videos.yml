@@ -1,6 +1,6 @@
 name: Purffle V2 - 1 to 10 Videos
 # Show a distinct, explicit manual production run rather than the latest PR title.
-run-name: Purffle Shorts | Production #${{ github.run_number }}
+run-name: "Purffle Shorts | Production #${{ github.run_number }}"
 on:
   workflow_dispatch:
     inputs:
