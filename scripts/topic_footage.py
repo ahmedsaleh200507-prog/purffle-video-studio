@@ -46,7 +46,7 @@ ALIASES = {
     "rain": {"rain", "rainfall", "storm", "raindrops"},
     "cave": {"cave", "caves", "cavern"},
     "island": {"island", "islands", "coast"},
-    "mirror": {"mirror", "mirrors", "spiegel", "badezimmerspiegel", "bathroom"},
+    "mirror": {"mirror", "mirrors", "spiegel", "badezimmerspiegel", "bathroom", "shower", "dusche"},
     "shower": {"shower", "showers", "dusche", "duschen", "bathroom"},
 
 }
