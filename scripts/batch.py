@@ -245,13 +245,21 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
         if job.get('status') != 'ok' or not job.get('mp4') or not Path(job['mp4']).is_file():
             raise RuntimeError('Worker did not provide a validated successful MP4')
         result.update(job)
+        # A missing Shorts title must never undo a successfully validated MP4.
+        try:
+            from youtube_metadata import attach_title_to_video
+            attach_title_to_video(result)
+        except (OSError, ValueError, TypeError) as title_exc:
+            result["youtube_title_error"] = type(title_exc).__name__
     except Exception as exc:
         result.update(status='failed', error=str(exc), exception_type=type(exc).__name__, mp4=None)
     finally:
         if result['status'] != 'ok':
-            # Partial render output is diagnostic failure, never a deliverable.
+            # Partial output/title from an unsuccessful retry is not publishable.
             for partial in (target / 'render').rglob('*.mp4'):
                 partial.unlink(missing_ok=True)
+            for stale_title in (target / 'render').rglob('YouTube_Title.txt'):
+                stale_title.unlink(missing_ok=True)
         # Download paths in the report are provenance; raw sources are transient.
         # Do this only after the worker/process group has stopped and rendered.
         shutil.rmtree(ROOT / 'media_cache' / 'downloads', ignore_errors=True)
@@ -366,9 +374,20 @@ def main():
         raw = os.environ.get(f'INPUT_{index}', '').strip()
         if not raw:
             continue
-        results.append(resume_completed_job(index, raw, out) or run_job(index, raw, out))
+        result = resume_completed_job(index, raw, out) or run_job(index, raw, out)
+        # Existing successfully rendered MP4s may predate this new upload file.
+        if result.get('status') == 'ok' and not result.get('youtube_title'):
+            try:
+                from youtube_metadata import attach_title_to_video
+                attach_title_to_video(result)
+                write_json(out / f"video_{index:02d}" / 'report.json', result)
+            except (OSError, ValueError, TypeError) as title_exc:
+                result["youtube_title_error"] = type(title_exc).__name__
+        results.append(result)
         write_json(ROOT / 'batch-results.json', results)
         write_consolidated_diagnostics(out, results)
+        from youtube_metadata import write_batch_titles
+        write_batch_titles(ROOT, results)
     if not results:
         write_json(ROOT / 'batch-results.json', [])
         print('No video topics supplied', flush=True)
