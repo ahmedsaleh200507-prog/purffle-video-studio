@@ -88,6 +88,8 @@ def _grounded_candidates(topic, llm=None):
     except Exception as exc:
         print(f"[MEDIA FIRST] palette model unavailable: {type(exc).__name__}", flush=True)
         return curated
+    if not isinstance(data, dict) or not isinstance(data.get("shots"), list):
+        return curated
     seen = {x["visual_search_query"].lower() for x in curated}
     allowed_objects = {x["object"].casefold() for x in curated}
     topic_words = {x.casefold().rstrip("s") for x in re.findall(r"[a-z]{4,}", topic)
@@ -96,6 +98,8 @@ def _grounded_candidates(topic, llm=None):
                    "with", "that", "this", "your", "have", "into", "there",
                    "many", "some", "world", "most", "ever", "more", "same"}}
     for raw in data.get("shots", [])[:9]:
+        if not isinstance(raw, dict):
+            continue
         obj = str(raw.get("object") or "").strip()[:60]
         query = re.sub(r"\s+", " ", str(raw.get("query") or "")).strip()[:100]
         if (not obj or not query or not (1 <= len(obj.split()) <= 3)
