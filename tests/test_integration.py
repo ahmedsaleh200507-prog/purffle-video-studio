@@ -181,6 +181,33 @@ def test_structured_fields_survive_upstream_normalization():
         script.normalize({"scenes": [{"narration": "Anything", "search_query": "anything"}]}, "topic", "facts", "en")
 
 
+def test_script_normalizer_rewrites_70_fictional_claims_before_tts():
+    from fact_checked_topics import ground_lightning_explainer
+    verify_upstream()
+    install()
+    import purffle_shorts.script as script
+    topic = "Why Does Lightning Strike the Same Place Again and Again?"
+    invented = {
+        "title": "Lightning on Elm Street!",
+        "description": "Scientists measured 300,000 volts on Elm Street",
+        "scenes": [{
+            "narration": "That oak was hit 12 times in one storm on Elm Street.",
+            "main_character": "", "object": "tree roots", "action": "tap",
+            "location": "Elm Street", "time": "",
+            "visual_search_query": "tree roots moist soil",
+        }]
+    }
+    output = script.normalize(invented, topic, "story", "en")
+    result = output.to_dict()
+    assert len(result["scenes"]) == 5
+    serialized = json.dumps(result, ensure_ascii=False).lower()
+    assert "elm street" not in serialized
+    assert "12 times" not in serialized
+    assert "300,000" not in serialized
+    assert "when you hear thunder" in serialized
+    assert result["scenes"][1]["visual_search_query"] == "trees blowing in wind"
+
+
 def test_structured_plan_never_guesses_object_action():
     with pytest.raises(ValueError, match="Missing structured scene fields"):
         _scene_data({"search_query": "young man money"})
