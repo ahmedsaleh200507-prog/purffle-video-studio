@@ -161,3 +161,13 @@ def test_render_source_stage_precedes_draft_and_tts():
     assert source.index("stage = 'science_sources'") < source.index("studio.draft(")
     assert source.index("screen_narration(") < source.index("studio.produce(")
     assert "SCIENCE_REPORT" in source
+
+
+def test_batch_reports_science_root_causes_not_false_provider_errors():
+    from batch import classify_failure
+    assert classify_failure(
+        "science_sources_unavailable: no topic-relevant reference extracts",
+        "provider health says http_429 in unrelated log") == "science_reference_unavailable"
+    assert classify_failure(
+        "science_claim_unverified: unsupported narration scene",
+        "other source said invalid video") == "science_claim_unsupported"
