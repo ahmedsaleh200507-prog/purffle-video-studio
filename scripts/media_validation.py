@@ -398,7 +398,7 @@ class SceneMatcher:
                             "landscap", "field", "beach", "wave"}
         # For explicitly marked, contextual establishing shots only. These are
         # *not* permission to ignore an ordinary requested human/animal action.
-        contextual_scenery = {"cave", "cavern", "glacier", "ice", "desert",
+        contextual_scenery = {"cav", "glacier", "ice", "desert",
                               "dun", "sand", "waterfall", "coast", "geotherm",
                               "water", "landscap"}
         scenery_actions = {"glow", "shin", "ris", "set", "mov", "drift",
