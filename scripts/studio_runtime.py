@@ -18,6 +18,8 @@ from pathlib import Path
 import time
 from urllib.parse import urlsplit
 
+from media_validation import portrait_crop_allowed
+
 UPSTREAM_COMMIT = "514fd2547227b98d951dfc1489fc8c7ce72f1b68"
 UPSTREAM_HASHES = {
     "script.py": "715baf30a21362a2013fb0dd6d80431f156b6c9a77d5f4d710a322966b894faf",
@@ -475,9 +477,7 @@ class StrictVisuals:
                     # reported enlargement when cropping real 1080p landscape:
                     # 1920x1080 -> 720x1280 needs about 1.185x, common in Shorts.
                     # Never accept low-res video or unlimited fake HD scaling.
-                    allowed_scale = min(1.20, max(1.0, float(
-                        os.environ.get("PURFFLE_MAX_PORTRAIT_UPSCALE", "1.20"))))
-                    if native_scale > allowed_scale + 0.0001:
+                    if not portrait_crop_allowed(native_scale):
                         raise ValueError(
                             "insufficient_native_resolution: 9:16 crop would upscale beyond safe limit "
                             f"{quality.get('width')}x{quality.get('height')} source "
@@ -630,8 +630,11 @@ def strict_prepare_segment(item, seconds, idx, settings, work):
     if item.duration < seconds + 0.05:
         raise RuntimeError("Source too short; refusing footage loop")
     W, H, F = settings.width, settings.height, settings.fps
-    if _native_portrait_scale({"width": item.width, "height": item.height}, W, H) > 1.0001:
-        raise RuntimeError("insufficient_native_resolution: portrait crop requires upscaling")
+    measured_scale = _native_portrait_scale(
+        {"width": item.width, "height": item.height}, W, H)
+    if not portrait_crop_allowed(measured_scale):
+        raise RuntimeError(
+            "insufficient_native_resolution: portrait crop exceeds the shared bounded upscale limit")
     focus = float(item.extra.get("match", {}).get("crop_focus_x", 0.5))
     if not math.isfinite(focus):
         raise RuntimeError("Invalid crop focus")
@@ -640,7 +643,8 @@ def strict_prepare_segment(item, seconds, idx, settings, work):
     crop_height = min(item.height, item.width * H / W)
     item.extra["crop"] = {"focus_x": focus, "effective_source_width": round(crop_width),
                           "effective_source_height": round(crop_height),
-                          "upscaled_after_crop": crop_width < W or crop_height < H}
+                          "upscaled_after_crop": measured_scale > 1.0001,
+                          "crop_scale": round(measured_scale, 4)}
     # Keep the subject's horizontal focus; vertically centre when a wide crop is required.
     cover = (f"scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,"
              f"crop={W}:{H}:x='max(0,min(iw-ow,iw*{focus:.5f}-ow/2))':y='(ih-oh)/2',setsar=1")
