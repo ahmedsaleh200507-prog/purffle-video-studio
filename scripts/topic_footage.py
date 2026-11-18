@@ -49,6 +49,19 @@ ALIASES = {
 }
 
 
+# Safe real-camera subjects for entirely new topics when the LLM is absent.
+# This is NOT a license to show generic scenery for an abstract topic: a
+# subject must literally appear in the user's topic before it can be seeded.
+FILMABLE_SUBJECTS = frozenset("""
+    cat dog bee ant butterfly bird horse elephant lion tiger penguin turtle
+    shark whale octopus frog fish coral snail flower sunflower mushroom
+    tornado tsunami earthquake geyser rainbow sunset sunrise
+    train tram bus airplane aircraft helicopter rocket spacecraft ship boat
+    bicycle motorcycle car factory robot computer laptop smartphone
+    telescope microscope bridge building dam castle pyramid monument
+""".split())
+
+
 def words(value: str) -> set[str]:
     """Light morphological normalization without remote NLP dependencies."""
     out = set()
@@ -153,11 +166,22 @@ def deterministic_stock_shots(topic: str):
         # No new science or event claims; topic concepts themselves remain.
         concepts = [name for name, synonyms in ALIASES.items()
                     if words(name) & t]
-        if not concepts:
-            return []
-        primary = concepts[0]
-        phrases = [f"{primary} nature", f"{primary} close up",
-                   f"{primary} landscape", f"{primary} footage"]
+        if concepts:
+            primary = concepts[0]
+            phrases = [f"{primary} nature", f"{primary} close up",
+                       f"{primary} landscape", f"{primary} footage"]
+        else:
+            # For filmable subjects outside the curated documentary vocabulary,
+            # query the named subject itself before asking Groq for alternatives.
+            # Reject opaque/abstract words instead of choosing random stock.
+            title_words = re.findall(r"[a-z]+", str(topic).casefold())
+            primary = next((term for raw in title_words
+                            for term in words(raw)
+                            if term in FILMABLE_SUBJECTS), None)
+            if not primary:
+                return []
+            phrases = [f"{primary} footage", f"{primary} close up",
+                       f"{primary} outdoors", f"{primary} documentary"]
         choices = [(primary, q) for q in phrases]
     return [dict(main_character="", object=obj, action="ambient",
                  location="", time="", visual_search_query=query)
