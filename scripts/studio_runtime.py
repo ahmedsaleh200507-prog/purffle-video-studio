@@ -883,6 +883,10 @@ def install():
         # For this well-defined educational topic use a NOAA-grounded concise
         # script with shootable B-roll rather than publish a fictional event.
         data = ground_lightning_explainer(data, subject, language)
+        from media_first import active_palette, align_script_to_palette
+        # The verified video palette is authoritative for visual planning.
+        # Narration may explain abstract facts without requiring exact footage.
+        data = align_script_to_palette(data, active_palette())
         raw_scenes = data.get("scenes") or []
         if not raw_scenes or len(raw_scenes) > 6:
             raise ValueError("A strict video needs 1–6 explicit scenes")
@@ -948,6 +952,10 @@ For a blue-sky explanation, end with directly filmable sky, clouds, sunset,
 or sunlight footage, never people commenting on the explanation. Use 3–5 scenes for a 25-second video, at most 6 scenes. The system will fail a scene when
 exact suitable footage cannot be verified; never weaken the scene to hide that failure.
 """
+        from media_first import active_palette, footage_prompt
+        palette = active_palette()
+        if palette:
+            user += "\n\n" + footage_prompt(palette)
         return system, user
 
     def speak(self, screenplay, work, settings):
