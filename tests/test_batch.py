@@ -58,6 +58,12 @@ def test_workflow_contract():
     # YAML1.1 treats 'on' as true; GitHub uses YAML1.2.
     inputs = workflow.get('on', workflow.get(True))['workflow_dispatch']['inputs']
     assert len(inputs) == 10
+    # A constant workflow-wide queue cancels older queued manual runs when a
+    # user taps Run workflow more than once. Do not reintroduce it.
+    assert 'concurrency' not in workflow
+    assert workflow['run-name'].startswith('Purffle Shorts')
+    triggers = workflow.get('on', workflow.get(True))
+    assert set(triggers) == {'workflow_dispatch'}
     job = workflow['jobs']['create-videos']
     assert job['env']['RESOLUTION'] == '720x1280'
     assert job['permissions'] if 'permissions' in job else workflow['permissions'] == {'contents': 'read'}
