@@ -882,11 +882,14 @@ def install():
         # oak tree hit 12 times and an unreferenced 300,000-volt measurement.
         # For this well-defined educational topic use a NOAA-grounded concise
         # script with shootable B-roll rather than publish a fictional event.
-        data = ground_lightning_explainer(data, subject, language)
         from media_first import active_palette, align_script_to_palette
+        palette = active_palette()
+        data = ground_lightning_explainer(
+            data, subject, language,
+            scene_count=len(palette.plans) if palette else None)
         # The verified video palette is authoritative for visual planning.
         # Narration may explain abstract facts without requiring exact footage.
-        data = align_script_to_palette(data, active_palette())
+        data = align_script_to_palette(data, palette)
         raw_scenes = data.get("scenes") or []
         if not raw_scenes or len(raw_scenes) > 6:
             raise ValueError("A strict video needs 1–6 explicit scenes")
