@@ -67,6 +67,20 @@ def _grounded_candidates(topic, llm=None):
     curated = [plan for plan in prioritized
                if not (plan["visual_search_query"].lower() in seen_seed
                        or seen_seed.add(plan["visual_search_query"].lower()))]
+    if seeds:
+        # Prevent unrelated pre-curated B-roll from being mistaken for an
+        # authoritative causal event. #71 selected 'lightning storm' for
+        # volcanic-island formation, then the LLM invented a story that
+        # lightning formed fissures. Source footage must relate to actual
+        # topic terms, not just coexist in an older generic fallback family.
+        rejected = [p["visual_search_query"] for p in curated
+                    if not related_to_topic(
+                        topic, p["object"], p["visual_search_query"])]
+        curated = [p for p in curated if related_to_topic(
+            topic, p["object"], p["visual_search_query"])]
+        if rejected:
+            print("[MEDIA FIRST] Off-topic stock queries removed: " +
+                  ", ".join(rejected[:8]), flush=True)
     # Ask for extra stock-query vocabulary even for recognized subjects.
     # Otherwise one provider outage can exhaust the only four known queries.
     # These remain candidate queries: only actually downloaded, inspected,
@@ -105,6 +119,8 @@ def _grounded_candidates(topic, llm=None):
     if not isinstance(data, dict) or not isinstance(data.get("shots"), list):
         return curated
     seen = {x["visual_search_query"].lower() for x in curated}
+    # Only subjects actually grounded in the topic may be used as a fallback
+    # for further LLM suggestions; a rejected family must not re-enter here.
     allowed_objects = {x["object"].casefold() for x in curated}
     for raw in data.get("shots", [])[:9]:
         if not isinstance(raw, dict):
