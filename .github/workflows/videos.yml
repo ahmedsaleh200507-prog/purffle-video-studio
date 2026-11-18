@@ -49,8 +49,34 @@ concurrency:
   cancel-in-progress: false
 jobs:
   create-videos:
+    name: Video ${{ matrix.slot }} (independent)
     runs-on: ubuntu-24.04
-    timeout-minutes: 330
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - slot: 1
+            input: video_1
+          - slot: 2
+            input: video_2
+          - slot: 3
+            input: video_3
+          - slot: 4
+            input: video_4
+          - slot: 5
+            input: video_5
+          - slot: 6
+            input: video_6
+          - slot: 7
+            input: video_7
+          - slot: 8
+            input: video_8
+          - slot: 9
+            input: video_9
+          - slot: 10
+            input: video_10
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -82,6 +108,118 @@ jobs:
       MAX_SHOT_SECONDS: '0'
       CREDIT_FOOTAGE: 'true'
       UPLOAD: 'false'
+      PURFFLE_API_INTERVAL_SECONDS: '1.6'
+      INPUT_1: ${{ matrix.slot == 1 && inputs.video_1 || '' }}
+      INPUT_2: ${{ matrix.slot == 2 && inputs.video_2 || '' }}
+      INPUT_3: ${{ matrix.slot == 3 && inputs.video_3 || '' }}
+      INPUT_4: ${{ matrix.slot == 4 && inputs.video_4 || '' }}
+      INPUT_5: ${{ matrix.slot == 5 && inputs.video_5 || '' }}
+      INPUT_6: ${{ matrix.slot == 6 && inputs.video_6 || '' }}
+      INPUT_7: ${{ matrix.slot == 7 && inputs.video_7 || '' }}
+      INPUT_8: ${{ matrix.slot == 8 && inputs.video_8 || '' }}
+      INPUT_9: ${{ matrix.slot == 9 && inputs.video_9 || '' }}
+      INPUT_10: ${{ matrix.slot == 10 && inputs.video_10 || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check requested video slot
+        id: selected
+        env:
+          SLOT_TOPIC: ${{ inputs[matrix.input] }}
+        run: |
+          if [[ -n "${SLOT_TOPIC//[[:space:]]/}" ]]; then
+            echo "render=true" >> "$GITHUB_OUTPUT"
+            echo "Video slot ${{ matrix.slot }} has a topic; production enabled."
+          else
+            echo "render=false" >> "$GITHUB_OUTPUT"
+            echo "Video slot ${{ matrix.slot }} is blank; skipping setup and render."
+          fi
+      - uses: actions/setup-python@v5
+        if: steps.selected.outputs.render == 'true'
+        with:
+          python-version: '3.12'
+      - name: Install video tools
+        if: steps.selected.outputs.render == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          python -m pip install --upgrade pip
+          pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-dev.txt
+      - name: Restore local model cache
+        if: steps.selected.outputs.render == 'true'
+        id: model-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cache/huggingface
+            .cache/piper
+          key: purffle-v2-model-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}
+      - name: Restore API metadata cache
+        if: steps.selected.outputs.render == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: media_cache/api
+          key: purffle-v2-api-${{ runner.os }}-${{ github.run_id }}-${{ matrix.slot }}
+          restore-keys: |
+            purffle-v2-api-${{ runner.os }}-
+      - name: Syntax and regression tests
+        if: steps.selected.outputs.render == 'true'
+        run: |
+          python -m compileall -q scripts sitecustomize.py
+          python -m pytest -q
+      - name: Live provider API health (no footage downloads)
+        if: steps.selected.outputs.render == 'true'
+        continue-on-error: true
+        run: python scripts/provider_health.py
+      - name: Verify local visual model
+        if: steps.selected.outputs.render == 'true'
+        run: python scripts/check_model.py
+      - name: Verify pinned upstream compatibility
+        if: steps.selected.outputs.render == 'true'
+        run: python scripts/improve_upstream.py
+      - name: Produce selected video
+        if: steps.selected.outputs.render == 'true'
+        env:
+          PURFFLE_STRICT: '1'
+        run: python scripts/batch.py
+      - name: Save local models even when production fails
+        if: always() && steps.selected.outputs.render == 'true' && steps.model-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache/huggingface
+            .cache/piper
+          key: purffle-v2-model-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}
+      - name: Save API responses and quota cooldowns
+        if: always() && steps.selected.outputs.render == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: media_cache/api
+          key: purffle-v2-api-${{ runner.os }}-${{ github.run_id }}-${{ matrix.slot }}
+      - name: Remove transient render work
+        if: always() && steps.selected.outputs.render == 'true'
+        run: find finished -type d -name work -prune -exec rm -rf {} + 2>/dev/null || true
+      - name: Upload the selected video and diagnostic files
+        if: always() && steps.selected.outputs.render == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: purffle-part-${{ matrix.slot }}
+          path: |
+            finished/video_*/
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0
+
+  collect-results:
+    name: Combine all videos into one download
+    if: always()
+    needs: create-videos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
       INPUT_1: ${{ inputs.video_1 }}
       INPUT_2: ${{ inputs.video_2 }}
       INPUT_3: ${{ inputs.video_3 }}
@@ -97,61 +235,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install video tools
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
-          python -m pip install --upgrade pip
-          pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
-          pip install -r requirements-dev.txt
-      - name: Restore local model cache
-        id: model-cache
-        uses: actions/cache/restore@v4
+      - name: Gather completed videos (including from failed jobs)
+        uses: actions/download-artifact@v4
         with:
-          path: |
-            .cache/huggingface
-            .cache/piper
-          key: purffle-v2-model-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}
-      - name: Restore API metadata cache
-        uses: actions/cache/restore@v4
-        with:
-          path: media_cache/api
-          key: purffle-v2-api-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: |
-            purffle-v2-api-${{ runner.os }}-
-      - name: Syntax and regression tests
-        run: |
-          python -m compileall -q scripts sitecustomize.py
-          python -m pytest -q
-      - name: Live provider API health (no footage downloads)
-        continue-on-error: true
-        run: python scripts/provider_health.py
-      - name: Verify local visual model
-        run: python scripts/check_model.py
-      - name: Verify pinned upstream compatibility
-        run: python scripts/improve_upstream.py
-      - name: Produce up to 10 videos
-        env:
-          PURFFLE_STRICT: '1'
-        run: python scripts/batch.py
-      - name: Save local models even when production fails
-        if: always() && steps.model-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            .cache/huggingface
-            .cache/piper
-          key: purffle-v2-model-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}
-      - name: Save API responses and quota cooldowns
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: media_cache/api
-          key: purffle-v2-api-${{ runner.os }}-${{ github.run_id }}
-      - name: Remove transient render work
-        if: always()
-        run: find finished -type d -name work -prune -exec rm -rf {} + 2>/dev/null || true
-      - name: Save MP4 files and failure reports
+          pattern: purffle-part-*
+          path: .
+          merge-multiple: true
+      - name: Produce one batch report and all Shorts titles
+        run: python scripts/aggregate_results.py
+      - name: Save MP4 files and consolidated reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -164,3 +256,21 @@ jobs:
             YOUTUBE_SHORTS_TITLES.txt
           if-no-files-found: warn
           retention-days: 7
+          compression-level: 0
+      - name: Check whether all requested videos succeeded
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result_file = Path('batch-results.json')
+          if not result_file.is_file():
+              raise SystemExit('Batch report missing; no results collected')
+          results = json.loads(result_file.read_text(encoding='utf-8'))
+          if not results:
+              raise SystemExit('No video topics were supplied')
+          ok = sum(row.get('status') == 'ok' for row in results)
+          print(f'[BATCH FINAL] successful=${ok} requested=${len(results)}')
+          if ok != len(results):
+              raise SystemExit('Some videos failed; download the ZIP to see which ones')
+          PY
