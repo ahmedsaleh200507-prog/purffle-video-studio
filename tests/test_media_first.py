@@ -196,3 +196,19 @@ def test_footage_prompt_has_actual_clip_duration_limit():
     prompt = footage_prompt(palette)
     assert "11.5-second unlooped clip" in prompt
     assert "Narration maximum" in prompt
+
+
+
+def test_undersupplied_narration_splits_across_verified_clips_without_new_facts():
+    palette = VerifiedPalette("volcano", [
+        {"main_character": "", "object": "volcano", "action": "ambient",
+         "location": "", "time": "", "visual_search_query": f"volcano clip {i}"}
+        for i in range(3)], [object()] * 3, set(), [])
+    original = ("Volcanoes can show warning signs before erupting, "
+                "including earthquakes and changes in volcanic gas emissions.")
+    plan = {"scenes": [{"narration": original}]}
+    output = align_script_to_palette(plan, palette)
+    assert len(output["scenes"]) == 3
+    assert " ".join(row["narration"] for row in output["scenes"]) == original
+    assert all(row["visual_search_query"].startswith("volcano clip")
+               for row in output["scenes"])
