@@ -398,9 +398,17 @@ class SceneMatcher:
                             "landscap", "field", "beach", "wave"}
         # For explicitly marked, contextual establishing shots only. These are
         # *not* permission to ignore an ordinary requested human/animal action.
-        contextual_scenery = {"cav", "glacier", "ice", "desert",
+        contextual_scenery = {"cav", "glacier", "ice", "iceberg", "desert",
                               "dun", "sand", "waterfall", "coast", "geotherm",
-                              "water", "landscap"}
+                              "water", "landscap", "ocean", "seafloor",
+                              "volcano", "lava", "fire", "snake", "forest",
+                              "tree", "branch", "pine", "island", "storm",
+                              "lightning", "snow", "submarine"}
+        # The matcher stems words ("snake"->"snak", "fire"->"fir").
+        # Normalize the visible-subject allowlists the SAME way, otherwise
+        # genuinely matching stock footage is silently rejected.
+        scenery_subjects = set().union(*(_terms(word) for word in scenery_subjects))
+        contextual_scenery = set().union(*(_terms(word) for word in contextual_scenery))
         scenery_actions = {"glow", "shin", "ris", "set", "mov", "drift",
                            "flow", "blow", "fall", "spark", "twinkl",
                            "brighten", "darken", "appear", "chang"}
@@ -509,7 +517,9 @@ class SceneMatcher:
         frames = [_frame(path, max(0, min(float(duration) - .15, t)), 448, preserve_aspect=True)
                   for t in (0.2, float(duration) * .35, float(duration) * .7)]
         positive = f"A real video frame of {spec.visual_search_query}."
-        object_caption = (f"A real outdoor photograph of {spec.object}." if not spec.main_character.strip()
+        # A cave or underwater seafloor is not an 'outdoor photograph'.
+        # Keep the verifier focused on the actual requested visible subject.
+        object_caption = (f"A documentary video frame showing {spec.object}." if not spec.main_character.strip()
                           else f"A photograph showing {spec.main_character} {spec.object}.")
         negatives = ["A person playing a guitar.", "Electronic devices on a desk.", "A person riding a skateboard.",
                      "A static illustration or abstract colorful background."]
