@@ -73,7 +73,7 @@ def test_verified_dossier_wins_without_network():
 
 def test_search_uses_fixed_wikimedia_host_bounded_extracts_and_metadata():
     client = wiki_session()
-    bundle = discover_evidence("How can underwater volcanoes form islands?", "en", session=client)
+    bundle = discover_evidence("Why Do Underwater Mountains Become Islands?", "en", session=client)
     assert bundle.method == "model_screened_reference"
     assert len(bundle.sources) == 1
     assert bundle.sources[0]["title"] == "Volcanic island"
