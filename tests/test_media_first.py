@@ -55,7 +55,7 @@ class FakeVisuals:
 def test_preflight_only_returns_truly_verified_distinct_clips(tmp_path, monkeypatch):
     monkeypatch.setenv("MEDIA_FIRST_REPORT", str(tmp_path / "media-first-plan.json"))
     monkeypatch.setenv("MEDIA_FIRST_WORK_DIR", str(tmp_path / "scratch"))
-    visuals = FakeVisuals({"volcano erupting", "volcano landscape", "lightning storm"})
+    visuals = FakeVisuals({"volcano erupting", "volcano landscape", "volcano nature"})
     result = prepare_verified_palette(
         TOPIC, object(), None, visuals=visuals, min_scenes=3, max_scenes=4,
         clip_seconds=10.0)

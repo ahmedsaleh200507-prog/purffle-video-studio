@@ -252,6 +252,51 @@ def test_real_upstream_normalizer_uses_verified_media_first_shots():
     assert "pressure gauge" not in output.to_dict()["scenes"][0]["search_query"]
 
 
+
+
+@pytest.mark.parametrize("topic,keywords,subject_plan", [
+    ("How Do Volcanoes Create New Islands?",
+     ("sea level", "ocean floor", "connected"),
+     [("volcano", "volcano erupting"), ("lava", "volcanic lava"),
+      ("island", "volcanic island coastline")]),
+    ("What Happens Inside a Powerful Hurricane?",
+     ("eye", "eyewall", "sinks"),
+     [("hurricane", "hurricane satellite clouds"),
+      ("hurricane", "hurricane storm footage"),
+      ("storm", "tropical storm ocean waves")]),
+])
+def test_real_upstream_normalization_prevents_71_false_science(
+        topic, keywords, subject_plan):
+    from media_first import VerifiedPalette, use_palette
+    verify_upstream()
+    install()
+    import purffle_shorts.script as script
+    plans = [
+        {"main_character": "", "object": obj, "action": "ambient",
+         "location": "", "time": "", "visual_search_query": query}
+        for obj, query in subject_plan
+    ]
+    palette = VerifiedPalette(topic, plans, [object()] * len(plans), set(), [])
+    invented = {
+        "title": "Lightning's Secret Helper: Floating Island",
+        "description": "Scientists proved 300 watts and 200 km/h",
+        "scenes": [{
+            "narration": "The islands float as lightning splits the rock at 200 km/h.",
+            **plans[0],
+        }],
+    }
+    with use_palette(palette):
+        result = script.normalize(invented, topic, "facts", "en")
+    assert len(result.scenes) == 3
+    words = " ".join(x.narration for x in result.scenes).casefold()
+    assert all(x in words for x in keywords)
+    assert "float" not in words and "lightning splits" not in words
+    assert "300 watts" not in words and "200 km/h" not in words
+    assert [x.search_query for x in result.scenes] == [
+        x["visual_search_query"] for x in plans
+    ]
+
+
 def test_structured_plan_never_guesses_object_action():
     with pytest.raises(ValueError, match="Missing structured scene fields"):
         _scene_data({"search_query": "young man money"})
