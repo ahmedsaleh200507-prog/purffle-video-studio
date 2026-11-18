@@ -20,7 +20,9 @@ _MEASUREMENT = re.compile(
 )
 # Generic causal scientific explainers don't require fabricated measurements.
 _GENERAL_QUESTION = re.compile(
-    r"^\s*(what|why|how|can|does|do|is|are|when|"\n    r"warum|wie|was|wieso|weshalb|wann|wo|wer|welche[rsnm]?|kann|können|koennen|ist|sind)\b",\n    re.IGNORECASE)
+    r"^\s*(what|why|how|can|does|do|is|are|when|"
+    r"warum|wie|was|wieso|weshalb|wann|wo|wer|welche[rsnm]?|kann|können|koennen|ist|sind)\b",
+    re.IGNORECASE)
 
 
 def validate_unsourced_quantities(script, topic: str) -> None:
