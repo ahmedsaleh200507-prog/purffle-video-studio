@@ -50,9 +50,36 @@ def parse_topic(raw: str):
     return lang, topic
 
 
-def classify_failure(message: str, log_text: str = "") -> str:
-    """Classify the actual worker failure AND log; not just the status-1 wrapper."""
-    combined = (str(message) + chr(10) + str(log_text)[-24000:]).lower()
+def _rejection_category(reason: str) -> str:
+    """Classify one actual candidate rejection rather than unrelated API logs."""
+    reason = str(reason).lower()
+    categories = (
+        ("metadata_rejected", ("scene metadata lacks", "metadata does not describe")),
+        ("semantic_mismatch", ("visual scene mismatch", "visual mismatch")),
+        ("insufficient_native_resolution", ("insufficient_native_resolution", "below 720 short side", "requires short side")),
+        ("insufficient_duration", ("without looping", "source too short")),
+        ("license_rejected", ("incompatible candidate license", "license provenance")),
+        ("no_motion", ("insufficiently moving", "static or", "no moving video stream")),
+        ("download_invalid", ("invalid video", "download failed", "corrupt")),
+    )
+    return next((label for label, parts in categories
+                 if any(part in reason for part in parts)), "other")
+
+
+def classify_failure(message: str, log_text: str = "", details=None) -> str:
+    """Use root worker error and actual scene rejections before incidental logs."""
+    direct = str(message).lower()
+    full_log = str(log_text)[-24000:].lower()
+    if "no suitable verified real video" in direct or "no verified real video" in direct:
+        category_counts = (details or {}).get("rejection_categories") or {}
+        relevant = {k: v for k, v in category_counts.items()
+                    if k not in ("other", "non_video_or_duplicate") and v > 0}
+        if relevant:
+            return max(relevant, key=lambda key: relevant[key])
+        if "scene metadata" in full_log:
+            return "metadata_rejected"
+        return "no_candidates"
+    combined = direct + chr(10) + full_log
     checks = (
         # Legacy static smoke tests rely on these precise generic labels.
         # Specific footage/voice failures below use the richer categories.
@@ -103,8 +130,21 @@ def failure_details(target: Path):
                 details['scene'] = scene.get('index')
                 details['query'] = scene.get('plan', {}).get('visual_search_query', '')
                 rejections = scene.get('rejections') or []
-                details['rejection_count'] = len(rejections)
-                details['latest_rejections'] = rejections[-8:]
+                # Retries of one logical scene are separate report entries.
+                # Count reasons from all attempts of the actual failed scene.
+                attempted = [s for s in scenes if s.get('index') == scene.get('index')
+                             and s.get('status') == 'failed']
+                all_rejections = [rej for attempt in attempted
+                                  for rej in attempt.get('rejections', [])]
+                categories = {}
+                for rej in all_rejections:
+                    reason = str(rej.get('reason', ''))
+                    group = (_rejection_category(reason) if "non_video_or_duplicate" not in reason
+                             else "non_video_or_duplicate")
+                    categories[group] = categories.get(group, 0) + 1
+                details['rejection_categories'] = categories
+                details['rejection_count'] = len(all_rejections)
+                details['latest_rejections'] = all_rejections[-8:]
                 providers = [r.get('source') for r in rejections if r.get('source')]
                 details['provider'] = providers[-1] if providers else None
             details['provider_events'] = (report.get('provider_events') or [])[-12:]
@@ -228,7 +268,8 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
                     result.get('error', ''),
                     chr(10).join(lines) + chr(10) +
                     chr(10).join(str(x.get('reason', '')) for x in details.get('latest_rejections', [])) +
-                    chr(10).join(str(x.get('error', '')) for x in details.get('voice_attempts', [])))
+                    chr(10).join(str(x.get('error', '')) for x in details.get('voice_attempts', [])),
+                    details)
                 write_json(target / 'report.json', result)
             selected = [x for x in lines if any(s in x for s in ('[SOURCE', '[SELECTED', '[REJECT', '[SCENE'))]
             print('\n'.join(selected), flush=True)
