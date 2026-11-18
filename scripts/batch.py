@@ -69,6 +69,15 @@ def _rejection_category(reason: str) -> str:
 def classify_failure(message: str, log_text: str = "", details=None) -> str:
     """Use root worker error and actual scene rejections before incidental logs."""
     direct = str(message).lower()
+    # Prefer exact V3 preflight errors over unrelated 'rate limit' text in
+    # provider-health summaries; #71 had ZERO provider search attempts.
+    for prefix, category in (
+        ("media_preflight_no_topic_palette", "topic_palette_empty"),
+        ("media_preflight_insufficient_footage", "insufficient_verified_clips"),
+        ("unverified_quantitative_claim", "unverified_factual_claim"),
+    ):
+        if prefix in direct:
+            return category
     full_log = str(log_text)[-24000:].lower()
     if "no suitable verified real video" in direct or "no verified real video" in direct:
         category_counts = (details or {}).get("rejection_categories") or {}
