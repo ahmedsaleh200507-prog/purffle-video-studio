@@ -200,3 +200,66 @@ def test_confirmed_scene_metadata_beats_incidental_rate_limit_strings():
                                   details) == "metadata_rejected"
     assert batch.classify_failure("No suitable verified REAL VIDEO for scene 2",
                                   "pixabay: ok") == "no_candidates"
+
+
+def test_contextual_fallback_selects_new_verified_clip_with_disclosure(tmp_path, monkeypatch):
+    visual = StrictVisuals.__new__(StrictVisuals)
+    visual.report = {"scenes": [], "state": "searching"}
+    monkeypatch.setattr(visual, "_save", lambda: None)
+    queries = []
+
+    def search_scene(idx, query, prompt, topic, need, destination):
+        plan = json.loads(prompt)
+        queries.append(query)
+        if query != "cave interior":
+            visual.report["scenes"].append({
+                "index": idx + 1, "status": "failed", "plan": plan,
+                "rejections": [{"reason": "metadata not grounded"}],
+            })
+            raise RuntimeError("No suitable verified REAL VIDEO for scene 1")
+        visual.report["scenes"].append({
+            "index": 1, "status": "selected", "plan": plan,
+            "source": "pixabay", "sha256": "different-verified-clip",
+            "match": {"visual_score": .3},
+        })
+        return "unique-verified-video"
+
+    monkeypatch.setattr(visual, "for_scene", search_scene)
+    plan = {"main_character": "", "object": "cave", "action": "exploring",
+            "location": "", "time": "", "visual_search_query": "deep cave exploration"}
+    items = visual.for_scenes([("ignored", json.dumps(plan), 3)],
+                              "Was liegt in der tiefsten Höhle?", tmp_path)
+    assert items == ["unique-verified-video"]
+    assert queries == ["ignored", "cave", "cave interior"]
+    assert len(visual.report["scenes"]) == 1
+    final = visual.report["scenes"][0]
+    assert final["visual_mode"] == "illustrative_context"
+    assert final["illustrative_not_exact_event"] is True
+    assert len(final["search_attempts"]) == 2
+
+
+def test_rejection_summaries_keep_real_root_reason(tmp_path):
+    target = tmp_path / "video_04"
+    target.mkdir()
+    (target / "job-result.json").write_text(json.dumps({
+        "stage": "production", "error": "No suitable verified REAL VIDEO for scene 3",
+    }))
+    (target / "footage-report.json").write_text(json.dumps({
+        "state": "failed",
+        "scenes": [
+            {"index": 3, "status": "failed",
+             "rejections": [
+                 {"source": "pixabay", "reason": "ValidationError: Scene metadata lacks object/action grounding"}]},
+            {"index": 3, "status": "failed",
+             "rejections": [
+                 {"source": "pixabay", "reason": "ValidationError: Scene metadata does not describe the requested action"},
+                 {"source": "pixabay", "reason": "ValueError: insufficient_native_resolution: crop would upscale"}]},
+        ],
+        "provider_events": [{"provider": "wikimedia-video", "status": "http_429"}],
+    }))
+    details = batch.failure_details(target)
+    assert details["rejection_count"] == 3
+    assert details["rejection_categories"] == {
+        "metadata_rejected": 2, "insufficient_native_resolution": 1,
+    }
+    assert batch.classify_failure(details["error"], "rate limited", details) == "metadata_rejected"
