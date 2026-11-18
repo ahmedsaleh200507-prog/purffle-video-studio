@@ -86,7 +86,11 @@ def test_search_uses_fixed_wikimedia_host_bounded_extracts_and_metadata():
 
 
 def test_german_wikipedia_uses_german_endpoint():
-    client = wiki_session()
+    client = Mock()
+    client.get.return_value = FakeResponse({"query": {"pages": [
+        {"title": "Insel", "pageid": 1, "extract": "Vulkanische Inseln entstehen, "
+         + "wenn Ausbrüche Lava und Gestein am Meeresboden aufbauen. " * 8}
+    ]}})
     bundle = discover_evidence("Wie entstehen Unterwasservulkane Inseln?", "de", session=client)
     assert client.get.call_args.args[0] == "https://de.wikipedia.org/w/api.php"
     assert bundle.method == "model_screened_reference"
