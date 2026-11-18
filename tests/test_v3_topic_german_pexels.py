@@ -18,6 +18,9 @@ from video_sources import ProviderRegistry
     ("Why Do Earthquakes Happen?", "earthquake"),
     ("How Do Rockets Reach Space?", "rocket"),
     ("Wie funktionieren Busse?", "bus"),
+    ("Warum tanzen Bienen?", "bee"),
+    ("Warum schnurren Katzen?", "cat"),
+    ("Wie funktionieren Züge?", "train"),
 ])
 def test_unseen_filmable_topics_have_grounded_queries_without_groq(title, expected):
     shots = _grounded_candidates(title, None)
