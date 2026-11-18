@@ -131,7 +131,14 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
         if (not title or page.get("missing") or len(extract) < 180
                 or "may refer to:" in extract[:150].casefold()):
             continue
-        overlap = words(title) & topic_terms
+        title_terms = words(title)
+        overlap = title_terms & topic_terms
+        if lang == "de" and not overlap:
+            # German plural/case inflections: Insel / Inseln, Berg / Bergen.
+            # Only tiny suffix differences count; broad semantic pivots do not.
+            overlap = {t for t in title_terms for q in topic_terms
+                       if len(t) >= 4 and (q.startswith(t) or t.startswith(q))
+                       and abs(len(t) - len(q)) <= 3}
         if not overlap:
             continue
         ranked.append((len(overlap), title, extract[:3100]))
