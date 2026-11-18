@@ -146,3 +146,57 @@ def test_output_rejects_duplicate_or_upscaled_scene(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="insufficient_native_resolution"):
         render_job.validate_result(video, {"voice": "edge:test", "timing": "native"},
                                    captions, report_path)
+
+
+@pytest.mark.parametrize("topic,object_name,action,query,context_subject", [
+    ("Warum verschwinden Flugzeuge im Bermuda-Dreieck?", "TBM Avenger torpedo planes",
+     "depart", "naval planes departing port", "airplane"),
+    ("Was haben Wissenschaftler in der tiefsten Höhle entdeckt?", "cave",
+     "exploring", "deep cave exploration", "cave"),
+    ("Was verbirgt sich im Marianengraben?", "algae cluster",
+     "glowing", "sonar light algae", "ocean"),
+    ("Warum gibt es in Äthiopien einen fremden Ort?", "Harar National Park",
+     "showing", "harar national park", "desert"),
+    ("Wie kann ein See eine Gaswolke freisetzen?", "lake bottom",
+     "sediment layer", "lake bottom sediment", "lake"),
+    ("Warum gibt es in der Wüste Kreise?", "sand dunes",
+     "forming circles", "sand dunes circle", "sand dunes"),
+    ("Warum leuchtet das Meer nachts?", "bacteria",
+     "flimmern", "bioluminescent bacteria", "ocean"),
+    ("Warum sieht der Wasserfall in der Antarktis rot aus?", "glacier meltwater",
+     "falling", "glacier meltwater waterfall", "glacier"),
+])
+def test_diagnostic_topics_have_contextual_visual_alternative(
+        topic, object_name, action, query, context_subject):
+    from studio_runtime import contextual_scene_plans
+    plan = {"main_character": "", "object": object_name,
+            "action": action, "location": "", "time": "",
+            "visual_search_query": query}
+    alternatives = contextual_scene_plans(plan, topic)
+    assert alternatives and len(alternatives) <= 2
+    assert alternatives[0]["object"] == context_subject
+    assert alternatives[0]["visual_search_query"] != query
+    assert alternatives[0]["main_character"] == ""
+
+
+def test_ambient_cave_clip_metadata_allowed_but_claimed_exploration_rejected():
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    ambient = SceneSpec(object="cave", action="ambient",
+                        visual_search_query="cave interior")
+    assert SceneMatcher.validate_metadata(ambient, "cavern with rocks") >= .15
+    literal = SceneSpec(object="cave", action="exploring",
+                        visual_search_query="cave interior")
+    with pytest.raises(ValidationError):
+        SceneMatcher.validate_metadata(literal, "cavern with rocks")
+
+
+def test_confirmed_scene_metadata_beats_incidental_rate_limit_strings():
+    # Logs can include 'rate limited' from a secondary source even when the
+    # real rejection is metadata mismatch and another provider returned clips.
+    details = {"rejection_categories": {"metadata_rejected": 48,
+                                        "insufficient_native_resolution": 3}}
+    assert batch.classify_failure("No suitable verified REAL VIDEO for scene 2",
+                                  "pixabay: ok; other provider rate limited",
+                                  details) == "metadata_rejected"
+    assert batch.classify_failure("No suitable verified REAL VIDEO for scene 2",
+                                  "pixabay: ok") == "no_candidates"
