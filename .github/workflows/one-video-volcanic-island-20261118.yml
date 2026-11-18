@@ -65,6 +65,8 @@ jobs:
       INPUT_10: ''
     steps:
       - uses: actions/checkout@v4
+      - name: Enforce approved English voice before installing video tools
+        run: python scripts/english_reference_policy.py --topic "$INPUT_1"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
