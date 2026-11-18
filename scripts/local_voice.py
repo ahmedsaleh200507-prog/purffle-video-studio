@@ -145,12 +145,45 @@ def _validate_sidecar(path, *, model, role):
             raise RuntimeError('Pinned male Piper model card lacks expected CC0 provenance')
         return
     data = json.loads(body)
+    required = ('^', chr(36), '_', ' ')
     if (data.get('audio', {}).get('sample_rate') != 22050
             or data.get('espeak', {}).get('voice') != 'en-us'
             or data.get('num_speakers') != 1
             or data.get('phoneme_type') != 'espeak'
             or not isinstance(data.get('phoneme_id_map'), dict)
-            or not all(k in data['phoneme_id_map'] for k in ('^', '
+            or not all(k in data['phoneme_id_map'] for k in required)):
+        raise RuntimeError('Pinned male Piper config is incompatible or invalid')
+
+
+def _download_verified_sidecar(url, target, *, model, role):
+    target = Path(target)
+    if target.exists():
+        try:
+            _validate_sidecar(target, model=model, role=role)
+            return target
+        except (ValueError, UnicodeError, RuntimeError):
+            target.unlink(missing_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    opener = urllib.request.build_opener(_ModelRedirects())
+    request = urllib.request.Request(
+        url, headers={'User-Agent': 'PurffleVideoStudio/3.0 pinned male model'})
+    with opener.open(request, timeout=25) as response:
+        body = response.read(12001)
+    if len(body) > 12000:
+        raise RuntimeError('Pinned Piper voice sidecar exceeds audited size')
+    fd, name = tempfile.mkstemp(dir=target.parent, suffix='.sidecar.part')
+    path = Path(name)
+    try:
+        with os.fdopen(fd, 'wb') as output:
+            output.write(body)
+        _validate_sidecar(path, model=model, role=role)
+        path.replace(target)
+        return target
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def _voice_files(language):
     info = provenance(language)
     voice = VOICES[_voice_key(language)]
     root = (Path(os.environ.get('PURFFLE_PIPER_CACHE', '.cache/piper'))
@@ -162,8 +195,6 @@ def _validate_sidecar(path, *, model, role):
         target = root / (voice['model'] + '-MODEL_CARD' if suffix == 'MODEL_CARD' else name)
         _download(base + name, target, digest, size)
     if voice.get('verify_text_files'):
-        # These two small sidecars belong to the same immutable revision as
-        # the SHA256-pinned binary. Parse and validate each; download is bounded.
         config = root / (voice['model'] + '.onnx.json')
         card = root / (voice['model'] + '-MODEL_CARD')
         _download_verified_sidecar(base + voice['model'] + '.onnx.json', config,
