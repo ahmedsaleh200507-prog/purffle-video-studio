@@ -68,13 +68,15 @@ def words(value: str) -> set[str]:
     for word in re.findall(r"[a-z]+", str(value).lower()):
         if len(word) < 3:
             continue
-        if word.endswith("ies") and len(word) > 5:
+        if word == "buses":
+            word = "bus"
+        elif word.endswith("ies") and len(word) > 5:
             word = word[:-3] + "y"
         elif word.endswith("oes") and len(word) > 5:
             word = word[:-2]
         elif word.endswith(("ches", "shes", "xes", "zes")) and len(word) > 5:
             word = word[:-2]
-        elif word.endswith("s") and not word.endswith(("ss", "us")) and len(word) > 4:
+        elif word.endswith("s") and not word.endswith(("ss", "us", "is")) and len(word) > 3:
             word = word[:-1]
         out.add(word)
     return out
