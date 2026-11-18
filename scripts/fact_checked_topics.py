@@ -141,6 +141,27 @@ def ground_lightning_explainer(data: dict, topic: str, language: str,
 # https://www.noaa.gov/jetstream/tropical/tropical-cyclone-introduction/tropical-cyclone-structure
 # https://www.aoml.noaa.gov/hrd/tcfaq/A11.html?print=yes
 _DOCUMENTARY_FACTS = {
+    "mirror_condensation": {
+        "en": [
+            "Hot shower water evaporates and makes bathroom air humid.",
+            "The mirror often stays cooler than the surrounding moist air.",
+            "Water vapor condenses into tiny liquid droplets on the mirror.",
+            "Those droplets make the mirror look foggy. This is condensation.",
+        ],
+        "de": [
+            "Beim Duschen verdunstet warmes Wasser. Die Badezimmerluft wird feucht.",
+            "Der Spiegel bleibt oft kühler als die feuchte Luft.",
+            "Dort kondensiert Wasserdampf und bildet winzige Tropfen auf dem Glas.",
+            "Die Tropfen lassen den Spiegel beschlagen. Das nennt man Kondensation.",
+        ],
+        "title": {"en": "Why Does Your Bathroom Mirror Fog Up?",
+                  "de": "Warum beschlägt der Badezimmerspiegel?"},
+        "description": {
+            "en": "A warm shower increases bathroom humidity. Water vapor condenses into tiny droplets on the cooler mirror.",
+            "de": "Beim warmen Duschen wird die Luft feucht. Am kühleren Spiegel kondensiert Wasserdampf zu kleinen Wassertropfen.",
+        },
+        "tags": ["bathroom mirror", "condensation", "humidity", "water vapor"],
+    },
     "volcanic_island": {
         "en": [
             "Some volcanic islands begin as eruptions on the ocean floor.",
@@ -188,6 +209,16 @@ def verified_documentary_kind(topic: str) -> str | None:
     import re
     text = re.sub(r"[^a-z ]", " ", raw)
     tokens = set(text.split())
+    # Recognize only the ordinary bathroom-mirror explanation, not unrelated
+    # uses of a mirror or unrelated fog/weather topics.
+    if (("badezimmerspiegel" in raw or
+         ("spiegel" in raw and ("bad" in tokens or "dusche" in raw)))
+        and ("beschl" in raw or "dampf" in raw or "kondens" in raw)):
+        return "mirror_condensation"
+    if (("mirror" in tokens or "mirrors" in tokens)
+        and ("bathroom" in tokens or "shower" in tokens)
+        and ("fog" in raw or "steam" in raw or "condens" in raw)):
+        return "mirror_condensation"
     if (tokens & {"volcano", "volcanoes", "volcanic"}) and (
             tokens & {"island", "islands"}) and (
             tokens & {"create", "created", "form", "formed", "make", "build"}):
@@ -211,7 +242,20 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
     info = _DOCUMENTARY_FACTS[kind]
     language = "de" if str(language).startswith("de") else "en"
     narration = list(info[language])
-    if scene_count == 3:
+    if scene_count == 3 and kind == "mirror_condensation":
+        if language == "de":
+            narration = [
+                "Beim Duschen verdunstet warmes Wasser. Die Luft im Bad wird feucht.",
+                "Der Spiegel ist kühler. Wasserdampf wird dort zu winzigen Wassertropfen.",
+                "Diese Tropfen beschlagen die Oberfläche und machen das Spiegelbild unscharf.",
+            ]
+        else:
+            narration = [
+                "Warm shower water evaporates, making the bathroom air more humid.",
+                "The cooler mirror causes water vapor to condense into tiny droplets.",
+                "These droplets cover the glass and make your reflection look foggy.",
+            ]
+    elif scene_count == 3:
         # Four verified scientific points can be compressed without changing
         # any causal mechanisms or introducing new measurements.
         if kind == "volcanic_island":
@@ -232,9 +276,12 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
             ]
     scenes = [{
         "narration": sentence, "speaker": "A", "search_query": "",
-        "image_prompt": "", "main_character": "", "object": "volcano" if kind == "volcanic_island" else "hurricane",
+        "image_prompt": "", "main_character": "", "object": ("volcano" if kind == "volcanic_island" else
+                    "hurricane" if kind == "hurricane_eye" else "mirror"),
         "action": "ambient", "location": "", "time": "",
-        "visual_search_query": "volcano erupting" if kind == "volcanic_island" else "hurricane satellite clouds",
+        "visual_search_query": ("volcano erupting" if kind == "volcanic_island" else
+                                   "hurricane satellite clouds" if kind == "hurricane_eye" else
+                                   "foggy bathroom mirror"),
         "emphasis": [], "emoji": "",
     } for sentence in narration]
     return {
