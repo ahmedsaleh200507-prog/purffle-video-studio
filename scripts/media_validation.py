@@ -30,6 +30,25 @@ _CONTAINERS = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,ogg,mpegts,mpeg,avi"
 _INPUT_GUARDS = ["-protocol_whitelist", "file,pipe", "-format_whitelist", _CONTAINERS]
 
 
+def portrait_crop_limit() -> float:
+    """Single shared bound for selecting, rendering and accepting footage.
+
+    A genuine 1080p landscape clip needs about 1.1852x to fill 720x1280
+    after the 9:16 crop. This never allows an arbitrarily upscaled 720p
+    landscape source to masquerade as HD. Native resolution is still reported.
+    """
+    value = float(os.environ.get("PURFFLE_MAX_PORTRAIT_UPSCALE", "1.20"))
+    if not math.isfinite(value):
+        raise ValueError("PURFFLE_MAX_PORTRAIT_UPSCALE must be finite")
+    return min(1.20, max(1.0, value))
+
+
+def portrait_crop_allowed(scale: float) -> bool:
+    """Require all three footage gates to use the same numeric policy."""
+    scale = float(scale)
+    return math.isfinite(scale) and scale > 0 and scale <= portrait_crop_limit() + 0.0001
+
+
 class ValidationError(RuntimeError):
     """A candidate cannot be accepted; callers must try another or fail the scene."""
 
