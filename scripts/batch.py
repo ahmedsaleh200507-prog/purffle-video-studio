@@ -18,7 +18,7 @@ def write_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix('.tmp')
     content = json.dumps(value, ensure_ascii=False, indent=2)
-    for name in ('GROQ_API_KEY', 'PIXABAY_API_KEY', 'PEXELS_API_KEY', 'COVERR_API_KEY', 'EUROPEANA_API_KEY'):
+    for name in ('GROQ_API_KEY', 'PIXABAY_API_KEY', 'PEXELS_API_KEY', 'COVERR_API_KEY', 'EUROPEANA_API_KEY', 'GITHUB_TOKEN', 'GH_TOKEN', 'HF_TOKEN'):
         secret = os.environ.get(name, '')
         if secret:
             content = content.replace(secret, '[REDACTED]')
@@ -50,29 +50,155 @@ def parse_topic(raw: str):
     return lang, topic
 
 
-def classify_failure(message: str, log_text: str = "") -> str:
-    """Group failures without masking the original exception."""
-    combined = message.lower() or log_text[-12000:].lower()
-    checks = (
-        ("missing_api_key", ("api_key missing", "api key missing", "groq_api_key missing")),
-        ("provider_quota", ("rate limit", "quota exceeded", "http 429")),
-        ("provider_access", ("http 401", "http 403", "unauthorized", "forbidden")),
-        ("source_not_found", ("no suitable", "no matching", "no footage", "no candidates")),
-        ("source_quality", ("requires short side", "insufficiently moving", "visual scene mismatch", "metadata lacks")),
-        ("voice_failure", ("edge tts", "piper", "narration", "voice alignment")),
-        ("render_failure", ("ffmpeg", "ffprobe", "render failed")),
-        ("timeout", ("timed out", "time budget exceeded")),
+def _rejection_category(reason: str) -> str:
+    """Classify one actual candidate rejection rather than unrelated API logs."""
+    reason = str(reason).lower()
+    categories = (
+        ("metadata_rejected", ("scene metadata lacks", "metadata does not describe")),
+        ("semantic_mismatch", ("visual scene mismatch", "visual mismatch")),
+        ("insufficient_native_resolution", ("insufficient_native_resolution", "below 720 short side", "requires short side")),
+        ("insufficient_duration", ("without looping", "source too short")),
+        ("license_rejected", ("incompatible candidate license", "license provenance")),
+        ("no_motion", ("insufficiently moving", "static or", "no moving video stream")),
+        ("download_invalid", ("invalid video", "download failed", "corrupt")),
     )
-    for category, patterns in checks:
-        if any(pattern in combined for pattern in patterns):
-            return category
-    return "unknown"
+    return next((label for label, parts in categories
+                 if any(part in reason for part in parts)), "other")
+
+
+def classify_failure(message: str, log_text: str = "", details=None) -> str:
+    """Use root worker error and actual scene rejections before incidental logs."""
+    direct = str(message).lower()
+    full_log = str(log_text)[-24000:].lower()
+    if "no suitable verified real video" in direct or "no verified real video" in direct:
+        category_counts = (details or {}).get("rejection_categories") or {}
+        relevant = {k: v for k, v in category_counts.items()
+                    if k not in ("other", "non_video_or_duplicate") and v > 0}
+        if relevant:
+            return max(relevant, key=lambda key: relevant[key])
+        if "scene metadata" in full_log:
+            return "metadata_rejected"
+        return "no_candidates"
+    combined = direct + chr(10) + full_log
+    checks = (
+        # Legacy static smoke tests rely on these precise generic labels.
+        # Specific footage/voice failures below use the richer categories.
+        ("timeout", ("video timed out after",)),
+        ("source_not_found", ("no suitable footage found",)),
+        ("provider_auth", ("http_401", "http_403", "http 401", "http 403", "unauthorized", "forbidden")),
+        ("provider_rate_limit", ("http_429", "http 429", "rate limit", "quota exceeded", "circuit_open")),
+        ("provider_timeout", ("provider timeout", "network_or_json_error", "api request or json parsing failed")),
+        ("missing_api_key", ("api_key missing", "api key missing", "groq_api_key missing", "missing pexels_api_key")),
+        ("insufficient_native_resolution", ("insufficient_native_resolution", "portrait crop would upscale")),
+        ("metadata_rejected", ("scene metadata lacks", "scene metadata does not describe")),
+        ("semantic_mismatch", ("visual scene mismatch", "unrelated metadata")),
+        ("license_rejected", ("unverified or incompatible candidate license", "missing license provenance")),
+        ("insufficient_duration", ("without looping", "source too short")),
+        ("no_motion", ("insufficiently moving", "static or", "no moving video stream")),
+        ("download_invalid", ("invalid video", "download failed", "corrupt", "invalid media")),
+        ("voice_timeout", ("tts deadline exceeded", "voice deadline exceeded", "edge tts deadline")),
+        ("voice_invalid", ("free narration failed", "voice alignment", "narration audio is missing")),
+        ("render_failure", ("ffmpeg", "ffprobe", "render refused", "output resolution mismatch")),
+        ("no_candidates", ("no suitable verified real video", "no candidates", "no verified real video")),
+        ("provider_access", ("provider disabled", "unsupported provider")),
+        ("unexpected", ("traceback", "worker exited with status", "exception")),
+    )
+    return next((category for category, patterns in checks
+                 if any(pattern in combined for pattern in patterns)), "unknown")
+
+
+def failure_details(target: Path):
+    """Retain the failing scene and provider evidence without hiding the worker error."""
+    details = {}
+    job_file = target / 'job-result.json'
+    if job_file.is_file():
+        try:
+            worker = json.loads(job_file.read_text(encoding='utf-8'))
+            for field in ('stage', 'exception_type', 'error'):
+                if worker.get(field):
+                    details[field] = worker[field]
+        except (ValueError, OSError):
+            pass
+    footage_file = target / 'footage-report.json'
+    if footage_file.is_file():
+        try:
+            report = json.loads(footage_file.read_text(encoding='utf-8'))
+            scenes = report.get('scenes') or []
+            failed = [s for s in scenes if s.get('status') == 'failed']
+            if failed:
+                scene = failed[-1]
+                details['scene'] = scene.get('index')
+                details['query'] = scene.get('plan', {}).get('visual_search_query', '')
+                rejections = scene.get('rejections') or []
+                # Retries of one logical scene are separate report entries.
+                # Count reasons from all attempts of the actual failed scene.
+                attempted = [s for s in scenes if s.get('index') == scene.get('index')
+                             and s.get('status') == 'failed']
+                all_rejections = [rej for attempt in attempted
+                                  for rej in attempt.get('rejections', [])]
+                categories = {}
+                for rej in all_rejections:
+                    reason = str(rej.get('reason', ''))
+                    group = (_rejection_category(reason) if "non_video_or_duplicate" not in reason
+                             else "non_video_or_duplicate")
+                    categories[group] = categories.get(group, 0) + 1
+                details['rejection_categories'] = categories
+                details['rejection_count'] = len(all_rejections)
+                details['latest_rejections'] = all_rejections[-8:]
+                providers = [r.get('source') for r in rejections if r.get('source')]
+                details['provider'] = providers[-1] if providers else None
+            details['provider_events'] = (report.get('provider_events') or [])[-12:]
+            details['footage_state'] = report.get('state', 'unknown')
+        except (ValueError, OSError):
+            pass
+    voice_file = target / 'voice-report.json'
+    if voice_file.is_file():
+        try:
+            voice = json.loads(voice_file.read_text(encoding='utf-8'))
+            if voice.get('state') == 'failed':
+                details['voice_attempts'] = voice.get('attempts', [])
+        except (ValueError, OSError):
+            pass
+    return details
+
+
+def resume_completed_job(index: int, raw: str, out: Path):
+    """Reuse only a matching, previously validated video that still probes correctly."""
+    if os.environ.get('PURFFLE_RESUME', '1') != '1':
+        return None
+    target = out / f'video_{index:02d}'
+    report = target / 'report.json'
+    if not report.is_file():
+        return None
+    try:
+        prior = json.loads(report.read_text(encoding='utf-8'))
+        if (prior.get('status') != 'ok' or prior.get('original_input') != raw
+                or not prior.get('mp4')):
+            return None
+        video = Path(prior['mp4'])
+        if not video.is_file() or video.stat().st_size < 1024:
+            return None
+        probe = subprocess.run(['ffprobe', '-v', 'error', '-show_streams',
+                                '-show_format', '-of', 'json', str(video)],
+                               capture_output=True, text=True, check=True, timeout=30)
+        data = json.loads(probe.stdout)
+        streams = data.get('streams', [])
+        vid = next((s for s in streams if s.get('codec_type') == 'video'), None)
+        audio = any(s.get('codec_type') == 'audio' for s in streams)
+        w, h = (int(v) for v in os.environ.get('RESOLUTION', '720x1280').split('x'))
+        if (not vid or not audio or (int(vid.get('width', 0)), int(vid.get('height', 0))) != (w, h)
+                or float(data.get('format', {}).get('duration') or 0) <= 0):
+            return None
+        print(f'[VIDEO RESUMED] index={index} validated existing output={video}', flush=True)
+        return prior
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+        return None
 
 
 def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
     target = out / f'video_{index:02d}'
     target.mkdir(parents=True, exist_ok=True)
-    result = {'index': index, 'topic': raw, 'status': 'failed', 'mp4': None}
+    result = {'index': index, 'topic': raw, 'original_input': raw, 'status': 'failed', 'mp4': None}
     started = time.monotonic()
     log_path = target / 'purffle.log'
     try:
@@ -95,7 +221,7 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
                                     cwd=ROOT, start_new_session=True)
             def relay():
                 for line in proc.stdout:
-                    for name in ('GROQ_API_KEY', 'PIXABAY_API_KEY', 'PEXELS_API_KEY', 'COVERR_API_KEY', 'EUROPEANA_API_KEY'):
+                    for name in ('GROQ_API_KEY', 'PIXABAY_API_KEY', 'PEXELS_API_KEY', 'COVERR_API_KEY', 'EUROPEANA_API_KEY', 'GITHUB_TOKEN', 'GH_TOKEN', 'HF_TOKEN'):
                         secret = env.get(name, '')
                         if secret:
                             line = line.replace(secret, '[REDACTED]')
@@ -113,13 +239,14 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
             finally:
                 reader.join(timeout=5)
         if proc.returncode:
-            raise RuntimeError(f'Worker exited with status {proc.returncode}')
+            worker = failure_details(target)
+            raise RuntimeError(worker.get('error') or f'Worker exited with status {proc.returncode}')
         job = json.loads(Path(env['JOB_RESULT']).read_text(encoding='utf-8'))
         if job.get('status') != 'ok' or not job.get('mp4') or not Path(job['mp4']).is_file():
             raise RuntimeError('Worker did not provide a validated successful MP4')
         result.update(job)
     except Exception as exc:
-        result.update(status='failed', error=str(exc), mp4=None)
+        result.update(status='failed', error=str(exc), exception_type=type(exc).__name__, mp4=None)
     finally:
         if result['status'] != 'ok':
             # Partial render output is diagnostic failure, never a deliverable.
@@ -134,7 +261,15 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
         if log_path.exists():
             lines = log_path.read_text(errors='replace').splitlines()
             if result['status'] != 'ok':
-                result['failure_category'] = classify_failure(result.get('error', ''), '\n'.join(lines))
+                details = failure_details(target)
+                result['failure_details'] = details
+                result['stage'] = details.get('stage', 'unknown')
+                result['failure_category'] = classify_failure(
+                    result.get('error', ''),
+                    chr(10).join(lines) + chr(10) +
+                    chr(10).join(str(x.get('reason', '')) for x in details.get('latest_rejections', [])) +
+                    chr(10).join(str(x.get('error', '')) for x in details.get('voice_attempts', [])),
+                    details)
                 write_json(target / 'report.json', result)
             selected = [x for x in lines if any(s in x for s in ('[SOURCE', '[SELECTED', '[REJECT', '[SCENE'))]
             print('\n'.join(selected), flush=True)
@@ -199,6 +334,27 @@ def write_consolidated_diagnostics(out: Path, results: list):
     tmp = destination.with_suffix('.tmp')
     tmp.write_text(content, encoding='utf-8')
     tmp.replace(destination)
+    details = []
+    for result in results:
+        target = out / f"video_{result['index']:02d}"
+        summary = {'result': result}
+        for name, field in (('footage-report.json', 'footage'),
+                            ('voice-report.json', 'voice'),
+                            ('job-result.json', 'worker')):
+            path = target / name
+            if path.is_file():
+                try:
+                    summary[field] = json.loads(path.read_text(encoding='utf-8'))
+                except (OSError, ValueError):
+                    summary[field] = {'error': 'unreadable'}
+        details.append(summary)
+    write_json(ROOT / 'PURFFLE_DIAGNOSTICS.json', {
+        'schema_version': 1,
+        'summary': {'requested': len(results),
+                    'succeeded': sum(r.get('status') == 'ok' for r in results),
+                    'failed': sum(r.get('status') != 'ok' for r in results)},
+        'videos': details,
+    })
     print(f'[DIAGNOSTICS] {destination} ({destination.stat().st_size} bytes)', flush=True)
 
 
@@ -210,7 +366,7 @@ def main():
         raw = os.environ.get(f'INPUT_{index}', '').strip()
         if not raw:
             continue
-        results.append(run_job(index, raw, out))
+        results.append(resume_completed_job(index, raw, out) or run_job(index, raw, out))
         write_json(ROOT / 'batch-results.json', results)
         write_consolidated_diagnostics(out, results)
     if not results:

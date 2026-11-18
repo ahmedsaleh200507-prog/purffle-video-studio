@@ -15,7 +15,12 @@ def output(tmp_path):
     captions = tmp_path / 'captions.srt'
     captions.write_text('1\n00:00:00,000 --> 00:00:01,000\nHello\n', encoding='utf-8')
     report = tmp_path / 'footage-report.json'
-    report.write_text(json.dumps({'scenes': [{'status': 'selected', 'source': 'test'}]}))
+    report.write_text(json.dumps({'scenes': [{
+        'index': 1, 'status': 'selected', 'source': 'test',
+        'sha256': 'fixture-sha256', 'match': {'visual_score': .35},
+        'license': {'id': 'CC0-1.0'},
+        'quality': {'width': 1080, 'height': 1920, 'portrait_crop_scale': .66667},
+    }]}))
     return video, captions, report
 
 

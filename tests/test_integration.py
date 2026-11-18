@@ -68,7 +68,7 @@ class Quality:
 
     def validate(self, path, need=0):
         self.calls.append(need)
-        return {"width": 1920, "height": 1080, "duration": 12, "fps": 30, "codec": "h264"}
+        return {"width": 1080, "height": 1920, "duration": 12, "fps": 30, "codec": "h264"}
 
 
 class Matcher:
@@ -105,7 +105,7 @@ def test_fallback_checks_next_source_without_broadening(strict_env):
     assert len(down.urls) == 1 and quality.calls == [4.1]
     report = json.loads((strict_env / "report.json").read_text())
     assert report["scenes"][0]["status"] == "selected"
-    assert report["scenes"][0]["quality"]["width"] == 1920
+    assert report["scenes"][0]["quality"]["width"] == 1080
     assert obj.matcher.calls[0][1] == 4  # verify the same prefix the renderer will use
 
 
@@ -417,27 +417,40 @@ class GroundedMatcher(Matcher):
 def test_relevant_fifth_result_outranks_first_four_before_download_limit(strict_env, monkeypatch, earlier_text):
     monkeypatch.setenv("CANDIDATES_PER_SOURCE", "4")
     initial = [candidate(str(i), text=earlier_text, width=2160, height=3840, rank=i) for i in range(4)]
-    relevant = candidate("fifth", width=1920, height=1080, rank=4)
+    relevant = candidate("fifth", width=1080, height=1920, rank=4)
     obj, _, down, _ = visuals(strict_env, {"first": initial + [relevant]}, GroundedMatcher())
     got = obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
     assert got.id == "fifth"
     assert down.urls == [relevant.url]
 
 
-def test_metadata_ties_follow_original_api_rank_before_portrait_size(strict_env):
+def test_metadata_ties_prefer_native_portrait_before_api_rank(strict_env):
     portrait = candidate("portrait", width=2160, height=3840, rank=8)
     original_top = candidate("original-top", width=1920, height=1080, rank=0)
     obj, _, down, _ = visuals(strict_env, {"first": [portrait, original_top]}, GroundedMatcher())
     got = obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
-    assert got.id == "original-top" and len(down.urls) == 1
+    assert got.id == "portrait" and len(down.urls) == 1
 
 
-def test_known_720p_result_is_allowed(strict_env):
-    minimum = candidate("minimum", width=1280, height=720)
+def test_known_native_720p_result_is_allowed(strict_env):
+    minimum = candidate("minimum", width=720, height=1280)
     obj, _, down, _ = visuals(strict_env, {"first": [minimum]}, GroundedMatcher())
     got = obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
     assert got.id == "minimum"
     assert down.urls == [minimum.url]
+
+
+def test_landscape_720p_requires_upscale_and_is_rejected(strict_env):
+    horizontal = candidate("horizontal", width=1280, height=720)
+    obj, _, down, _ = visuals(strict_env, {"first": [horizontal]}, GroundedMatcher())
+    obj.quality.validate = lambda path, need=0: {
+        "width": 1280, "height": 720, "duration": 12, "fps": 30, "codec": "h264",
+    }
+    with pytest.raises(RuntimeError, match="No suitable verified REAL VIDEO"):
+        obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
+    assert down.urls == [horizontal.url]
+    assert any("insufficient_native_resolution" in x.get("reason", "")
+               for x in obj.report["scenes"][0]["rejections"])
 
 
 def test_known_below_720p_result_never_downloaded(strict_env):

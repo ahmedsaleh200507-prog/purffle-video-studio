@@ -45,7 +45,7 @@ def verify_upstream(root=None):
 
 def _redact(value):
     text = str(value)
-    for key in ("GROQ_API_KEY", "PIXABAY_API_KEY", "PEXELS_API_KEY", "COVERR_API_KEY", "EUROPEANA_API_KEY"):
+    for key in ("GROQ_API_KEY", "PIXABAY_API_KEY", "PEXELS_API_KEY", "COVERR_API_KEY", "EUROPEANA_API_KEY", "GITHUB_TOKEN", "GH_TOKEN", "HF_TOKEN"):
         secret = os.getenv(key, "")
         if secret:
             text = text.replace(secret, "[REDACTED]")
@@ -58,6 +58,15 @@ def _atomic_json(path, data):
     temp = path.with_suffix(path.suffix + ".tmp")
     temp.write_text(_redact(json.dumps(data, indent=2, ensure_ascii=False, default=str)), encoding="utf-8")
     temp.replace(path)
+
+
+def _native_portrait_scale(quality, target_width, target_height):
+    """Actual crop-to-output scale from measured dimensions (no metadata trust)."""
+    width, height = int(quality["width"]), int(quality["height"])
+    if width <= 0 or height <= 0 or target_width <= 0 or target_height <= 0:
+        return float("inf")
+    crop_width = min(width, height * target_width / target_height)
+    return max(target_width / crop_width, target_height / height)
 
 
 def _scene_data(raw):
@@ -73,6 +82,58 @@ def _scene_data(raw):
     if len(data["visual_search_query"]) > 300:
         raise ValueError("Visual scene query exceeds 300 characters")
     return data
+
+
+def contextual_scene_plans(raw, topic):
+    """A small, auditable set of truthful establishing shots for hard-to-film science.
+
+    These are NOT footage of the narrated event. The final report labels every
+    such shot 'illustrative_context'; metadata, CLIP, native crop, motion and
+    license checks remain mandatory. No generic unrelated filler is allowed.
+    """
+    data = _scene_data(raw)
+    subject = (data["object"] + " " + data["visual_search_query"]).lower()
+    title = topic.lower()
+    ideas = []
+
+    def add(obj, action, query):
+        if query.lower() != data["visual_search_query"].lower():
+            plan = dict(data, main_character="", object=obj, action=action,
+                        location="", visual_search_query=query)
+            if query not in {row["visual_search_query"] for row in ideas}:
+                ideas.append(plan)
+
+    # Retain the visible class of object whenever possible, not an invented
+    # precise vessel, microorganism, location or invisible physical process.
+    if any(x in subject for x in ("aircraft", "avenger", "torpedo plane", "naval plane", "airplane")):
+        add("airplane", "flying", "airplane flying sky")
+        if "bermuda" in title:
+            add("ocean", "ambient", "ocean waves")
+    elif "cave" in subject or "cavern" in subject or "höhle" in title:
+        add("cave", "ambient", "cave interior")
+        add("cave", "ambient", "cave stalactites")
+    elif any(x in subject for x in ("algae", "sonar", "microorganism", "bacteria", "sediment")):
+        if any(x in title for x in ("marian", "ozean", "ocean", "meer", "biolumines")):
+            add("ocean", "ambient", "deep ocean underwater")
+            add("ocean", "ambient", "ocean waves at night")
+        elif any(x in title for x in ("see", "lake")):
+            add("lake", "ambient", "lake water ripples")
+            add("lake", "ambient", "lake surface")
+    elif "harar" in subject and any(x in title for x in ("äthiop", "ethiop")):
+        # Never label a generic desert video as footage of an unverified park.
+        add("desert", "ambient", "desert landscape")
+        add("geothermal landscape", "ambient", "volcanic desert landscape")
+    elif "dune" in subject or ("sand" in subject and any(x in title for x in ("wüste", "desert"))):
+        add("sand dunes", "ambient", "sand dunes desert")
+        add("desert", "ambient", "desert landscape")
+    elif "glacier" in subject or ("meltwater" in subject and "antarkt" in title):
+        add("glacier", "ambient", "glacier ice")
+        add("waterfall", "ambient", "waterfall flowing")
+    elif "lake bottom" in subject:
+        add("lake", "ambient", "lake water surface")
+
+    # Bounded attempts and no duplicate discovery queries.
+    return ideas[:2]
 
 
 class StrictVisuals:
@@ -294,7 +355,17 @@ class StrictVisuals:
                     print(f"[REJECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} preflight={reason}", flush=True)
             # Provider orientation/resolution ordering must never hide a more
             # relevant result outside the bounded download shortlist.
-            ranked.sort(key=lambda row: (-row[0], row[1].rank,
+            def crop_rank(item):
+                """Known native 9:16 footage first; unknown sizes still get probed."""
+                if item.width <= 0 or item.height <= 0:
+                    return 1
+                required_width = getattr(self.s, "width", 720)
+                required_height = getattr(self.s, "height", 1280)
+                ratio = required_width / required_height
+                crop_width = min(item.width, item.height * ratio)
+                return 0 if crop_width >= required_width and item.height >= required_height else 2
+
+            ranked.sort(key=lambda row: (crop_rank(row[1]), -row[0], row[1].rank,
                                           -int(row[1].height > row[1].width),
                                           -min(row[1].width, row[1].height)))
             for score, item, url_key in ranked[:max_candidates]:
@@ -308,6 +379,19 @@ class StrictVisuals:
                     if digest in self.used_hashes:
                         raise ValueError("duplicate content hash")
                     quality = self.quality.validate(path, need=need + 0.1)
+                    # Source HD is not enough: portrait cropping of 1920x1080
+                    # leaves only ~608x1080 native pixels for a 720x1280 output.
+                    # Reject upscaling rather than reporting false native 720p.
+                    required_width = getattr(self.s, "width", 720)
+                    required_height = getattr(self.s, "height", 1280)
+                    native_scale = _native_portrait_scale(quality, required_width, required_height)
+                    quality["portrait_crop_scale"] = round(native_scale, 5)
+                    if native_scale > 1.0001:
+                        raise ValueError(
+                            "insufficient_native_resolution: 9:16 crop would upscale "
+                            f"{quality.get('width')}x{quality.get('height')} source "
+                            f"to {required_width}x{required_height}"
+                        )
                     match = self.matcher.match(path, spec, metadata=item.text, duration=need)
                     item.path = path
                     item.width, item.height = int(quality["width"]), int(quality["height"])
@@ -345,7 +429,8 @@ class StrictVisuals:
                         except OSError:
                             pass  # aggregate cache budget still fails safely when full
                     reason = _redact(f"{type(exc).__name__}: {exc}")[:450]
-                    scene["rejections"].append({"source": source, "id": item.id, "reason": reason})
+                    scene["rejections"].append({"source": source, "id": item.id,
+                                                "reason": reason, "stage": "download_quality_or_visual"})
                     print(f"[REJECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} reason={reason}", flush=True)
             self._save()
         scene["status"] = "failed"
@@ -355,62 +440,84 @@ class StrictVisuals:
         raise RuntimeError(f"No suitable verified REAL VIDEO for scene {idx+1}: {data['visual_search_query']!r}")
 
     def for_scenes(self, jobs, topic, dest_dir, progress=None):
-        """Prefer scene-specific stock, then thematic B-roll from verified footage."""
+        """One independently verified clip per scene; retry with truthful B-roll.
+
+        The failed exact attempts remain in search_attempts, while the final
+        report has exactly one 'selected' record per logical scene.
+        """
         Path(dest_dir).mkdir(parents=True, exist_ok=True)
         items = []
         for idx, (query, prompt, need) in enumerate(jobs):
+            report_start = len(self.report["scenes"])
+            mode = "exact_scene"
             try:
                 item = self.for_scene(idx, query, prompt, topic, need, dest_dir)
             except RuntimeError as first_error:
                 if "No suitable verified REAL VIDEO" not in str(first_error):
                     raise
                 try:
-                    data = _scene_data(json.loads(prompt))
+                    original_data = _scene_data(json.loads(prompt))
                 except (ValueError, TypeError):
                     raise first_error
-                subject = data.get("object", "").strip()
-                original = data["visual_search_query"]
-                item = None
-                # A short subject query is often more productive than a literal
-                # scene description. Retain all source/license/720p/frame gates.
+                original = original_data["visual_search_query"]
+                subject = original_data.get("object", "").strip()
+                replans = []
                 if subject and len(subject.split()) <= 3 and subject.lower() != original.lower():
-                    data.update(main_character="", action="moving", location="",
-                                visual_search_query=subject[:90])
-                    print(f"[AUTO REPLAN] scene={idx+1} query={original!r} -> {subject!r}", flush=True)
+                    shorter = dict(original_data, main_character="", location="",
+                                   action="swimming" if subject.lower() in (
+                                       "dolphin", "whale", "shark", "fish", "turtle", "seal") else "moving",
+                                   visual_search_query=subject[:90])
+                    replans.append(("subject_search", shorter))
+                replans.extend(("illustrative_context", p)
+                               for p in contextual_scene_plans(original_data, topic))
+                item = None
+                last_error = first_error
+                seen_queries = {original.lower()}
+                for next_mode, plan in replans:
+                    candidate_query = plan["visual_search_query"]
+                    if candidate_query.lower() in seen_queries:
+                        continue
+                    seen_queries.add(candidate_query.lower())
+                    print(f"[AUTO REPLAN] scene={idx+1} mode={next_mode} "
+                          f"query={original!r} -> {candidate_query!r}", flush=True)
                     self.report["state"] = "searching"
                     self.report.pop("error", None)
                     try:
-                        item = self.for_scene(idx, subject, json.dumps(data), topic, need, dest_dir)
+                        item = self.for_scene(idx, candidate_query,
+                                              json.dumps(plan), topic, need, dest_dir)
+                        mode = next_mode
+                        break
                     except RuntimeError as retry_error:
                         if "No suitable verified REAL VIDEO" not in str(retry_error):
                             raise
-                # A documentary may use already-verified establishing footage
-                # instead of requiring a literal visual for every spoken line.
-                # Never use unlicensed, still, unverified, or too-short media.
+                        last_error = retry_error
                 if item is None:
-                    eligible = [previous for previous in items
-                                if previous.kind == "video"
-                                and previous.path
-                                and previous.extra.get("strict_validated")
-                                and previous.duration >= need + 0.05]
-                    if eligible:
-                        item = eligible[-1]
-                        self.report["state"] = "searching"
-                        self.report.pop("error", None)
-                        self.report["scenes"].append({
-                            "index": idx + 1, "status": "thematic_broll",
-                            "requested_query": original,
-                            "fallback": "previous verified moving footage",
-                            "source_key": item.key,
-                            "required_seconds": need,
-                        })
-                        self._save()
-                        print(f"[THEMATIC B-ROLL] scene={idx+1} using prior verified footage; "
-                              "exact scene match unavailable", flush=True)
-                    else:
-                        self.report["state"] = "failed"
-                        self._save()
-                        raise first_error
+                    self.report["state"] = "failed"
+                    self._save()
+                    raise first_error from last_error
+
+            attempts = self.report["scenes"][report_start:]
+            selected = [row for row in attempts
+                        if row.get("index") == idx + 1 and row.get("status") == "selected"]
+            if len(selected) != 1:
+                raise RuntimeError(f"Scene {idx+1} has no single verified footage selection")
+            final = selected[0]
+            final["visual_mode"] = mode
+            if mode == "illustrative_context":
+                final["illustrative_not_exact_event"] = True
+                final["requested_query"] = original
+                print(f"[VERIFIED CONTEXTUAL B-ROLL] scene={idx+1} "
+                      f"visual={final['plan']['visual_search_query']!r} "
+                      "is illustrative, not literal event footage", flush=True)
+            if len(attempts) > 1:
+                final["search_attempts"] = [
+                    {"query": row.get("plan", {}).get("visual_search_query", ""),
+                     "status": row.get("status", "unknown"),
+                     "rejections": row.get("rejections", [])}
+                    for row in attempts if row is not final
+                ]
+                self.report["scenes"][report_start:] = [final]
+            self._save()
             items.append(item)
             if progress:
                 progress((idx + 1) / len(jobs))
@@ -429,6 +536,8 @@ def strict_prepare_segment(item, seconds, idx, settings, work):
     if item.duration < seconds + 0.05:
         raise RuntimeError("Source too short; refusing footage loop")
     W, H, F = settings.width, settings.height, settings.fps
+    if _native_portrait_scale({"width": item.width, "height": item.height}, W, H) > 1.0001:
+        raise RuntimeError("insufficient_native_resolution: portrait crop requires upscaling")
     focus = float(item.extra.get("match", {}).get("crop_focus_x", 0.5))
     if not math.isfinite(focus):
         raise RuntimeError("Invalid crop focus")
