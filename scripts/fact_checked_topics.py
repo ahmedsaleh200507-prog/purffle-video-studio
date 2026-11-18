@@ -97,5 +97,10 @@ def ground_lightning_explainer(data: dict, topic: str, language: str) -> dict:
         "title": title,
         "hook_text": scenes[0]["narration"],
         "description": description,
+        "category": "science",
+        "hashtags": ["#Shorts", "#Lightning", "#Science"],
+        "tags": ["lightning", "thunderstorm", "repeated lightning strikes",
+                 "lightning science", "lightning safety"],
+        "review": [],
         "scenes": scenes,
     }
