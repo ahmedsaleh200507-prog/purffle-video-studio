@@ -112,9 +112,18 @@ def main():
             palette = prepare_verified_palette(
                 os.environ['VIDEO_TOPIC'], s, studio.llm,
                 min_scenes=3, max_scenes=4, clip_seconds=10.0)
+            from science_sources import discover_evidence, screen_narration, use_evidence
+            stage = 'science_sources'
+            try:
+                evidence = discover_evidence(os.environ['VIDEO_TOPIC'], s.language)
+            except RuntimeError as source_error:
+                from science_sources import write_source_failure
+                write_source_failure(str(source_error),
+                                     os.environ.get('SCIENCE_REPORT', 'science-report.json'))
+                raise
             stage = 'grounded_script'
             for attempt in range(2):
-                with use_palette(palette):
+                with use_palette(palette), use_evidence(evidence):
                     screenplay, pick, writer = studio.draft(
                         os.environ['VIDEO_TOPIC'], style='facts')
                 try:
@@ -122,14 +131,19 @@ def main():
                     validate_unsourced_quantities(
                         screenplay, os.environ['VIDEO_TOPIC'])
                     validate_narration_timing(palette, screenplay, s.language)
+                    stage = 'science_review'
+                    screen_narration(
+                        screenplay, evidence, studio.llm,
+                        path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                     break
                 except RuntimeError as script_error:
                     if attempt:
                         raise
                     logging.warning(
-                        'V3 factuality or timing preflight rejected draft (%s); '
-                        'requesting one more verified-footage-locked script',
+                        'V3 factuality, source or timing preflight rejected draft (%s); '
+                        'requesting one more source-grounded script',
                         str(script_error)[:200])
+                    stage = 'grounded_script'
             stage = 'production'
             # The footage has already been downloaded, visually checked and
             # deduplicated. Do not ask the providers to search again after TTS.
@@ -151,6 +165,8 @@ def main():
                       metadata=str(folder / 'metadata.json'), captions=str(folder / 'captions.srt'),
                       voice=metadata['voice'], caption_timing=metadata['timing'],
                       voice_report=str(voice_report),
+                      science_report=os.environ.get('SCIENCE_REPORT', 'science-report.json'),
+                      science_screening=evidence.method if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1' else 'legacy_unreviewed',
                       test_result='validated_output', sources=sorted({x['source'] for x in footage['scenes']}))
     except Exception as exc:
         logging.exception('Video production failed')

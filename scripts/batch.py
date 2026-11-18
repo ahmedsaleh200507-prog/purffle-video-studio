@@ -75,6 +75,8 @@ def classify_failure(message: str, log_text: str = "", details=None) -> str:
         ("media_preflight_no_topic_palette", "topic_palette_empty"),
         ("media_preflight_insufficient_footage", "insufficient_verified_clips"),
         ("unverified_quantitative_claim", "unverified_factual_claim"),
+        ("science_sources_unavailable", "science_reference_unavailable"),
+        ("science_claim_unverified", "science_claim_unsupported"),
     ):
         if prefix in direct:
             return category
@@ -220,6 +222,7 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
                    MEDIA_FIRST_WORK_DIR=str((target / 'media-first-work').resolve()),
                    PURFFLE_MEDIA_FIRST=os.environ.get('PURFFLE_MEDIA_FIRST', '1'),
                    VOICE_REPORT=str((target / 'voice-report.json').resolve()),
+                   SCIENCE_REPORT=str((target / 'science-report.json').resolve()),
                    JOB_RESULT=str((target / 'job-result.json').resolve()),
                    OUTPUT_DIR=str((target / 'render').resolve()),
                    PYTHONPATH=os.pathsep.join([str(ROOT), str(ROOT / 'scripts')]),

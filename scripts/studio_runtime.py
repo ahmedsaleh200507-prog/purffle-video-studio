@@ -978,6 +978,10 @@ exact suitable footage cannot be verified; never weaken the scene to hide that f
         palette = active_palette()
         if palette:
             user += "\n\n" + footage_prompt(palette)
+        from science_sources import active_evidence, evidence_prompt
+        bundle = active_evidence()
+        if bundle:
+            user += "\n\n" + evidence_prompt(bundle)
         return system, user
 
     def speak(self, screenplay, work, settings):
