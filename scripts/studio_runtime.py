@@ -801,8 +801,9 @@ def _validate_free_speech(speech, engine, language=None):
             "de": ("de_DE-thorsten-medium", "CC0-1.0"),
         }
         expected = approved.get(language)
-        if expected is None or proof.get("model") != expected[0]:
-            raise RuntimeError("Piper model is outside the approved free model/language allowlist")
+        if (expected is None or proof.get("model") != expected[0]
+                or speech.voice != expected[0]):
+            raise RuntimeError("Piper model/voice differs from the approved locked narrator")
         license_info = proof.get("license", {})
         digest = proof.get("model_sha256", "")
         if (not isinstance(license_info, dict) or license_info.get("id") != expected[1]
