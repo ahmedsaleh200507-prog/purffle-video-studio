@@ -794,11 +794,16 @@ def _validate_free_speech(speech, engine, language=None):
         proof = getattr(speech, "provenance", {})
         if proof.get("alignment") != "native_phoneme_samples":
             raise RuntimeError("Piper narration has no native sample alignment provenance")
-        approved = {"en": ("en_US-ljspeech-high", "Public-Domain"),
-                    "de": ("de_DE-thorsten-medium", "CC0-1.0")}
+        male_lock = os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1'
+        approved = {
+            "en": ("en_US-joe-medium", "CC0") if male_lock
+                  else ("en_US-ljspeech-high", "Public-Domain"),
+            "de": ("de_DE-thorsten-medium", "CC0-1.0"),
+        }
         expected = approved.get(language)
-        if expected is None or proof.get("model") != expected[0]:
-            raise RuntimeError("Piper model is outside the approved free model/language allowlist")
+        if (expected is None or proof.get("model") != expected[0]
+                or speech.voice != expected[0]):
+            raise RuntimeError("Piper model/voice differs from the approved locked narrator")
         license_info = proof.get("license", {})
         digest = proof.get("model_sha256", "")
         if (not isinstance(license_info, dict) or license_info.get("id") != expected[1]
@@ -812,7 +817,9 @@ def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_
     """Use Edge first, then only the audited local Piper voice with real alignment."""
     if settings.offline or settings.tts_engine != "edge" or settings.language not in ("de", "en"):
         raise RuntimeError("Strict production requires free Edge/local narration in de/en")
-    report = {"state": "synthesizing", "language": settings.language, "attempts": []}
+    male_lock = os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1'
+    report = {"state": "synthesizing", "language": settings.language,
+              "narrator_lock": male_lock, "attempts": []}
     voice_report = os.getenv("VOICE_REPORT")
     if not voice_report and os.getenv("FOOTAGE_REPORT"):
         voice_report = str(Path(os.environ["FOOTAGE_REPORT"]).with_name("voice-report.json"))
@@ -823,8 +830,14 @@ def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_
         _atomic_json(voice_report, report)
 
     save()
-    for engine, synthesize, stage in (("edge", edge_synthesize, "Edge TTS"),
-                                      ("piper", local_synthesize, "Local Piper TTS")):
+    # A locked narrator must never randomly change between Edge and Piper or
+    # revert to the old female LJSpeech voice after a timeout. Keep one local,
+    # reproducible identity per language for every successful upload.
+    engines = ((("piper", local_synthesize, "Locked male Piper narrator"),)
+               if male_lock else
+               (("edge", edge_synthesize, "Edge TTS"),
+                ("piper", local_synthesize, "Local Piper TTS")))
+    for engine, synthesize, stage in engines:
         started = time.monotonic()
         try:
             timeout = os.getenv("EDGE_TTS_TIMEOUT_SECONDS", "180") if engine == "edge" else 180
@@ -844,6 +857,8 @@ def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_
             print(f"[VOICE FAILED] engine={engine} reason={reason}", flush=True)
     report["state"] = "failed"
     save()
+    if male_lock:
+        raise RuntimeError("Locked male narrator unavailable; refusing to substitute a female or different voice")
     raise RuntimeError("Free narration failed for both Edge and approved local Piper; see voice-report.json")
 
 

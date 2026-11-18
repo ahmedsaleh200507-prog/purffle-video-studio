@@ -28,15 +28,29 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
     voice = str(metadata.get('voice', ''))
     if not voice.startswith(('edge:', 'piper:')) or metadata.get('timing') not in ('native', 'aligned'):
         raise RuntimeError('Narration does not have verified native/aligned timing')
+    narrator_locked = os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1'
+    if narrator_locked:
+        language = str(metadata.get('language') or os.getenv('LANGUAGE', 'en'))
+        locked = ('piper:en_US-joe-medium' if language == 'en'
+                  else 'piper:de_DE-thorsten-medium' if language == 'de'
+                  else None)
+        if locked is None or voice != locked:
+            raise RuntimeError(
+                'Narrator identity mismatch: locked male voice was not used')
     if voice.startswith('piper:'):
         if voice_report is None or not voice_report.is_file():
             raise RuntimeError('Local voice alignment/license report missing')
         proof = json.loads(voice_report.read_text(encoding='utf-8'))
         provenance = proof.get('provenance', {})
-        approved = {'en_US-ljspeech-high': 'Public-Domain', 'de_DE-thorsten-medium': 'CC0-1.0'}
+        approved = {
+            'en_US-ljspeech-high': 'Public-Domain',
+            'en_US-joe-medium': 'CC0',
+            'de_DE-thorsten-medium': 'CC0-1.0',
+        }
         model = voice.partition(':')[2]
         from local_voice import provenance as expected_provenance
-        expected = expected_provenance('en' if model == 'en_US-ljspeech-high' else 'de')
+        lang = 'en' if model in ('en_US-ljspeech-high', 'en_US-joe-medium') else 'de'
+        expected = expected_provenance(lang)
         if (model not in approved or proof.get('state') != 'ready' or proof.get('engine') != 'piper'
                 or proof.get('voice') != model or proof.get('timing') != 'aligned'
                 or provenance.get('alignment') != 'native_phoneme_samples'

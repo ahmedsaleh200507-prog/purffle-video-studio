@@ -41,15 +41,40 @@ VOICES = {
             'MODEL_CARD': ('c638118fb06eb07d59e60270097c250cf2de81a037320a8a6306fec652ad13b0', 427),
         },
     },
+    # Commercially usable CC0 English MALE voice. Unlike the old female
+    # LJSpeech voice, this narrator remains fixed for all new Shorts.
+    # Official pinned retraining from the CC0 rdh base, not the historical
+    # lessac-derived (potentially non-commercial) Joe checkpoint.
+    # https://huggingface.co/rhasspy/piper-voices/commit/cf910fb59f1d79ab3b625a63993a108751c6c25d
+    'en_male': {
+        'model': 'en_US-joe-medium',
+        'folder': 'en/en_US/joe/medium',
+        'revision': '0ca208afc2a2ee102b1e961e72e0a7e4907be3d0',
+        'license': {'id': 'CC0', 'source': 'https://github.com/OHF-Voice/voice-datasets'},
+        'files': {
+            '.onnx': ('abf4b998e34045cbd00eaf050de2de620f81ded6eb8b85a24b022a1c2b3f08d2', 63221984),
+        },
+        'verify_text_files': True,
+    },
 }
 
 
+def _voice_key(language):
+    # Selection is per job, never per sentence. A failed locked male voice
+    # must fail visibly, not silently switch to a different/female narrator.
+    if language == 'en' and os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1':
+        return 'en_male'
+    return language
+
+
 def provenance(language):
-    if language not in VOICES:
+    key = _voice_key(language)
+    if key not in VOICES:
         raise RuntimeError('Local narration supports only de/en')
-    voice = VOICES[language]
-    base = f'https://huggingface.co/{REPOSITORY}/resolve/{REVISION}/{voice["folder"]}/'
-    return {'engine': 'piper', 'model': voice['model'], 'model_revision': REVISION,
+    voice = VOICES[key]
+    revision = voice.get('revision', REVISION)
+    base = f'https://huggingface.co/{REPOSITORY}/resolve/{revision}/{voice["folder"]}/'
+    return {'engine': 'piper', 'model': voice['model'], 'model_revision': revision,
             'model_url': base + voice['model'] + '.onnx',
             'model_sha256': voice['files']['.onnx'][0],
             'license': {**deepcopy(voice['license']), 'url': base + 'MODEL_CARD'},
@@ -109,16 +134,73 @@ def _download(url, target, expected_hash, expected_bytes):
         temp.unlink(missing_ok=True)
 
 
+def _validate_sidecar(path, *, model, role):
+    body = Path(path).read_bytes()
+    if not 200 <= len(body) <= 12000:
+        raise RuntimeError('Pinned Piper voice sidecar has an invalid size')
+    if role == 'card':
+        text = body.decode('utf-8')
+        if ('License: CC0' not in text or 'rdh' not in text
+                or 'joe' not in text.lower()):
+            raise RuntimeError('Pinned male Piper model card lacks expected CC0 provenance')
+        return
+    data = json.loads(body)
+    required = ('^', chr(36), '_', ' ')
+    if (data.get('audio', {}).get('sample_rate') != 22050
+            or data.get('espeak', {}).get('voice') != 'en-us'
+            or data.get('num_speakers') != 1
+            or data.get('phoneme_type') != 'espeak'
+            or not isinstance(data.get('phoneme_id_map'), dict)
+            or not all(k in data['phoneme_id_map'] for k in required)):
+        raise RuntimeError('Pinned male Piper config is incompatible or invalid')
+
+
+def _download_verified_sidecar(url, target, *, model, role):
+    target = Path(target)
+    if target.exists():
+        try:
+            _validate_sidecar(target, model=model, role=role)
+            return target
+        except (ValueError, UnicodeError, RuntimeError):
+            target.unlink(missing_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    opener = urllib.request.build_opener(_ModelRedirects())
+    request = urllib.request.Request(
+        url, headers={'User-Agent': 'PurffleVideoStudio/3.0 pinned male model'})
+    with opener.open(request, timeout=25) as response:
+        body = response.read(12001)
+    if len(body) > 12000:
+        raise RuntimeError('Pinned Piper voice sidecar exceeds audited size')
+    fd, name = tempfile.mkstemp(dir=target.parent, suffix='.sidecar.part')
+    path = Path(name)
+    try:
+        with os.fdopen(fd, 'wb') as output:
+            output.write(body)
+        _validate_sidecar(path, model=model, role=role)
+        path.replace(target)
+        return target
+    finally:
+        path.unlink(missing_ok=True)
+
+
 def _voice_files(language):
     info = provenance(language)
-    voice = VOICES[language]
-    root = Path(os.environ.get('PURFFLE_PIPER_CACHE', '.cache/piper')) / REVISION
+    voice = VOICES[_voice_key(language)]
+    root = (Path(os.environ.get('PURFFLE_PIPER_CACHE', '.cache/piper'))
+            / info['model_revision'])
     root.mkdir(parents=True, exist_ok=True)
     base = info['model_url'].rsplit('/', 1)[0] + '/'
     for suffix, (digest, size) in voice['files'].items():
         name = 'MODEL_CARD' if suffix == 'MODEL_CARD' else voice['model'] + suffix
         target = root / (voice['model'] + '-MODEL_CARD' if suffix == 'MODEL_CARD' else name)
         _download(base + name, target, digest, size)
+    if voice.get('verify_text_files'):
+        config = root / (voice['model'] + '.onnx.json')
+        card = root / (voice['model'] + '-MODEL_CARD')
+        _download_verified_sidecar(base + voice['model'] + '.onnx.json', config,
+                                   model=voice['model'], role='config')
+        _download_verified_sidecar(base + 'MODEL_CARD', card,
+                                   model=voice['model'], role='card')
     return root / (voice['model'] + '.onnx')
 
 
