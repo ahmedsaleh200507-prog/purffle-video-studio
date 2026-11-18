@@ -91,14 +91,16 @@ def generate_audition(*, reference, expected_sha256, text, language,
     if not raw or not isinstance(sr, int) or not 16000 <= sr <= 48000:
         raise RuntimeError("reference_voice_generation_failed: no valid waveform")
     import numpy as np
-    import soundfile as sf
     samples = np.asarray(raw[0]).reshape(-1)
     if (not samples.size or not np.isfinite(samples).all()
             or np.max(np.abs(samples)) < 0.001
             or not 0.7 <= samples.size / sr <= 75):
         raise RuntimeError("reference_voice_generation_failed: bad waveform")
     target.parent.mkdir(parents=True, exist_ok=True)
-    sf.write(str(target), samples, sr, subtype="PCM_16")
+    pcm = (np.clip(samples, -1, 1) * 32767).astype(np.int16)
+    with wave.open(str(target), "wb") as wav:
+        wav.setparams((1, 2, sr, 0, "NONE", "not compressed"))
+        wav.writeframes(pcm.tobytes())
     report = {
         "state": "audition_only_unverified_similarity",
         "reference_sha256": voice_ref["sha256"],
