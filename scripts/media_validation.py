@@ -427,7 +427,11 @@ class SceneMatcher:
         no_character = character in ("", "none", "no character", "n/a", "null", "not applicable", "no person")
         # Existing natural scenery can be preflighted by visible nouns. The
         # actual frames must independently pass CLIP and real motion checks.
+        # A matching background is not enough when the requested object
+        # includes a more specific subject (e.g. water *droplets*).
+        # Require ALL explicit object nouns; the video frame is still checked.
         if (scenery_core and scenery_core.issubset(have)
+                and object_terms and object_terms.issubset(have)
                 and no_character and score >= .20):
             return score
         # A clearly labeled illustrative establishing shot may show a cave,
