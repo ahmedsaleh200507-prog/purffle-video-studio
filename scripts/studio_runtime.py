@@ -887,6 +887,10 @@ def install():
         data = ground_lightning_explainer(
             data, subject, language,
             scene_count=len(palette.plans) if palette else None)
+        from fact_checked_topics import ground_verified_documentary
+        data = ground_verified_documentary(
+            data, subject, language,
+            scene_count=len(palette.plans) if palette else None)
         # The verified video palette is authoritative for visual planning.
         # Narration may explain abstract facts without requiring exact footage.
         data = align_script_to_palette(data, palette)
