@@ -15,6 +15,9 @@ from pathlib import Path
 import re
 import time
 
+from topic_footage import (deterministic_stock_shots, related_to_topic,
+                           subject_terms, words)
+
 _CURRENT = ContextVar("purffle_media_first", default=None)
 
 
@@ -53,6 +56,13 @@ def _grounded_candidates(topic, llm=None):
                     action="ambient", location="", time="",
                     visual_search_query="topic")
     curated = thematic_scene_plans(template, topic)
+    # Stock-first search must work even for topics not yet in the curated
+    # mapping. The fallback is derived from the topic, not a hallucinated event.
+    seeds = deterministic_stock_shots(topic)
+    seen_seed = set()
+    curated = [plan for plan in seeds + curated
+               if not (plan["visual_search_query"].lower() in seen_seed
+                       or seen_seed.add(plan["visual_search_query"].lower()))]
     # Ask for extra stock-query vocabulary even for recognized subjects.
     # Otherwise one provider outage can exhaust the only four known queries.
     # These remain candidate queries: only actually downloaded, inspected,
@@ -92,11 +102,6 @@ def _grounded_candidates(topic, llm=None):
         return curated
     seen = {x["visual_search_query"].lower() for x in curated}
     allowed_objects = {x["object"].casefold() for x in curated}
-    topic_words = {x.casefold().rstrip("s") for x in re.findall(r"[a-z]{4,}", topic)
-                   if x.casefold() not in {"what", "when", "where", "which",
-                   "does", "would", "happen", "really", "again", "from",
-                   "with", "that", "this", "your", "have", "into", "there",
-                   "many", "some", "world", "most", "ever", "more", "same"}}
     for raw in data.get("shots", [])[:9]:
         if not isinstance(raw, dict):
             continue
@@ -107,15 +112,10 @@ def _grounded_candidates(topic, llm=None):
                 or any(x in query.lower() for x in ("animation", "simulation",
                               "infographic", "reenactment", "rendering"))):
             continue
-        # Don't let the visual-planning LLM pivot a science documentary to
-        # unrelated footage. For known topics only extend the same visible
-        # subject families; for unknown topics require a topic-noun overlap.
-        query_words = {x.casefold().rstrip("s") for x in re.findall(r"[a-z]{4,}",
-                         obj + " " + query)}
-        if curated and not (obj.casefold() in allowed_objects or
-                            any(x in query_words for x in allowed_objects)):
-            continue
-        if not curated and topic_words and not (query_words & topic_words):
+        # Lexical stemming and stock-domain aliases bridge genuine synonyms
+        # ('aurora borealis' vs 'northern lights', 'beaches' vs 'beach').
+        # Reject unrelated LLM pivots but do not require identical words.
+        if not related_to_topic(topic, obj, query, allowed_objects):
             continue
         seen.add(query.lower())
         curated.append(dict(main_character="", object=obj, action="ambient",
@@ -141,7 +141,19 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
     visuals = visuals if visuals is not None else StrictVisuals(settings)
     options = _grounded_candidates(topic, llm)
     if not options:
-        raise RuntimeError("media_preflight_no_topic_palette: cannot find filmable subject suggestions")
+        error = ("media_preflight_no_topic_palette: no subject-grounded "
+                 "stock queries could be derived from the topic")
+        visuals.report.update(
+            state="failed", strategy="v3_media_first", error=error,
+            preflight_attempts=[])
+        visuals._save()
+        save_path = Path(os.getenv("MEDIA_FIRST_REPORT", "media-first-plan.json"))
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        save_path.write_text(json.dumps(
+            {"strategy": "v3_media_first", "topic": topic,
+             "state": "failed", "error": error, "selected": [], "attempts": []},
+            ensure_ascii=False, indent=2), encoding="utf-8")
+        raise RuntimeError(error)
     items, plans, attempts, selected_rows = [], [], [], []
     dest_dir = Path(os.environ.get("MEDIA_FIRST_WORK_DIR", "media_cache/v3_preflight"))
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -220,6 +232,10 @@ def footage_prompt(palette) -> str:
         "per scene; concise lines ensure the audio fits each unlooped clip.",
         "Every scene MUST remain scientifically truthful, without fake places, "
         "experiments, witnesses, exact measurements or dramatic invented facts. "
+        "No precise quantities, numerical records or scientific measurements "
+        "are supplied or verified for this topic. NEVER invent numerical "
+        "measurements, rates, percentages, voltages or historical counts. "
+        "Use reliable general scientific mechanisms instead. "
         "The image illustrates the subject; it is not a recording of the exact event.",
     ]
     for index, (plan, clip) in enumerate(zip(palette.plans, palette.items), 1):
