@@ -9,7 +9,8 @@ import pytest
 
 from media_first import (VerifiedPalette, _grounded_candidates,
                          active_palette, align_script_to_palette,
-                         footage_prompt, prepare_verified_palette, use_palette)
+                         footage_prompt, prepare_verified_palette,
+                         validate_narration_timing, use_palette)
 
 
 TOPIC = "Why Do Some Volcanoes Erupt Without Warning?"
@@ -171,3 +172,27 @@ def test_preapproved_lightning_script_fits_verified_clip_count(scene_count):
     assert "Elm Street" not in json.dumps(prepared)
     assert all(len(s["narration"].split()) <= 25
                for s in prepared["scenes"])
+
+
+
+def test_prevoice_timing_contract_catches_too_many_narration_words():
+    plans = [dict(main_character="", object="storm", action="ambient",
+                  location="", time="", visual_search_query="storm clouds")
+             for _ in range(3)]
+    palette = VerifiedPalette("storm", plans,
+        [SimpleNamespace(duration=10.1) for _ in range(3)], set(), [])
+    scenes = [SimpleNamespace(narration="A storm has lightning.") for _ in range(3)]
+    validate_narration_timing(palette, SimpleNamespace(scenes=scenes), "en")
+    scenes[1] = SimpleNamespace(narration=" ".join(["lightning"] * 40))
+    with pytest.raises(RuntimeError, match="media_first_narration_too_long"):
+        validate_narration_timing(palette, SimpleNamespace(scenes=scenes), "en")
+
+
+def test_footage_prompt_has_actual_clip_duration_limit():
+    plan = {"main_character": "", "object": "ocean", "action": "ambient",
+            "location": "", "time": "", "visual_search_query": "ocean waves"}
+    palette = VerifiedPalette("ocean", [plan],
+                              [SimpleNamespace(duration=11.5)], set(), [])
+    prompt = footage_prompt(palette)
+    assert "11.5-second unlooped clip" in prompt
+    assert "Narration maximum" in prompt
