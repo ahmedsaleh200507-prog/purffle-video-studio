@@ -1,4 +1,6 @@
 name: Purffle V2 - 1 to 10 Videos
+# Show a distinct, explicit manual production run rather than the latest PR title.
+run-name: "Purffle Shorts | Production #${{ github.run_number }}"
 on:
   workflow_dispatch:
     inputs:
@@ -44,9 +46,10 @@ on:
         type: string
 permissions:
   contents: read
-concurrency:
-  group: purffle-video-studio
-  cancel-in-progress: false
+# No workflow-wide concurrency lock. With a constant group GitHub allows only
+# ONE pending run and silently cancels older pending runs (#63/#64 when #65
+# was triggered). The ten video matrix jobs are already throttled below to
+# max-parallel: 2 per run. Do not add a constant top-level concurrency group.
 jobs:
   create-videos:
     name: Video ${{ matrix.slot }} (independent)
