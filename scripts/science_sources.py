@@ -25,6 +25,10 @@ _STOP = set("what why where when how which who does do is are can a an the to of
             "warum wie was wann wo wer wieso weshalb ist sind die der das den dem "
             "ein eine einer und von zu im mit bei auf als er sie es".split())
 _OFFICIAL = {
+    "mirror_condensation": (
+        "https://www.nesdis.noaa.gov/about/k-12-education/atmosphere/what-humidity",
+        "https://scied.ucar.edu/learning-zone/how-weather-works/humidity",
+    ),
     "volcanic_island": (
         "https://www.nps.gov/subjects/geology/plate-tectonics-oceanic-hotspots.htm",
         "https://www.usgs.gov/observatories/hvo/evolution-hawaiian-volcanoes",
