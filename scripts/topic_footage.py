@@ -56,6 +56,8 @@ def words(value: str) -> set[str]:
             continue
         if word.endswith("ies") and len(word) > 5:
             word = word[:-3] + "y"
+        elif word.endswith("oes") and len(word) > 5:
+            word = word[:-2]
         elif word.endswith(("ches", "shes", "xes", "zes")) and len(word) > 5:
             word = word[:-2]
         elif word.endswith("s") and not word.endswith(("ss", "us")) and len(word) > 4:
@@ -109,6 +111,14 @@ def deterministic_stock_shots(topic: str):
             ("beach", "black sand coastline"),
             ("beach", "black sand waves"),
             ("sand", "black sand shore"),
+        ]
+    elif "hurricane" in t or "cyclone" in t:
+        # Actual cyclone imagery is searched *before* ordinary scenery, which
+        # is then only supporting B-roll, not a claim to show the storm's eye.
+        choices = [
+            ("hurricane", "hurricane satellite clouds"),
+            ("hurricane", "hurricane storm footage"),
+            ("cyclone", "tropical cyclone satellite"),
         ]
     else:
         # Generic subject-driven query generation across many natural topics.
