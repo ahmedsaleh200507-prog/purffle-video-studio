@@ -60,7 +60,11 @@ def _grounded_candidates(topic, llm=None):
     # mapping. The fallback is derived from the topic, not a hallucinated event.
     seeds = deterministic_stock_shots(topic)
     seen_seed = set()
-    curated = [plan for plan in seeds + curated
+    # Preserve existing proven subject ranking for already curated topics;
+    # hurricane footage needs actual cyclone-first establishing shots.
+    prioritized = (seeds + curated if "hurricane" in topic.casefold()
+                   else curated + seeds)
+    curated = [plan for plan in prioritized
                if not (plan["visual_search_query"].lower() in seen_seed
                        or seen_seed.add(plan["visual_search_query"].lower()))]
     # Ask for extra stock-query vocabulary even for recognized subjects.
