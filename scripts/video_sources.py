@@ -325,8 +325,11 @@ class ProviderRegistry:
         return sorted(result, key=lambda x: (x.height > x.width, min(x.width, x.height)), reverse=True)
 
     def _pexels(self, query):
-        data = self.client.get("https://api.pexels.com/videos/search", params={
-            "query": query, "per_page": 15, "size": "large", "orientation": "portrait"},
+        # Pexels documents /v1/videos/; the legacy /videos/ path is
+        # deprecated. Search both orientations: 4K landscape clips can make
+        # verified vertical 720p crops, and portrait is still ranked first.
+        data = self.client.get("https://api.pexels.com/v1/videos/search", params={
+            "query": query, "per_page": 15, "size": "large"},
             headers={"Authorization": os.environ["PEXELS_API_KEY"]})
         result = []
         for rank, x in enumerate(data.get("videos", [])):

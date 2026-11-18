@@ -49,19 +49,59 @@ ALIASES = {
 }
 
 
+# Safe real-camera subjects for entirely new topics when the LLM is absent.
+# This is NOT a license to show generic scenery for an abstract topic: a
+# subject must literally appear in the user's topic before it can be seeded.
+FILMABLE_SUBJECTS = frozenset("""
+    cat dog bee ant butterfly bird horse elephant lion tiger penguin turtle
+    shark whale octopus frog fish coral snail flower sunflower mushroom
+    tornado tsunami earthquake geyser rainbow sunset sunrise
+    train tram bus airplane aircraft helicopter rocket spacecraft ship boat
+    bicycle motorcycle car factory robot computer laptop smartphone
+    telescope microscope bridge building dam castle pyramid monument
+""".split())
+
+
+# Minimal fallback vocabulary for frequent German titles. These translate only
+# explicitly named visible subjects; abstract science still requires real
+# topic-grounded LLM proposals, never random filler.
+GERMAN_FILMABLE = {
+    "bus": "bus", "busse": "bus",
+    "biene": "bee", "bienen": "bee",
+    "katze": "cat", "katzen": "cat",
+    "hund": "dog", "hunde": "dog",
+    "zug": "train", "züge": "train", "zuege": "train",
+    "auto": "car", "autos": "car",
+    "flugzeug": "airplane", "flugzeuge": "airplane",
+    "rakete": "rocket", "raketen": "rocket",
+    "erdbeben": "earthquake",
+    "schildkröte": "turtle", "schildkröten": "turtle",
+    "vogel": "bird", "vögel": "bird", "voegel": "bird",
+    "fisch": "fish", "fische": "fish",
+    "ameise": "ant", "ameisen": "ant",
+    "schmetterling": "butterfly", "schmetterlinge": "butterfly",
+    "regenbogen": "rainbow",
+    "hai": "shark", "haie": "shark",
+    "wal": "whale", "wale": "whale",
+    "delfin": "dolphin", "delfine": "dolphin",
+}
+
+
 def words(value: str) -> set[str]:
     """Light morphological normalization without remote NLP dependencies."""
     out = set()
-    for word in re.findall(r"[a-z]+", str(value).lower()):
+    for word in re.findall(r"[a-zäöüß]+", str(value).lower()):
         if len(word) < 3:
             continue
-        if word.endswith("ies") and len(word) > 5:
+        if word == "buses":
+            word = "bus"
+        elif word.endswith("ies") and len(word) > 5:
             word = word[:-3] + "y"
         elif word.endswith("oes") and len(word) > 5:
             word = word[:-2]
         elif word.endswith(("ches", "shes", "xes", "zes")) and len(word) > 5:
             word = word[:-2]
-        elif word.endswith("s") and not word.endswith(("ss", "us")) and len(word) > 4:
+        elif word.endswith("s") and not word.endswith(("ss", "us", "is")) and len(word) > 3:
             word = word[:-1]
         out.add(word)
     return out
@@ -70,6 +110,8 @@ def words(value: str) -> set[str]:
 def subject_terms(topic: str) -> set[str]:
     basic = words(topic) - STOP
     expanded = set(basic)
+    expanded.update(GERMAN_FILMABLE[word] for word in basic
+                    if word in GERMAN_FILMABLE)
     # Each group must be *activated* by a concrete word in the original title;
     # don't add the entire natural-world dictionary to every query.
     for synonyms in ALIASES.values():
@@ -153,11 +195,28 @@ def deterministic_stock_shots(topic: str):
         # No new science or event claims; topic concepts themselves remain.
         concepts = [name for name, synonyms in ALIASES.items()
                     if words(name) & t]
-        if not concepts:
-            return []
-        primary = concepts[0]
-        phrases = [f"{primary} nature", f"{primary} close up",
-                   f"{primary} landscape", f"{primary} footage"]
+        if concepts:
+            primary = concepts[0]
+            phrases = [f"{primary} nature", f"{primary} close up",
+                       f"{primary} landscape", f"{primary} footage"]
+        else:
+            # For filmable subjects outside the curated documentary vocabulary,
+            # query the named subject itself before asking Groq for alternatives.
+            # Reject opaque/abstract words instead of choosing random stock.
+            title_words = re.findall(r"[a-zäöüß]+", str(topic).casefold())
+            primary = None
+            for raw in title_words:
+                primary = GERMAN_FILMABLE.get(raw)
+                if primary:
+                    break
+                variants = sorted(words(raw) & FILMABLE_SUBJECTS)
+                if variants:
+                    primary = variants[0]
+                    break
+            if not primary:
+                return []
+            phrases = [f"{primary} footage", f"{primary} close up",
+                       f"{primary} outdoors", f"{primary} documentary"]
         choices = [(primary, q) for q in phrases]
     return [dict(main_character="", object=obj, action="ambient",
                  location="", time="", visual_search_query=query)
