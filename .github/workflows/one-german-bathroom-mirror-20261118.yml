@@ -1,0 +1,129 @@
+# One-off GERMAN bathroom mirror production requested in chat on 2026-11-18.
+# This workflow is intentionally triggered ONLY by adding/modifying this exact
+# file on main. It does not add a push trigger to the ten-video workflow.
+name: Purffle V3 - One German Bathroom Mirror Video
+run-name: "One video | Warum beschlaegt der Badezimmerspiegel? | #${{ github.run_number }}"
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/one-german-bathroom-mirror-20261118.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  single-video:
+    name: create-videos | One German mirror-condensation video
+    if: github.event.head_commit.message == 'Run exactly one German bathroom mirror video'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
+      EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
+      LLM_PROVIDER: groq
+      LLM_MODEL: openai/gpt-oss-20b
+      SCRIPT_REVIEW: 'off'
+      SEO_KEYWORDS: 'false'
+      VISUAL_SOURCES: pixabay,pexels,coverr-video,europeana-video,wikimedia-video,nasa-video,archive-video
+      PURFFLE_NARRATOR_LOCK: '1'
+      PURFFLE_MEDIA_FIRST: '1'
+      TTS_ENGINE: edge
+      EDGE_TTS_TIMEOUT_SECONDS: '120'
+      RESOLUTION: 720x1280
+      FPS: '30'
+      PRESET: medium
+      TRANSITION: none
+      KEN_BURNS: 'false'
+      COLOR_GRADE: none
+      SOUND_EFFECTS: 'false'
+      CAPTION_EMOJI: 'false'
+      MUSIC_VOLUME: '0'
+      OUTPUT_DIR: output_videos
+      HF_HOME: ${{ github.workspace }}/.cache/huggingface
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      TOKENIZERS_PARALLELISM: 'false'
+      MAX_SHOT_SECONDS: '0'
+      CREDIT_FOOTAGE: 'true'
+      UPLOAD: 'false'
+      PURFFLE_API_INTERVAL_SECONDS: '1.6'
+      INPUT_1: 'de|Warum beschlägt der Badezimmerspiegel?'
+      INPUT_2: ''
+      INPUT_3: ''
+      INPUT_4: ''
+      INPUT_5: ''
+      INPUT_6: ''
+      INPUT_7: ''
+      INPUT_8: ''
+      INPUT_9: ''
+      INPUT_10: ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce approved English voice before installing video tools
+        run: python scripts/english_reference_policy.py --topic "$INPUT_1"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install production tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          python -m pip install --upgrade pip
+          pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-dev.txt
+      - name: Restore verified video and voice model cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cache/huggingface
+            .cache/piper
+          key: purffle-v2-model-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}
+      - name: Verify and prepare visual dependencies
+        run: |
+          python -m compileall -q scripts sitecustomize.py
+          python scripts/check_model.py
+          python scripts/improve_upstream.py
+      - name: Produce exactly one 720p narrated video
+        env:
+          PURFFLE_STRICT: '1'
+        run: python scripts/batch.py
+      - name: Prepare consolidated diagnostics and Shorts title
+        if: always()
+        run: python scripts/aggregate_results.py
+      - name: Upload MP4, subtitles, title and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: purffle-one-german-mirror-${{ github.run_number }}
+          path: |
+            finished/
+            batch-results.json
+            PURFFLE_DIAGNOSTICS.txt
+            PURFFLE_DIAGNOSTICS.json
+            YOUTUBE_SHORTS_TITLES.txt
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0
+      - name: Verify requested video succeeded
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('batch-results.json')
+          if not p.is_file():
+              raise SystemExit('Missing batch diagnostics')
+          results = json.loads(p.read_text())
+          if len(results) != 1:
+              raise SystemExit(f'Expected exactly one topic, found {len(results)}')
+          row = results[0]
+          print(f"[ONE VIDEO] status={row.get('status')} topic={row.get('topic')}")
+          if row.get('status') != 'ok':
+              raise SystemExit('Video failed; download the artifact for details')
+          PY
