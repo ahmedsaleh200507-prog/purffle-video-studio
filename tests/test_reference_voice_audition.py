@@ -102,4 +102,4 @@ def test_never_changes_production_speaker_or_synchronization():
     assert "'en_US-joe-medium'" in voice and "'de_DE-thorsten-medium'" in voice
     runtime = (repo / "scripts" / "studio_runtime.py").read_text()
     assert "reference_voice_audition" not in runtime
-    assert "ref" not in (repo / ".github" / "workflows" / "videos.yml").read_text().lower().split("narrator_lock")[0]
+    assert "reference_voice_audition" not in (repo / ".github" / "workflows" / "videos.yml").read_text()
