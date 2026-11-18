@@ -1,7 +1,7 @@
 """Conservative publication gate for unsupported exact science measurements.
 
 This is NOT a fact-checker. Without independently retrieved references, a
-generic educational Shorts script must not invent exact numeric measurements.
+English or German educational Shorts script must not invent exact numeric measurements.
 Reject-and-redraft BEFORE TTS is safer than voicing an unverified statistic.
 """
 from __future__ import annotations
@@ -11,16 +11,16 @@ import re
 # Detect numeric + quantitative claim, not bare dates in user-provided stories.
 _MEASUREMENT = re.compile(
     r"(?<![\w])\d+(?:[.,]\d+)*\s*"
-    r"(?:%|percent|percentage|°[cf]?|km/h|kph|mph|m/s|km|kilometers?|"
-    r"met(?:er|re)s?|feet|miles?|watts?|kilowatts?|volts?|"
+    r"(?:%|percent|percentage|prozent|°[cf]?|km/h|kph|mph|m/s|km|kilometers?|kilometern?|"
+    r"met(?:er|re)s?|metern?|feet|miles?|watts?|kilowatts?|volts?|"
     r"millibars?|mbars?|mbar|pascals?|hectopascals?|hpa|"
-    r"degrees?|celsius|fahrenheit|kelvin|tons?|tonnes?|"
-    r"times|people|deaths?|years?|million|billion)(?=\s|[.,!?;:]|$)",
+    r"degrees?|grad|celsius|fahrenheit|kelvin|tons?|tonnes?|tonnen?|"
+    r"times|people|deaths?|years?|jahren?|stunden?|sekunden?|million(?:en)?|milliarden?|billion)(?=\s|[.,!?;:]|$)",
     re.IGNORECASE
 )
 # Generic causal scientific explainers don't require fabricated measurements.
 _GENERAL_QUESTION = re.compile(
-    r"^\s*(what|why|how|can|does|do|is|are|when)\b", re.IGNORECASE)
+    r"^\s*(what|why|how|can|does|do|is|are|when|"\n    r"warum|wie|was|wieso|weshalb|wann|wo|wer|welche[rsnm]?|kann|können|koennen|ist|sind)\b",\n    re.IGNORECASE)
 
 
 def validate_unsourced_quantities(script, topic: str) -> None:
