@@ -136,6 +136,65 @@ def contextual_scene_plans(raw, topic):
     return ideas[:2]
 
 
+def thematic_scene_plans(raw, topic):
+    """Prefer real, filmable B-roll closely related to the VIDEO'S topic.
+
+    A narrated invisible process or rare historical moment does not require a
+    literal shot. Curated subject families keep the fallback honest: a
+    forest shot may illustrate the Tunguska landscape but is NOT claimed to
+    depict the original explosion. No generic random clips are allowed.
+    """
+    data = _scene_data(raw)
+    title = topic.lower()
+    # These alternatives represent visible context, not any alleged event.
+    # One subject per clip helps stock API metadata retrieval and CLIP checks.
+    families = (
+        (("biolumines", "ocean glow", "sea glow", "ocean light", "meer nachts"),
+         (("ocean", "ocean waves at night"), ("ocean", "ocean waves"),
+          ("coast", "sea coastline at night"), ("ocean", "underwater sea"))),
+        (("underwater lake", "underwater lakes", "brine pool"),
+         (("ocean", "deep ocean underwater"), ("seafloor", "underwater seafloor"),
+          ("ocean", "ocean seabed"), ("water", "underwater sea"))),
+        (("deepest part of the ocean", "deepest ocean", "ocean pressure", "deep sea", "deepest part"),
+         (("ocean", "deep ocean underwater"), ("ocean", "ocean waves"),
+          ("submarine", "submarine underwater"), ("ocean", "underwater sea"))),
+        (("volcano", "volcanic", "volkan"),
+         (("volcano", "volcano erupting"), ("lava", "volcanic lava"),
+          ("volcano", "volcano landscape"), ("lightning", "lightning storm"))),
+        (("snake", "serpent", "yılan"),
+         (("snake", "snake slithering"), ("snake", "snake in nature"),
+          ("snake", "snake close up"), ("island", "tropical island"))),
+        (("antarctica", "antarctic", "antarkt"),
+         (("glacier", "glacier ice"), ("iceberg", "iceberg floating"),
+          ("ice", "polar ice"), ("snow", "snow landscape"))),
+        (("cave", "cavern", "höhle", "magara", "mağara"),
+         (("cave", "cave interior"), ("cave", "cave stalactites"),
+          ("cave", "cave formations"), ("cave", "underground cave"))),
+        (("forest", "trees", "pine", "orman"),
+         (("forest", "forest trees"), ("tree", "pine trees"),
+          ("tree", "twisted tree branches"), ("forest", "forest aerial view"))),
+        (("siberia", "tunguska", "meteor explosion"),
+         (("forest", "forest trees"), ("forest", "forest aerial view"),
+          ("tree", "fallen trees forest"), ("forest", "pine forest"))),
+        (("desert", "burning hole", "darvaza", "wüste", "krater"),
+         (("fire", "burning fire flames"), ("desert", "desert landscape"),
+          ("flames", "fire flames"), ("desert", "desert aerial view"))),
+    )
+    # Filmable scene-specific subjects take priority when backed by the title,
+    # but all fallbacks must be connected to a recognized subject family.
+    selected = next((visuals for triggers, visuals in families
+                     if any(trigger in title for trigger in triggers)), ())
+    plans = []
+    seen = {data["visual_search_query"].lower()}
+    for obj, query in selected:
+        if query.lower() in seen:
+            continue
+        seen.add(query.lower())
+        plans.append(dict(data, main_character="", object=obj, action="ambient",
+                          location="", visual_search_query=query))
+    return plans[:4]
+
+
 class StrictVisuals:
     """Sequential candidate validation keeps CPU, download and API usage bounded."""
     def __init__(self, settings, used_keys=None, *, registry=None, downloader=None, quality=None, matcher=None):
@@ -470,6 +529,8 @@ class StrictVisuals:
                     replans.append(("subject_search", shorter))
                 replans.extend(("illustrative_context", p)
                                for p in contextual_scene_plans(original_data, topic))
+                replans.extend(("thematic_context", p)
+                               for p in thematic_scene_plans(original_data, topic))
                 item = None
                 last_error = first_error
                 seen_queries = {original.lower()}
@@ -503,10 +564,10 @@ class StrictVisuals:
                 raise RuntimeError(f"Scene {idx+1} has no single verified footage selection")
             final = selected[0]
             final["visual_mode"] = mode
-            if mode == "illustrative_context":
+            if mode in ("illustrative_context", "thematic_context"):
                 final["illustrative_not_exact_event"] = True
                 final["requested_query"] = original
-                print(f"[VERIFIED CONTEXTUAL B-ROLL] scene={idx+1} "
+                print(f"[VERIFIED CONTEXTUAL B-ROLL] scene={idx+1} mode={mode} "
                       f"visual={final['plan']['visual_search_query']!r} "
                       "is illustrative, not literal event footage", flush=True)
             if len(attempts) > 1:
