@@ -189,6 +189,12 @@ def _report(path: Path, bundle: Evidence | None, state: str, *, checks=(), error
     temp.replace(path)
 
 
+def write_source_failure(reason: str, path=None):
+    """Keep an honest report even when retrieval fails before drafting."""
+    _report(Path(path or os.getenv("SCIENCE_REPORT", "science-report.json")),
+            None, "failed", error=reason)
+
+
 def screen_narration(script, bundle: Evidence, llm, *, path=None):
     """Check a cited passage per scene; a missing/mismatched quote blocks TTS.
 
