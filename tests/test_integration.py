@@ -208,6 +208,50 @@ def test_script_normalizer_rewrites_70_fictional_claims_before_tts():
     assert result["scenes"][1]["visual_search_query"] == "trees blowing in wind"
 
 
+def test_real_upstream_normalizer_uses_verified_media_first_shots():
+    from media_first import VerifiedPalette, use_palette
+    verify_upstream()
+    install()
+    import purffle_shorts.script as script
+    plans = [
+        {"main_character": "", "object": object_name, "action": "ambient",
+         "location": "", "time": "", "visual_search_query": query}
+        for object_name, query in (
+            ("volcano", "volcano erupting"),
+            ("lava", "volcanic lava"),
+            ("cloud", "storm clouds"),
+        )
+    ]
+    palette = VerifiedPalette("Why do volcanoes erupt?", plans, [object()] * 3,
+                              set(), [])
+    raw = {"title": "Volcanoes explained", "scenes": [
+        {"narration": "A volcano can erupt when magma reaches the surface.",
+         "main_character": "", "object": "unfilmable pressure",
+         "action": "measured", "location": "", "time": "",
+         "visual_search_query": "magma pressure gauge"},
+        {"narration": "Lava can flow from an active volcanic vent.",
+         "main_character": "", "object": "laboratory experiment",
+         "action": "measuring", "location": "", "time": "",
+         "visual_search_query": "impossible volcano laboratory"},
+        {"narration": "Some eruptions give warning signs before they begin.",
+         "main_character": "", "object": "computer simulation",
+         "action": "simulating", "location": "", "time": "",
+         "visual_search_query": "computer generated eruption"},
+    ]}
+    with use_palette(palette):
+        output = script.normalize(raw, palette.topic, "facts", "en")
+    assert len(output.scenes) == 3
+    assert [scene.visual_search_query for scene in output.scenes] == [
+        "volcano erupting", "volcanic lava", "storm clouds"]
+    assert [scene.search_query for scene in output.scenes] == [
+        "volcano erupting", "volcanic lava", "storm clouds"]
+    for scene in output.scenes:
+        plan = json.loads(scene.image_prompt)
+        assert plan["action"] == "ambient"
+        assert plan["object"] in ("volcano", "lava", "cloud")
+    assert "pressure gauge" not in output.to_dict()["scenes"][0]["search_query"]
+
+
 def test_structured_plan_never_guesses_object_action():
     with pytest.raises(ValueError, match="Missing structured scene fields"):
         _scene_data({"search_query": "young man money"})
