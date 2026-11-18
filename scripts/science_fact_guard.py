@@ -15,7 +15,7 @@ _MEASUREMENT = re.compile(
     r"met(?:er|re)s?|feet|miles?|watts?|kilowatts?|volts?|"
     r"millibars?|mbars?|mbar|pascals?|hectopascals?|hpa|"
     r"degrees?|celsius|fahrenheit|kelvin|tons?|tonnes?|"
-    r"times|people|deaths?|years?|million|billion)\b",
+    r"times|people|deaths?|years?|million|billion)(?=\s|[.,!?;:]|$)",
     re.IGNORECASE
 )
 # Generic causal scientific explainers don't require fabricated measurements.
