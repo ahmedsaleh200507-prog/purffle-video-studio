@@ -87,6 +87,13 @@ def main():
     result = {'status': 'failed', 'mp4': None}
     stage = 'setup'
     try:
+        # Avoid expensive footage/model work when the only approved English
+        # speaker has not been validated for this runner. Never use Joe as a
+        # substitute merely to make the video job appear successful.
+        stage = 'voice_identity_preflight'
+        from english_reference_policy import enforce_english_reference_only
+        enforce_english_reference_only(os.environ.get('LANGUAGE', 'en'))
+        stage = 'setup'
         from studio_runtime import install
         install()
         from purffle_shorts.config import Settings
