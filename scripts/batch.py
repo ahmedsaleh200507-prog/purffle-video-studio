@@ -220,6 +220,7 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
                    MEDIA_FIRST_WORK_DIR=str((target / 'media-first-work').resolve()),
                    PURFFLE_MEDIA_FIRST=os.environ.get('PURFFLE_MEDIA_FIRST', '1'),
                    VOICE_REPORT=str((target / 'voice-report.json').resolve()),
+                   SCIENCE_REPORT=str((target / 'science-report.json').resolve()),
                    JOB_RESULT=str((target / 'job-result.json').resolve()),
                    OUTPUT_DIR=str((target / 'render').resolve()),
                    PYTHONPATH=os.pathsep.join([str(ROOT), str(ROOT / 'scripts')]),
