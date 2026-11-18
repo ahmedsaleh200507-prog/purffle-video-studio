@@ -404,6 +404,11 @@ class SceneMatcher:
                               "volcano", "lava", "fire", "snake", "forest",
                               "tree", "branch", "pine", "island", "storm",
                               "lightning", "snow", "submarine"}
+        # The matcher stems words ("snake"->"snak", "fire"->"fir").
+        # Normalize the visible-subject allowlists the SAME way, otherwise
+        # genuinely matching stock footage is silently rejected.
+        scenery_subjects = set().union(*(_terms(word) for word in scenery_subjects))
+        contextual_scenery = set().union(*(_terms(word) for word in contextual_scenery))
         scenery_actions = {"glow", "shin", "ris", "set", "mov", "drift",
                            "flow", "blow", "fall", "spark", "twinkl",
                            "brighten", "darken", "appear", "chang"}
