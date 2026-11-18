@@ -154,6 +154,12 @@ def thematic_scene_plans(raw, topic):
         # The user can narrate a hypothetical event without pretending to have
         # literal footage. Astronomy uses REAL night-sky/telescope recordings,
         # not a fabricated recording of somebody falling into a black hole.
+        # #70: a literal tree-root action is not necessary to explain why
+        # lightning repeatedly strikes tall isolated objects. Keep the
+        # footage genuinely related: actual storms, lightning and trees.
+        (("lightning", "thunderbolt", "blitzschlag", "blitze"),
+         (("lightning", "lightning storm"), ("cloud", "storm clouds"),
+          ("tree", "trees blowing in wind"), ("sky", "dark storm sky"))),
         (("black hole", "event horizon", "singularity", "cosmic mystery"),
          (("sky", "night sky stars"), ("star", "stars night sky"),
           ("telescope", "observatory telescope"), ("sky", "milky way night sky"))),
@@ -871,6 +877,12 @@ def install():
         return original_ffmpeg_run(bounded_ffmpeg_args(args), **kwargs)
 
     def normalize(data, subject, style, language):
+        from fact_checked_topics import ground_lightning_explainer
+        # Generic LLM rules alone did not prevent #70 inventing an Elm Street
+        # oak tree hit 12 times and an unreferenced 300,000-volt measurement.
+        # For this well-defined educational topic use a NOAA-grounded concise
+        # script with shootable B-roll rather than publish a fictional event.
+        data = ground_lightning_explainer(data, subject, language)
         raw_scenes = data.get("scenes") or []
         if not raw_scenes or len(raw_scenes) > 6:
             raise ValueError("A strict video needs 1–6 explicit scenes")
@@ -913,7 +925,17 @@ mechanism accurately without pretending the footage depicts molecules.
 Choose search-friendly English subject/action descriptions commonly used as
 stock-video titles and tags. Prefer diverse visually relevant footage over
 unfindable literal representations of abstract scientific concepts.
-HYBRID STOCK-FIRST: First outline the essential truthful facts of the topic, then choose only common, directly filmable stock shots for every scene, then write narration that explains those facts while the shots support them. A shot need not literally depict invisible mechanisms. Avoid over-specific footage requests; prioritize diverse concrete shots. Do not sacrifice factual accuracy just to match footage. Narration must be compatible with these visible actions. Do not invent factual claims or an ending
+HYBRID STOCK-FIRST: First outline the essential truthful facts of the topic, then choose only common, directly filmable stock shots for every scene, then write narration that explains those facts while the shots support them.
+FACTUAL CLAIMS FOR PUBLIC EDUCATIONAL VIDEOS: Never invent a named person,
+street, town, research study, measurement, number, date, record, count,
+eyewitness event, or experiment to make a generic science topic dramatic.
+Never turn a generic 'why/how' question into a supposedly witnessed story.
+Without a provided or verified source, use well-established general
+explanations rather than precise numerical anecdotes or made-up quotations.
+For lightning safety, do not recommend observing storms outside or
+sheltering under trees. Ground lightning facts in NOAA/NWS guidance
+where possible and keep the video filmable with real storms, clouds and
+tall objects, not roots conducting a visible electrical charge. A shot need not literally depict invisible mechanisms. Avoid over-specific footage requests; prioritize diverse concrete shots. Do not sacrifice factual accuracy just to match footage. Narration must be compatible with these visible actions. Do not invent factual claims or an ending
 for an underspecified real event.
 For educational, science, documentary, or explanatory topics, EVERY scene
 including the final scene must stay on the requested subject. Finish with a
