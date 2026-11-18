@@ -50,6 +50,7 @@ jobs:
           python -m pytest -q
       - name: Verify actual pinned CC0 male voice model and native captions
         env:
+          PYTHONPATH: scripts:.
           PURFFLE_NARRATOR_LOCK: '1'
         run: |
           python - <<'PY'
