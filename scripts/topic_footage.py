@@ -46,6 +46,9 @@ ALIASES = {
     "rain": {"rain", "rainfall", "storm", "raindrops"},
     "cave": {"cave", "caves", "cavern"},
     "island": {"island", "islands", "coast"},
+    "mirror": {"mirror", "mirrors", "spiegel", "badezimmerspiegel", "bathroom", "shower", "dusche"},
+    "shower": {"shower", "showers", "dusche", "duschen", "bathroom"},
+
 }
 
 
@@ -59,6 +62,7 @@ FILMABLE_SUBJECTS = frozenset("""
     train tram bus airplane aircraft helicopter rocket spacecraft ship boat
     bicycle motorcycle car factory robot computer laptop smartphone
     telescope microscope bridge building dam castle pyramid monument
+    mirror bathroom shower
 """.split())
 
 
@@ -67,6 +71,8 @@ FILMABLE_SUBJECTS = frozenset("""
 # topic-grounded LLM proposals, never random filler.
 GERMAN_FILMABLE = {
     "bus": "bus", "busse": "bus",
+    "badezimmerspiegel": "mirror", "spiegel": "mirror",
+    "dusche": "shower", "duschen": "shower",
     "biene": "bee", "bienen": "bee",
     "katze": "cat", "katzen": "cat",
     "hund": "dog", "hunde": "dog",
@@ -168,6 +174,16 @@ def deterministic_stock_shots(topic: str):
             ("beach", "black sand coastline"),
             ("beach", "black sand waves"),
             ("sand", "black sand shore"),
+        ]
+    elif ("mirror" in t or "badezimmerspiegel" in t or "spiegel" in t) and (
+            "beschlägt" in t or "fog" in t or "foggy" in t or "bathroom" in t):
+        choices = [
+            ("mirror", "foggy bathroom mirror"),
+            ("mirror", "bathroom mirror steam"),
+            ("mirror", "wiping foggy mirror"),
+            ("shower", "hot shower bathroom"),
+            ("mirror", "bathroom mirror condensation"),
+            ("shower", "water running shower"),
         ]
     elif ("volcano" in t or "volcanic" in t) and "island" in t:
         # Distinguish an island forming from the unrelated phenomenon of
