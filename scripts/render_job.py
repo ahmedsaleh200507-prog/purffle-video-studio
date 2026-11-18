@@ -91,15 +91,26 @@ def main():
         stage = 'production'
         studio = Studio(s)
         if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1':
-            from media_first import prepare_verified_palette, use_palette
+            from media_first import (prepare_verified_palette, use_palette,
+                                     validate_narration_timing)
             stage = 'media_preflight'
             palette = prepare_verified_palette(
                 os.environ['VIDEO_TOPIC'], s, studio.llm,
                 min_scenes=3, max_scenes=4, clip_seconds=10.0)
             stage = 'grounded_script'
-            with use_palette(palette):
-                screenplay, pick, writer = studio.draft(
-                    os.environ['VIDEO_TOPIC'], style='facts')
+            for attempt in range(2):
+                with use_palette(palette):
+                    screenplay, pick, writer = studio.draft(
+                        os.environ['VIDEO_TOPIC'], style='facts')
+                try:
+                    validate_narration_timing(palette, screenplay, s.language)
+                    break
+                except RuntimeError:
+                    if attempt:
+                        raise
+                    logging.warning(
+                        'Verified source is too short for the narration; '
+                        'retrying one more compact, footage-locked script')
             stage = 'production'
             # The footage has already been downloaded, visually checked and
             # deduplicated. Do not ask the providers to search again after TTS.
