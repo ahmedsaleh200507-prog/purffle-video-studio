@@ -403,7 +403,9 @@ class SceneMatcher:
                               "water", "landscap", "ocean", "seafloor",
                               "volcano", "lava", "fire", "snake", "forest",
                               "tree", "branch", "pine", "island", "storm",
-                              "lightning", "snow", "submarine"}
+                              "lightning", "snow", "submarine",
+                              "earth", "telescope", "ship", "airplane",
+                              "building", "street", "ruin", "city", "star"}
         # The matcher stems words ("snake"->"snak", "fire"->"fir").
         # Normalize the visible-subject allowlists the SAME way, otherwise
         # genuinely matching stock footage is silently rejected.
