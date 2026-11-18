@@ -25,7 +25,8 @@ ALIASES = {
     "aurora": {"aurora", "borealis", "northern", "light", "lights", "polar"},
     "beach": {"beach", "beaches", "shore", "coast", "coastline"},
     "sand": {"sand", "sandy", "volcanic"},
-    "hurricane": {"hurricane", "cyclone", "typhoon", "tropical", "storm"},
+    "hurricane": {"hurricane", "cyclone", "typhoon", "tropical", "storm",
+                  "eyewall", "ocean", "sea", "winds"},
     "wave": {"wave", "waves", "ocean", "sea", "surf"},
     "glacier": {"glacier", "glaciers", "ice", "iceberg"},
     "volcano": {"volcano", "volcanoes", "volcanic", "lava", "eruption"},
@@ -112,6 +113,16 @@ def deterministic_stock_shots(topic: str):
             ("beach", "black sand waves"),
             ("sand", "black sand shore"),
         ]
+    elif ("volcano" in t or "volcanic" in t) and "island" in t:
+        # Distinguish an island forming from the unrelated phenomenon of
+        # volcanic lightning (old generic fallback misled #71 narration).
+        choices = [
+            ("volcano", "volcano erupting"),
+            ("lava", "volcanic lava"),
+            ("island", "volcanic island coastline"),
+            ("volcano", "volcano landscape"),
+            ("lava", "lava flow ocean coast"),
+        ]
     elif "hurricane" in t or "cyclone" in t:
         # Actual cyclone imagery is searched *before* ordinary scenery, which
         # is then only supporting B-roll, not a claim to show the storm's eye.
@@ -119,6 +130,9 @@ def deterministic_stock_shots(topic: str):
             ("hurricane", "hurricane satellite clouds"),
             ("hurricane", "hurricane storm footage"),
             ("cyclone", "tropical cyclone satellite"),
+            ("hurricane", "hurricane eyewall clouds"),
+            ("hurricane", "hurricane over ocean"),
+            ("storm", "tropical storm ocean waves"),
         ]
     else:
         # Generic subject-driven query generation across many natural topics.
