@@ -64,6 +64,10 @@ def test_workflow_contract():
     assert workflow['run-name'].startswith('Purffle Shorts')
     triggers = workflow.get('on', workflow.get(True))
     assert set(triggers) == {'workflow_dispatch'}
+    # Keep the familiar create-videos label in the Actions UI even though
+    # 10 independent video jobs still render behind the scenes.
+    assert workflow['jobs']['create-videos']['name'].startswith('create-videos | Video')
+    assert workflow['jobs']['collect-results']['name'] == 'create-videos'
     job = workflow['jobs']['create-videos']
     assert job['env']['RESOLUTION'] == '720x1280'
     assert job['permissions'] if 'permissions' in job else workflow['permissions'] == {'contents': 'read'}

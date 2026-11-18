@@ -52,7 +52,7 @@ permissions:
 # max-parallel: 2 per run. Do not add a constant top-level concurrency group.
 jobs:
   create-videos:
-    name: Video ${{ matrix.slot }} (independent)
+    name: create-videos | Video ${{ matrix.slot }} of 10
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     strategy:
@@ -214,7 +214,7 @@ jobs:
           compression-level: 0
 
   collect-results:
-    name: Combine all videos into one download
+    name: create-videos
     if: always()
     needs: create-videos
     runs-on: ubuntu-24.04
