@@ -555,3 +555,54 @@ def test_v4_nature_search_expands_droplet_queries(strict_env):
     assert "water drops in sunlight" in queries
     assert "sunlight reflecting on water" in queries
     assert plan["visual_search_query"] in queries
+
+
+
+def test_real_69_archive_pluto_footage_rejected_before_download(strict_env):
+    """The #69 volcano short falsely selected this NASA Pluto cryovolcano clip.
+
+    This test verifies the real candidate ID/source-page collision instead of
+    relying on CLIP accepting a weak 'magma chamber' similarity score.
+    """
+    from media_validation import reject_offtopic_science_source, ValidationError
+    item = candidate("PlutoInAMinuteEvidenceOfPossibleFrozenVolcanoes")
+    item.text = "possible frozen volcanoes, magma chamber"
+    item.extra["license"]["source_page"] = (
+        "https://archive.org/details/PlutoInAMinuteEvidenceOfPossibleFrozenVolcanoes"
+    )
+    plan = {"main_character": "", "object": "magma chamber",
+            "action": "moving", "location": "", "time": "",
+            "visual_search_query": "magma chamber"}
+    obj, registry, down, quality = visuals(strict_env, {"first": [item]})
+    with pytest.raises(RuntimeError, match="No suitable verified REAL VIDEO"):
+        obj.for_scene(1, "magma chamber", json.dumps(plan),
+                      "Why Do Some Volcanoes Erupt Without Warning?", 4, strict_env)
+    assert down.urls == []
+    scene = json.loads((strict_env / "report.json").read_text())["scenes"][0]
+    assert any("Off-topic planetary volcanic footage" in entry["reason"]
+               for entry in scene["rejections"])
+
+
+@pytest.mark.parametrize("source_text", [
+    "PlutoInAMinuteEvidenceOfPossibleFrozenVolcanoes",
+    "https://archive.org/details/PlutoInAMinuteEvidenceOfPossibleFrozenVolcanoes",
+    "NASA video: Mars volcano magma chamber",
+    "possible volcanoes on Venus",
+])
+def test_earth_volcano_narration_rejects_explicit_other_planets(source_text):
+    from media_validation import reject_offtopic_science_source, ValidationError
+    with pytest.raises(ValidationError, match="Off-topic planetary"):
+        reject_offtopic_science_source(
+            "Why Do Some Volcanoes Erupt Without Warning?", source_text)
+
+
+@pytest.mark.parametrize("topic,source_text", [
+    ("Why Do Some Volcanoes Erupt Without Warning?", "volcano Iceland lava eruption"),
+    ("What Causes Volcanoes on Pluto?", "NASA PlutoInAMinuteEvidenceOfPossibleFrozenVolcanoes"),
+    ("Can Mars Have Volcanoes?", "Mars volcano documentary"),
+    ("Why Do Some Volcanoes Erupt Without Warning?", "NASA Earth volcano eruption"),
+    ("Why Does the Ocean Glow at Night?", "NASA Pluto documentary"),
+])
+def test_related_subjects_or_non_volcanic_topics_remain_eligible(topic, source_text):
+    from media_validation import reject_offtopic_science_source
+    reject_offtopic_science_source(topic, source_text)
