@@ -89,7 +89,25 @@ def main():
                     upload=False, also_languages=[], localize_metadata=[], notify_webhook='',
                     workers=1, crf=18, preset='medium', target_seconds=25)
         stage = 'production'
-        made = Studio(s).make(os.environ['VIDEO_TOPIC'], upload=False)
+        studio = Studio(s)
+        if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1':
+            from media_first import prepare_verified_palette, use_palette
+            stage = 'media_preflight'
+            palette = prepare_verified_palette(
+                os.environ['VIDEO_TOPIC'], s, studio.llm,
+                min_scenes=3, max_scenes=4, clip_seconds=10.0)
+            stage = 'grounded_script'
+            with use_palette(palette):
+                screenplay, pick, writer = studio.draft(
+                    os.environ['VIDEO_TOPIC'], style='facts')
+            stage = 'production'
+            # The footage has already been downloaded, visually checked and
+            # deduplicated. Do not ask the providers to search again after TTS.
+            made = studio.produce(screenplay, pick, writer, upload=False,
+                                  media_map=palette.media_map,
+                                  credits=palette.credits)
+        else:
+            made = studio.make(os.environ['VIDEO_TOPIC'], upload=False)
         if not made.ok or not made.video:
             raise RuntimeError(made.error or made.status or 'Upstream production failed')
         video = Path(made.video)
