@@ -114,7 +114,13 @@ def main():
                 min_scenes=3, max_scenes=4, clip_seconds=10.0)
             from science_sources import discover_evidence, screen_narration, use_evidence
             stage = 'science_sources'
-            evidence = discover_evidence(os.environ['VIDEO_TOPIC'], s.language)
+            try:
+                evidence = discover_evidence(os.environ['VIDEO_TOPIC'], s.language)
+            except RuntimeError as source_error:
+                from science_sources import write_source_failure
+                write_source_failure(str(source_error),
+                                     os.environ.get('SCIENCE_REPORT', 'science-report.json'))
+                raise
             stage = 'grounded_script'
             for attempt in range(2):
                 with use_palette(palette), use_evidence(evidence):
