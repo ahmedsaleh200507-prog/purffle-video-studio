@@ -443,7 +443,8 @@ def fake_speech(tmp_path, engine="edge"):
     path = tmp_path / (engine + ".wav")
     path.write_bytes(b"mock audio; waveform decoding is tested separately")
     speech = SimpleNamespace(engine=engine, timing="native" if engine == "edge" else "aligned",
-                             audio=path, duration=1.0, voice="test", words=[SimpleNamespace(start=0, end=.7)])
+                             audio=path, duration=1.0, voice=("de_DE-thorsten-medium" if engine == "piper" else "test"),
+                             words=[SimpleNamespace(start=0, end=.7)])
     if engine == "piper":
         speech.provenance = {"engine": "piper", "model": "de_DE-thorsten-medium",
                              "model_url": "https://huggingface.co/approved-model",
