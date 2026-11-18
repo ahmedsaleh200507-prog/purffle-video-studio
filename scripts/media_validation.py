@@ -391,6 +391,22 @@ def _terms(value: str) -> set[str]:
     return {_stem(w) for w in words if w not in _STOP and len(w) > 1}
 
 
+def _documentary_metadata_terms(value: str) -> set[str]:
+    """Resolve well-known stock labels before literal metadata screening.
+
+    Aurora is often catalogued as 'northern lights', and vice versa. This
+    expands only independently present descriptive keywords, never inserts
+    requested topic words into unrelated source metadata.
+    """
+    terms = _terms(value)
+    aurora = _terms("aurora borealis")
+    northern_lights = _terms("northern lights")
+    if (terms & aurora) or northern_lights.issubset(terms):
+        terms.update(aurora)
+        terms.update(northern_lights)
+    return terms
+
+
 class SceneMatcher:
     """Require metadata grounding plus sampled local CLIP evidence.
 
@@ -407,8 +423,8 @@ class SceneMatcher:
 
     @staticmethod
     def metadata_score(spec: SceneSpec, metadata: str) -> float:
-        have = _terms(metadata)
-        wanted = _terms(spec.visual_search_query)
+        have = _documentary_metadata_terms(metadata)
+        wanted = _documentary_metadata_terms(spec.visual_search_query)
         if not have or not wanted:
             return 0.0
         return len(wanted & have) / len(wanted)
@@ -421,7 +437,7 @@ class SceneMatcher:
         if not spec.object or not spec.action or not spec.visual_search_query:
             raise ValidationError("Incomplete structured scene")
         score = cls.metadata_score(spec, metadata)
-        have = _terms(metadata)
+        have = _documentary_metadata_terms(metadata)
         # Stock descriptions rarely mention camera movement or lighting.
         # A named landmark is sufficient for metadata preflight ONLY when its
         # distinctive name occurs in the provider's description. The downloaded
@@ -440,7 +456,7 @@ class SceneMatcher:
         scenery_subjects = {"sky", "sun", "sunris", "sunset", "cloud", "clouds",
                             "horizon", "ocean", "sea", "mountain", "forest",
                             "river", "lake", "rain", "snow", "star", "moon",
-                            "landscap", "field", "beach", "wave"}
+                            "landscap", "field", "beach", "wave", "aurora", "borealis"}
         # For explicitly marked, contextual establishing shots only. These are
         # *not* permission to ignore an ordinary requested human/animal action.
         contextual_scenery = {"cav", "glacier", "ice", "iceberg", "desert",
@@ -450,7 +466,7 @@ class SceneMatcher:
                               "tree", "branch", "pine", "island", "storm",
                               "lightning", "snow", "submarine",
                               "earth", "telescope", "ship", "airplane",
-                              "building", "street", "ruin", "city", "star"}
+                              "building", "street", "ruin", "city", "star", "aurora", "borealis"}
         # The matcher stems words ("snake"->"snak", "fire"->"fir").
         # Normalize the visible-subject allowlists the SAME way, otherwise
         # genuinely matching stock footage is silently rejected.
@@ -461,7 +477,7 @@ class SceneMatcher:
                            "brighten", "darken", "appear", "chang"}
         object_terms = _terms(spec.object)
         action_terms = _terms(spec.action)
-        query_terms = _terms(spec.visual_search_query)
+        query_terms = _documentary_metadata_terms(spec.visual_search_query)
         # Scenery has no human-style action to tag: "sky overhead" and
         # "clouds drifting" are both legitimate stock-video descriptions.
         # Only bypass action wording for scenes without a character, with a
