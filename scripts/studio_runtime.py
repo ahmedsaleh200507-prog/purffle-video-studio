@@ -84,6 +84,58 @@ def _scene_data(raw):
     return data
 
 
+def contextual_scene_plans(raw, topic):
+    """A small, auditable set of truthful establishing shots for hard-to-film science.
+
+    These are NOT footage of the narrated event. The final report labels every
+    such shot 'illustrative_context'; metadata, CLIP, native crop, motion and
+    license checks remain mandatory. No generic unrelated filler is allowed.
+    """
+    data = _scene_data(raw)
+    subject = (data["object"] + " " + data["visual_search_query"]).lower()
+    title = topic.lower()
+    ideas = []
+
+    def add(obj, action, query):
+        if query.lower() != data["visual_search_query"].lower():
+            plan = dict(data, main_character="", object=obj, action=action,
+                        location="", visual_search_query=query)
+            if query not in {row["visual_search_query"] for row in ideas}:
+                ideas.append(plan)
+
+    # Retain the visible class of object whenever possible, not an invented
+    # precise vessel, microorganism, location or invisible physical process.
+    if any(x in subject for x in ("aircraft", "avenger", "torpedo plane", "naval plane", "airplane")):
+        add("airplane", "flying", "airplane flying sky")
+        if "bermuda" in title:
+            add("ocean", "ambient", "ocean waves")
+    elif "cave" in subject or "cavern" in subject or "höhle" in title:
+        add("cave", "ambient", "cave interior")
+        add("cave", "ambient", "cave stalactites")
+    elif any(x in subject for x in ("algae", "sonar", "microorganism", "bacteria", "sediment")):
+        if any(x in title for x in ("marian", "ozean", "ocean", "meer", "biolumines")):
+            add("ocean", "ambient", "deep ocean underwater")
+            add("ocean", "ambient", "ocean waves at night")
+        elif any(x in title for x in ("see", "lake")):
+            add("lake", "ambient", "lake water ripples")
+            add("lake", "ambient", "lake surface")
+    elif "harar" in subject and any(x in title for x in ("äthiop", "ethiop")):
+        # Never label a generic desert video as footage of an unverified park.
+        add("desert", "ambient", "desert landscape")
+        add("geothermal landscape", "ambient", "volcanic desert landscape")
+    elif "dune" in subject or ("sand" in subject and any(x in title for x in ("wüste", "desert"))):
+        add("sand dunes", "ambient", "sand dunes desert")
+        add("desert", "ambient", "desert landscape")
+    elif "glacier" in subject or ("meltwater" in subject and "antarkt" in title):
+        add("glacier", "ambient", "glacier ice")
+        add("waterfall", "ambient", "waterfall flowing")
+    elif "lake bottom" in subject:
+        add("lake", "ambient", "lake water surface")
+
+    # Bounded attempts and no duplicate discovery queries.
+    return ideas[:2]
+
+
 class StrictVisuals:
     """Sequential candidate validation keeps CPU, download and API usage bounded."""
     def __init__(self, settings, used_keys=None, *, registry=None, downloader=None, quality=None, matcher=None):
@@ -388,53 +440,75 @@ class StrictVisuals:
         raise RuntimeError(f"No suitable verified REAL VIDEO for scene {idx+1}: {data['visual_search_query']!r}")
 
     def for_scenes(self, jobs, topic, dest_dir, progress=None):
-        """Return one verified scene per shot, retaining failed trials as diagnostics.
+        """One independently verified clip per scene; retry with truthful B-roll.
 
-        A previous scene's clip is never reused as a substitute: that would
-        defeat per-scene semantic verification and visual diversity.
+        The failed exact attempts remain in search_attempts, while the final
+        report has exactly one 'selected' record per logical scene.
         """
         Path(dest_dir).mkdir(parents=True, exist_ok=True)
         items = []
         for idx, (query, prompt, need) in enumerate(jobs):
             report_start = len(self.report["scenes"])
+            mode = "exact_scene"
             try:
                 item = self.for_scene(idx, query, prompt, topic, need, dest_dir)
             except RuntimeError as first_error:
                 if "No suitable verified REAL VIDEO" not in str(first_error):
                     raise
                 try:
-                    data = _scene_data(json.loads(prompt))
+                    original_data = _scene_data(json.loads(prompt))
                 except (ValueError, TypeError):
                     raise first_error
-                subject = data.get("object", "").strip()
-                original = data["visual_search_query"]
-                if (not subject or len(subject.split()) > 3
-                        or subject.lower() == original.lower()):
-                    raise first_error
-                data["main_character"] = ""
-                data["action"] = "swimming" if subject.lower() in (
-                    "dolphin", "whale", "shark", "fish", "turtle", "seal") else "moving"
-                data["location"] = ""
-                data["visual_search_query"] = subject[:90]
-                print(f"[AUTO REPLAN] scene={idx+1} query={original!r} -> {subject!r}", flush=True)
-                self.report["state"] = "searching"
-                self.report.pop("error", None)
-                try:
-                    item = self.for_scene(idx, subject, json.dumps(data), topic, need, dest_dir)
-                except RuntimeError as retry_error:
-                    if "No suitable verified REAL VIDEO" not in str(retry_error):
-                        raise
+                original = original_data["visual_search_query"]
+                subject = original_data.get("object", "").strip()
+                replans = []
+                if subject and len(subject.split()) <= 3 and subject.lower() != original.lower():
+                    shorter = dict(original_data, main_character="", location="",
+                                   action="swimming" if subject.lower() in (
+                                       "dolphin", "whale", "shark", "fish", "turtle", "seal") else "moving",
+                                   visual_search_query=subject[:90])
+                    replans.append(("subject_search", shorter))
+                replans.extend(("illustrative_context", p)
+                               for p in contextual_scene_plans(original_data, topic))
+                item = None
+                last_error = first_error
+                seen_queries = {original.lower()}
+                for next_mode, plan in replans:
+                    candidate_query = plan["visual_search_query"]
+                    if candidate_query.lower() in seen_queries:
+                        continue
+                    seen_queries.add(candidate_query.lower())
+                    print(f"[AUTO REPLAN] scene={idx+1} mode={next_mode} "
+                          f"query={original!r} -> {candidate_query!r}", flush=True)
+                    self.report["state"] = "searching"
+                    self.report.pop("error", None)
+                    try:
+                        item = self.for_scene(idx, candidate_query,
+                                              json.dumps(plan), topic, need, dest_dir)
+                        mode = next_mode
+                        break
+                    except RuntimeError as retry_error:
+                        if "No suitable verified REAL VIDEO" not in str(retry_error):
+                            raise
+                        last_error = retry_error
+                if item is None:
                     self.report["state"] = "failed"
                     self._save()
-                    raise first_error from retry_error
-            # A retry appends both a failed and a selected record. Rendering
-            # validates the FINAL state for each logical scene, not every trial.
+                    raise first_error from last_error
+
             attempts = self.report["scenes"][report_start:]
             selected = [row for row in attempts
                         if row.get("index") == idx + 1 and row.get("status") == "selected"]
             if len(selected) != 1:
                 raise RuntimeError(f"Scene {idx+1} has no single verified footage selection")
             final = selected[0]
+            final["visual_mode"] = mode
+            if mode == "illustrative_context":
+                final["illustrative_not_exact_event"] = True
+                final["requested_query"] = original
+                print(f"[VERIFIED CONTEXTUAL B-ROLL] scene={idx+1} "
+                      f"visual={final['plan']['visual_search_query']!r} "
+                      "is illustrative, not literal event footage", flush=True)
             if len(attempts) > 1:
                 final["search_attempts"] = [
                     {"query": row.get("plan", {}).get("visual_search_query", ""),
@@ -443,7 +517,7 @@ class StrictVisuals:
                     for row in attempts if row is not final
                 ]
                 self.report["scenes"][report_start:] = [final]
-                self._save()
+            self._save()
             items.append(item)
             if progress:
                 progress((idx + 1) / len(jobs))
