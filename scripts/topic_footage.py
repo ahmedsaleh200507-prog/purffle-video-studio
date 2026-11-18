@@ -62,10 +62,35 @@ FILMABLE_SUBJECTS = frozenset("""
 """.split())
 
 
+# Minimal fallback vocabulary for frequent German titles. These translate only
+# explicitly named visible subjects; abstract science still requires real
+# topic-grounded LLM proposals, never random filler.
+GERMAN_FILMABLE = {
+    "bus": "bus", "busse": "bus",
+    "biene": "bee", "bienen": "bee",
+    "katze": "cat", "katzen": "cat",
+    "hund": "dog", "hunde": "dog",
+    "zug": "train", "züge": "train", "zuege": "train",
+    "auto": "car", "autos": "car",
+    "flugzeug": "airplane", "flugzeuge": "airplane",
+    "rakete": "rocket", "raketen": "rocket",
+    "erdbeben": "earthquake",
+    "schildkröte": "turtle", "schildkröten": "turtle",
+    "vogel": "bird", "vögel": "bird", "voegel": "bird",
+    "fisch": "fish", "fische": "fish",
+    "ameise": "ant", "ameisen": "ant",
+    "schmetterling": "butterfly", "schmetterlinge": "butterfly",
+    "regenbogen": "rainbow",
+    "hai": "shark", "haie": "shark",
+    "wal": "whale", "wale": "whale",
+    "delfin": "dolphin", "delfine": "dolphin",
+}
+
+
 def words(value: str) -> set[str]:
     """Light morphological normalization without remote NLP dependencies."""
     out = set()
-    for word in re.findall(r"[a-z]+", str(value).lower()):
+    for word in re.findall(r"[a-zäöüß]+", str(value).lower()):
         if len(word) < 3:
             continue
         if word == "buses":
@@ -85,6 +110,8 @@ def words(value: str) -> set[str]:
 def subject_terms(topic: str) -> set[str]:
     basic = words(topic) - STOP
     expanded = set(basic)
+    expanded.update(GERMAN_FILMABLE[word] for word in basic
+                    if word in GERMAN_FILMABLE)
     # Each group must be *activated* by a concrete word in the original title;
     # don't add the entire natural-world dictionary to every query.
     for synonyms in ALIASES.values():
@@ -176,10 +203,16 @@ def deterministic_stock_shots(topic: str):
             # For filmable subjects outside the curated documentary vocabulary,
             # query the named subject itself before asking Groq for alternatives.
             # Reject opaque/abstract words instead of choosing random stock.
-            title_words = re.findall(r"[a-z]+", str(topic).casefold())
-            primary = next((term for raw in title_words
-                            for term in words(raw)
-                            if term in FILMABLE_SUBJECTS), None)
+            title_words = re.findall(r"[a-zäöüß]+", str(topic).casefold())
+            primary = None
+            for raw in title_words:
+                primary = GERMAN_FILMABLE.get(raw)
+                if primary:
+                    break
+                variants = sorted(words(raw) & FILMABLE_SUBJECTS)
+                if variants:
+                    primary = variants[0]
+                    break
             if not primary:
                 return []
             phrases = [f"{primary} footage", f"{primary} close up",
