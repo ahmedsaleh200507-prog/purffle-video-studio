@@ -75,6 +75,8 @@ def classify_failure(message: str, log_text: str = "", details=None) -> str:
         ("media_preflight_no_topic_palette", "topic_palette_empty"),
         ("media_preflight_insufficient_footage", "insufficient_verified_clips"),
         ("unverified_quantitative_claim", "unverified_factual_claim"),
+        ("science_sources_unavailable", "science_reference_unavailable"),
+        ("science_claim_unverified", "science_claim_unsupported"),
     ):
         if prefix in direct:
             return category
