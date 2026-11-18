@@ -142,3 +142,37 @@ bakmaz; başarısız sahnenin gerçek ret nedenlerini sayar.
 **Gerçek üretim başarı garantisi yoktur:** Bu yeni değişiklikler ile aynı
 10 videoluk batch **henüz yeniden üretilmemiştir**. Yeni tanı ZIP'i
 alındığında başarı sayısı ve semantik uygunluk tekrar karşılaştırılmalıdır.
+
+
+## Yeni onarım: cümle-birebir yerine konuya uygun B-roll (2026-11-18)
+
+Kullanıcının paylaştığı `PURFFLE_CODEX_ONARIM_PAKETI(1).zip` içindeki
+gerçek üretim tanıları: **10 deneme, 0 başarılı MP4, 10 hazır seslendirme**.
+940 ret olayının **833'ü metadata eşleştirmesi**, 95'i native çözünürlük
+nedeniyle. Bunlar **ret olaylarıdır**, tekil dosya sayısı değildir.
+Yüksek sayıda reddin ana nedeni, stok videolarda indekslenmeyen aşırı dar
+sahne/eylem sorguları (ör. `pressure gauge underwater`,
+`dinoflagellate plankton light`, `spiral pine tree`).
+
+Artık `thematic_scene_plans`, doğrulanmış tam sahne görüntüsü bulunamazsa
+konu başlığına dayalı **görülebilir, gerçek, ilgili** alternatifler dener.
+10 hata konusu için deniz, doğal gaz alevi/çöl, Antarktika buzu, yılanlar,
+gece okyanusu, mağara, volkan, orman, deniz dibi ve Sibirya ormanı gibi
+konuya özel ve denetlenebilir örnekler vardır. İlgisi kurulamayacak yeni
+bir konu için rastgele görüntü kullanılmaz.
+
+Başarılı tematik klip **`visual_mode=thematic_context`** ve
+**`illustrative_not_exact_event=true`** ile işaretlenir; bu klibin
+olayın özgün kaydı olduğu **iddia edilmez**. Metadata, lisans,
+hareket, FPS/süre, kaynak dosyası ve yerel 9:16 720p boyut denetimi
+değiştirilmemiştir. CLIP görsel doğrulaması da zorunlu olmaya devam eder.
+Sadece, karakter içermeyen ve konusu bilinen `ambient` tematik
+sahnelerde eylemin stok etiketinde birebir yazması artık şart değildir.
+Görüntüdeki **nesnenin** metadata'da bulunması hâlâ şarttır.
+
+`tests/test_thematic_broll.py`: 10 konuyu, gerçekten ilgili nesne eşleşmesini,
+rastgele videonun reddini, tematik rapor kaydını ve başarısız üretimin yanlış
+başarılı sayılmamasını test eder.
+
+**Sınır:** Bu, gerçek klip erişimi olmadan 10/10 başarı kanıtı değildir.
+Canlı üretim/YouTube Shorts testinden sonra kaç MP4 çıktığı ayrıca ölçülmelidir.
