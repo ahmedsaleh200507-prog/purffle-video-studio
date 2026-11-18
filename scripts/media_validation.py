@@ -49,6 +49,32 @@ def portrait_crop_allowed(scale: float) -> bool:
     return math.isfinite(scale) and scale > 0 and scale <= portrait_crop_limit() + 0.0001
 
 
+def reject_offtopic_science_source(topic: str, candidate_text: str) -> None:
+    """Block known, provable domain contradictions before downloading footage.
+
+    Topic-related B-roll can be illustrative, but Earth's volcanic eruptions
+    must not show a clip about cryovolcanoes on Pluto/Mars/etc as if it were
+    footage of an Earth magma chamber. Search titles and provider identifiers
+    may be concatenated (e.g. 'PlutoInAMinute...'), so match compact text.
+    This deliberately doesn't infer identity from images or drop generic B-roll.
+    """
+    subject = str(topic or "").casefold()
+    if not any(word in subject for word in ("volcano", "volcan", "eruption", "erupt", "magma", "lava")):
+        return
+    source = re.sub(r"[^a-z]", "", str(candidate_text or "").casefold())
+    topic_compact = re.sub(r"[^a-z]", "", subject)
+    # Only explicit off-world mentions are disqualifying. A NASA/space-provider
+    # label alone is not proof that a volcano video is off-topic.
+    planetary_bodies = ("pluto", "mars", "venus", "enceladus", "triton",
+                        "europa", "titan", "mercury", "neptune")
+    other_world = next((world for world in planetary_bodies
+                        if world in source and world not in topic_compact), None)
+    if other_world:
+        raise ValidationError(
+            f"Off-topic planetary volcanic footage: source depicts {other_world}, "
+            "not the subject of the narration")
+
+
 class ValidationError(RuntimeError):
     """A candidate cannot be accepted; callers must try another or fail the scene."""
 
