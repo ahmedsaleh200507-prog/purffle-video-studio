@@ -53,7 +53,6 @@ jobs:
       CREDIT_FOOTAGE: 'true'
       UPLOAD: 'false'
       PURFFLE_API_INTERVAL_SECONDS: '1.6'
-      PURFFLE_STRICT: '1'
       INPUT_1: 'en|How Do Volcanoes Create New Islands?'
       INPUT_2: ''
       INPUT_3: ''
@@ -89,6 +88,8 @@ jobs:
           python scripts/check_model.py
           python scripts/improve_upstream.py
       - name: Produce exactly one 720p narrated video
+        env:
+          PURFFLE_STRICT: '1'
         run: python scripts/batch.py
       - name: Prepare consolidated diagnostics and Shorts title
         if: always()
