@@ -314,7 +314,10 @@ _SYNONYMS = {"euros": "euro", "banknotes": "banknote", "cash": "money", "banknot
              "erupting": "erupt", "eruption": "erupt", "eruptions": "erupt",
              "exploding": "explod", "explosion": "explod", "explosions": "explod",
              "burning": "burn", "blazing": "burn", "flames": "fire", "flame": "fire",
-             "flying": "fly", "flight": "fly", "flights": "fly"}
+             "flying": "fly", "flight": "fly", "flights": "fly",
+             "aircraft": "airplane", "planes": "airplane", "plane": "airplane",
+             "aeroplane": "airplane", "caverns": "cave", "cavern": "cave",
+             "glacial": "glacier", "glaciers": "glacier"}
 
 
 def _stem(word: str) -> str:
@@ -393,6 +396,11 @@ class SceneMatcher:
                             "horizon", "ocean", "sea", "mountain", "forest",
                             "river", "lake", "rain", "snow", "star", "moon",
                             "landscap", "field", "beach", "wave"}
+        # For explicitly marked, contextual establishing shots only. These are
+        # *not* permission to ignore an ordinary requested human/animal action.
+        contextual_scenery = {"cave", "cavern", "glacier", "ice", "desert",
+                              "dun", "sand", "waterfall", "coast", "geotherm",
+                              "water", "landscap"}
         scenery_actions = {"glow", "shin", "ris", "set", "mov", "drift",
                            "flow", "blow", "fall", "spark", "twinkl",
                            "brighten", "darken", "appear", "chang"}
@@ -407,12 +415,19 @@ class SceneMatcher:
         scenery_core = (object_terms | query_terms) & scenery_subjects
         character = spec.main_character.strip().lower()
         no_character = character in ("", "none", "no character", "n/a", "null", "not applicable", "no person")
-        # Metadata for a blue-sky clip is often just "sky, nature, clouds".
-        # Keep the visible scenery subject mandatory, but do not demand color
-        # adjectives or the camera direction in stock tags. The downloaded
-        # frames still undergo real-video, resolution, motion and CLIP checks.
+        # Existing natural scenery can be preflighted by visible nouns. The
+        # actual frames must independently pass CLIP and real motion checks.
         if (scenery_core and scenery_core.issubset(have)
                 and no_character and score >= .20):
+            return score
+        # A clearly labeled illustrative establishing shot may show a cave,
+        # glacier or desert without metadata claiming the impossible action
+        # ("the cave is moving", "sand dunes forming a perfect circle").
+        # Require its actual visible object and a specifically ambient intent.
+        contextual_core = object_terms & (contextual_scenery | scenery_subjects)
+        if (no_character and action_terms == {"ambient"} and object_terms
+                and object_terms.issubset(contextual_core)
+                and contextual_core.issubset(have) and score >= .15):
             return score
         # Wildlife stock is usually tagged by species rather than behavior.
         # For documentary B-roll without a named character, a matching animal
