@@ -92,6 +92,9 @@ jobs:
       SCRIPT_REVIEW: 'off'
       SEO_KEYWORDS: 'false'
       VISUAL_SOURCES: pixabay,pexels,coverr-video,europeana-video,wikimedia-video,nasa-video,archive-video
+      # Free, fixed MALE Piper voice: en_US-joe-medium (CC0) / German Thorsten.
+      # Edge and female LJSpeech are intentionally not used on production jobs.
+      PURFFLE_NARRATOR_LOCK: '1'
       TTS_ENGINE: edge
       EDGE_TTS_TIMEOUT_SECONDS: '120'
       RESOLUTION: 720x1280
