@@ -170,8 +170,13 @@ def synthesize(text, out, settings):
         text_file.write_text(text, encoding="utf-8")
         text_file.chmod(0o600)
         target = folder / "voice-reference.wav"
-        model_python = Path(os.getenv("PURFFLE_REFERENCE_PYTHON",
-                                    ".venv-reference/bin/python")).resolve()
+        # CRITICAL: venv/bin/python is a symlink on GitHub-hosted runners.
+        # Path.resolve() follows it into the system interpreter and loses
+        # the venv's chatterbox installation (observed failure in run #5).
+        # abspath makes the path absolute WITHOUT dereferencing that symlink.
+        model_python = Path(os.path.abspath(os.path.expanduser(
+            os.getenv("PURFFLE_REFERENCE_PYTHON",
+                      ".venv-reference/bin/python"))))
         if not model_python.is_file():
             raise RuntimeError("reference_voice_not_ready: isolated CPU reference model is not installed")
         _run([str(model_python), str(Path(__file__).with_name("reference_voice_worker.py")),
