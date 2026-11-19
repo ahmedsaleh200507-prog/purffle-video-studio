@@ -84,6 +84,27 @@ def _tokens(text: str) -> list[str]:
     return [t for t in re.findall(r"[a-z0-9']+", text.lower()) if t.strip("'")]
 
 
+def _safe_split_for_exact_audio(text: str) -> list[str]:
+    """Split failed narration into ORIGINAL shorter clauses, no word rewriting.
+
+    The tiny Nano model occasionally skips words in a longer sentence. Real
+    ASR and the approved speaker gate MUST still validate each fragment.
+    """
+    whole = " ".join(str(text).split())
+    pieces = re.split(r"(?<=[.!?])\\s+", whole)
+    if len(pieces) < 2:
+        pieces = re.split(r"(?<=,)\\s+", whole)
+    if len(pieces) < 2 and len(_tokens(whole)) >= 10:
+        raw = whole.split()
+        midpoint = len(raw) // 2
+        pieces = [" ".join(raw[:midpoint]), " ".join(raw[midpoint:])]
+    if (not 2 <= len(pieces) <= 4 or
+            any(not 2 <= len(_tokens(p)) <= 18 for p in pieces) or
+            _tokens(" ".join(pieces)) != _tokens(whole)):
+        return []
+    return pieces
+
+
 def check_real_word_timing(text: str, path: Path, *, asr_loader=None):
     """Decode the actual generated WAV and match words/times from real ASR."""
     if asr_loader is None:
@@ -198,7 +219,7 @@ def synthesize(text, out, settings, *, segments=None):
         seeds = (190526, 220917, 314159)
         attempts_total = 0
 
-        def verified_generation(sentence, output):
+        def verified_generation(sentence, output, *, allow_split=True):
             nonlocal attempts_total
             text_file.write_text(sentence, encoding="utf-8")
             for attempt, seed in enumerate(seeds, 1):
@@ -216,14 +237,54 @@ def synthesize(text, out, settings, *, segments=None):
                 except (RuntimeError, wave.Error) as exc:
                     output.unlink(missing_ok=True)
                     reason = str(exc).lower()
-                    # Do not reveal private speech, exact reference text, file
-                    # paths, embeddings, generated transcript or model output.
                     safe = ("speaker_similarity" if "speaker similarity" in reason else
                             "asr_word_mismatch" if "does not exactly match" in reason else
                             "asr_alignment" if "word alignment" in reason else
                             "model_or_audio")
                     print(f"[VOICE RETRY] approved private reference "
                           f"attempt={attempt}/3 failure_kind={safe}", flush=True)
+            # All three full-length attempts failed. Rescue ONLY by speaking
+            # the SAME words as shorter clauses using the SAME private voice.
+            # Never guess transcripts, alter a narration word or switch speaker.
+            fragments = _safe_split_for_exact_audio(sentence) if allow_split else []
+            if fragments:
+                print(f"[VOICE RESCUE] exact-transcript clause split "
+                      f"fragments={len(fragments)}", flush=True)
+                pieces_audio, combined_words, similarities = [], [], []
+                offset = 0.0
+                sample_rate = None
+                for index, fragment in enumerate(fragments):
+                    part_file = Path(private) / f"rescue-fragment-{index}.wav"
+                    _part_length, score, words = verified_generation(
+                        fragment, part_file, allow_split=False)
+                    with wave.open(str(part_file), "rb") as wf:
+                        current_rate = wf.getframerate()
+                        if (wf.getnchannels() != 1 or wf.getsampwidth() != 2
+                                or (sample_rate is not None and sample_rate != current_rate)):
+                            raise RuntimeError("reference_voice_failed: incompatible verified clause PCM")
+                        sample_rate = current_rate
+                        samples = wf.readframes(wf.getnframes())
+                        part_duration = wf.getnframes() / current_rate
+                    pieces_audio.append(samples)
+                    combined_words.extend((word, begin + offset, finish + offset)
+                                          for word, begin, finish in words)
+                    offset += part_duration
+                    similarities.append(score)
+                    if index < len(fragments) - 1:
+                        padding = round(sample_rate * .08)
+                        pieces_audio.append(b"\\x00\\x00" * padding)
+                        offset += padding / sample_rate
+                    part_file.unlink(missing_ok=True)
+                if [token for word, _, _ in combined_words for token in _tokens(word)] != _tokens(sentence):
+                    raise RuntimeError("reference_voice_failed: rescued transcript does not match original")
+                with wave.open(str(output), "wb") as combined:
+                    combined.setnchannels(1)
+                    combined.setsampwidth(2)
+                    combined.setframerate(sample_rate)
+                    combined.writeframes(b"".join(pieces_audio))
+                length = _wav_duration(output)
+                score = min(similarities)
+                return length, score, combined_words
             raise RuntimeError(
                 "reference_voice_failed: all approved-reference narration "
                 "attempts failed exact audio/word verification")
