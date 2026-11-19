@@ -64,8 +64,8 @@ def editorial_phase_windows(seconds: float = STANDARD_SECONDS) -> list[dict]:
 
 
 def storyboard_writer_brief(scene_count: int) -> str:
-    if not 2 <= scene_count <= 6:
-        raise ValueError("Retentive Shorts require 2 to 6 real scenes")
+    if not 1 <= scene_count <= 6:
+        raise ValueError("Retentive Shorts require 1 to 6 real scenes")
     return (
         "MANDATORY FOUR-PHASE 30-SECOND SHORTS STORY STRUCTURE: "
         "0–2s HOOK — within the very first spoken words, show the most vivid "
@@ -81,6 +81,7 @@ def storyboard_writer_brief(scene_count: int) -> str:
         "22–30s PAYOFF — clearly answer the video's original question "
         "and finish with a relevant real visual, NOT a subscribe/comment CTA. "
         f"You have {scene_count} verified shots, not necessarily four shots. "
+        "In a rare 1-shot preview, carry all four phases in the one clip. "
         "In a 3-shot version, scene one contains hook+curiosity, scene two "
         "develops, scene three answers. In a 4-shot version, the first "
         "shot still carries the first 0–8s and the others progress and pay off. "
