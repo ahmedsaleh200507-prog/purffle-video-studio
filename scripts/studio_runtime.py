@@ -928,6 +928,8 @@ def install():
     import purffle_shorts.pipeline as pipeline
     import purffle_shorts.ffmpeg as ffmpeg
     import purffle_shorts.tts as tts
+    import purffle_shorts.overlays as overlays
+    from attention_hook import install_attention_hook, kinetic_hook_filter
 
     @dataclass
     class PlannedScene(script.Scene):
@@ -944,7 +946,9 @@ def install():
     original_ffmpeg_run = ffmpeg.run
 
     def ffmpeg_run(args, **kwargs):
-        return original_ffmpeg_run(bounded_ffmpeg_args(args), **kwargs)
+        # Add a gentle 0.4s spring entrance only to the intro hook;
+        # keep video, audio and word-level captions unchanged.
+        return original_ffmpeg_run(bounded_ffmpeg_args(kinetic_hook_filter(args)), **kwargs)
 
     def normalize(data, subject, style, language):
         from fact_checked_topics import ground_lightning_explainer
@@ -1064,6 +1068,7 @@ exact suitable footage cannot be verified; never weaken the scene to hide that f
     media.Visuals = pipeline.Visuals = StrictVisuals
     media.background_item = pipeline.background_item = background
     render.prepare_segment = strict_prepare_segment
+    install_attention_hook(overlays)
     pipeline.Studio._speak = speak
     tts._edge = strict_edge
     ffmpeg.run = ffmpeg_run
