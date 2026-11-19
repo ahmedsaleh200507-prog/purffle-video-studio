@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--text-file", type=Path, required=True)
     parser.add_argument("--wav", type=Path, required=True)
+    parser.add_argument("--seed", type=int, default=190526)
     args = parser.parse_args()
     if not args.reference.is_file() or not args.text_file.is_file():
         raise RuntimeError("reference_voice_not_ready: private reference/text files missing")
@@ -41,7 +42,7 @@ def main():
     from chatterbox.tts_turbo import ChatterboxTurboTTS
     print("[VOICE SAFE STAGE] dependencies-loaded", flush=True)
     torch.set_num_threads(2)
-    torch.manual_seed(190526)
+    torch.manual_seed(args.seed)
     model = ChatterboxTurboTTS.from_pretrained(device="cpu", nano=True)
     print("[VOICE SAFE STAGE] model-loaded", flush=True)
     with torch.inference_mode():
