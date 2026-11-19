@@ -87,7 +87,7 @@ jobs:
           python -m venv --system-site-packages .venv-reference
           .venv-reference/bin/python -m pip install --upgrade pip
           .venv-reference/bin/python -m pip install 'torchaudio==2.6.0+cpu' --index-url https://download.pytorch.org/whl/cpu
-          .venv-reference/bin/python -m pip install --no-cache-dir 'chatterbox-tts==0.1.7'
+          .venv-reference/bin/python -m pip install --no-cache-dir 'chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217'
       - name: Live test the approved private English reference voice
         if: startsWith(env.INPUT_1, 'en|')
         env:
