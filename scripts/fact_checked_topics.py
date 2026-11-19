@@ -141,6 +141,52 @@ def ground_lightning_explainer(data: dict, topic: str, language: str,
 # https://www.noaa.gov/jetstream/tropical/tropical-cyclone-introduction/tropical-cyclone-structure
 # https://www.aoml.noaa.gov/hrd/tcfaq/A11.html?print=yes
 _DOCUMENTARY_FACTS = {
+    "lightning_thunder_delay": {
+        "en": [
+            "Lightning flashes and thunder happen together during a storm.",
+            "But light moves through air much faster than sound.",
+            "That is why you see the bright flash before the rumble reaches your ears.",
+            "A longer pause usually means the lightning is farther away. Stay safe indoors during storms.",
+        ],
+        "de": [
+            "Blitz und Donner entstehen bei einem Gewitter praktisch gleichzeitig.",
+            "Licht bewegt sich viel schneller durch die Luft als Schall.",
+            "Deshalb siehst du den Blitz, bevor du den Donner hörst.",
+            "Je länger die Pause, desto weiter ist der Blitz meist entfernt. Bei Gewitter bleib im Haus.",
+        ],
+        "title": {
+            "en": "Why Do We See Lightning Before Hearing Thunder?",
+            "de": "Warum sehen wir Blitze vor dem Donner?",
+        },
+        "description": {
+            "en": "Thunder and lightning happen together. Light travels much faster than sound, so we see the flash before hearing the rumble.",
+            "de": "Licht ist viel schneller als Schall. Deshalb sieht man den Blitz, bevor man den Donner hört.",
+        },
+        "tags": ["lightning", "thunder", "sound", "storms", "science"],
+    },
+    "northern_lights_glow": {
+        "en": [
+            "Northern lights are colorful displays high in Earth's atmosphere.",
+            "Energetic electrons follow Earth's magnetic field toward polar regions.",
+            "They collide with oxygen and nitrogen, causing these gases to release light.",
+            "That glowing light forms colorful curtains across polar night skies.",
+        ],
+        "de": [
+            "Polarlichter leuchten hoch in der Atmosphäre der Erde.",
+            "Energiereiche Elektronen folgen dem Erdmagnetfeld zu den Polargebieten.",
+            "Sie stoßen mit Sauerstoff und Stickstoff zusammen. Dabei entsteht Licht.",
+            "Dieses Licht zeigt sich als farbige Schleier am Nachthimmel.",
+        ],
+        "title": {
+            "en": "Why Do the Northern Lights Glow?",
+            "de": "Warum leuchten die Nordlichter?",
+        },
+        "description": {
+            "en": "Auroras are created when energetic electrons excite gases in Earth's upper atmosphere, releasing colorful light.",
+            "de": "Energiereiche Elektronen regen Gase in der oberen Atmosphäre an. Dabei entsteht das farbige Polarlicht.",
+        },
+        "tags": ["northern lights", "aurora borealis", "oxygen", "nitrogen", "space weather"],
+    },
     "mirror_condensation": {
         "en": [
             "Hot shower water evaporates and makes bathroom air humid.",
@@ -211,6 +257,13 @@ def verified_documentary_kind(topic: str) -> str | None:
     tokens = set(text.split())
     # Recognize only the ordinary bathroom-mirror explanation, not unrelated
     # uses of a mirror or unrelated fog/weather topics.
+    if ("lightning" in tokens and "thunder" in tokens
+            and ({"before", "hearing", "hear", "see", "first"} & tokens)):
+        return "lightning_thunder_delay"
+    if (("northern" in tokens and ("lights" in tokens or "light" in tokens)
+         and ({"glow", "shine", "colors", "colour", "why"} & tokens))
+        or ("aurora" in tokens and ({"glow", "shine", "colors", "colour"} & tokens))):
+        return "northern_lights_glow"
     if (("badezimmerspiegel" in raw or
          ("spiegel" in raw and ("bad" in tokens or "dusche" in raw)))
         and ("beschl" in raw or "dampf" in raw or "kondens" in raw)):
@@ -242,7 +295,29 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
     info = _DOCUMENTARY_FACTS[kind]
     language = "de" if str(language).startswith("de") else "en"
     narration = list(info[language])
-    if scene_count == 3 and kind == "mirror_condensation":
+    if scene_count == 3 and kind == "lightning_thunder_delay":
+        narration = (
+            [
+                "Lightning and thunder happen together in a storm.",
+                "Light travels much faster than sound, so the flash reaches your eyes first.",
+                "The thunder arrives later. A longer delay usually means the lightning is farther away.",
+            ] if language == "en" else [
+                "Blitz und Donner entstehen bei einem Gewitter praktisch gleichzeitig.",
+                "Licht ist schneller als Schall. Deshalb sehen wir den Blitz zuerst.",
+                "Den Donner hören wir später. Eine längere Pause bedeutet meist einen weiter entfernten Blitz.",
+            ])
+    elif scene_count == 3 and kind == "northern_lights_glow":
+        narration = (
+            [
+                "Northern lights glow high in Earth's atmosphere, often near the polar regions.",
+                "Energetic electrons follow Earth's magnetic field and collide with oxygen and nitrogen.",
+                "Those gases release colorful light, creating the dancing aurora in the night sky.",
+            ] if language == "en" else [
+                "Nordlichter leuchten hoch in der Atmosphäre, oft nahe den Polargebieten.",
+                "Elektronen folgen dem Erdmagnetfeld und stoßen mit Sauerstoff und Stickstoff zusammen.",
+                "Dabei entsteht farbiges Licht, das als Polarlicht über den Nachthimmel zieht.",
+            ])
+    elif scene_count == 3 and kind == "mirror_condensation":
         if language == "de":
             narration = [
                 "Beim Duschen verdunstet warmes Wasser. Die Luft im Bad wird feucht.",
@@ -277,11 +352,15 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
     scenes = [{
         "narration": sentence, "speaker": "A", "search_query": "",
         "image_prompt": "", "main_character": "", "object": ("volcano" if kind == "volcanic_island" else
-                    "hurricane" if kind == "hurricane_eye" else "mirror"),
+                    "hurricane" if kind == "hurricane_eye" else
+                    "mirror" if kind == "mirror_condensation" else
+                    "lightning" if kind == "lightning_thunder_delay" else "aurora"),
         "action": "ambient", "location": "", "time": "",
         "visual_search_query": ("volcano erupting" if kind == "volcanic_island" else
                                    "hurricane satellite clouds" if kind == "hurricane_eye" else
-                                   "foggy bathroom mirror"),
+                                   "foggy bathroom mirror" if kind == "mirror_condensation" else
+                                   "lightning storm" if kind == "lightning_thunder_delay" else
+                                   "aurora borealis"),
         "emphasis": [], "emoji": "",
     } for sentence in narration]
     return {
