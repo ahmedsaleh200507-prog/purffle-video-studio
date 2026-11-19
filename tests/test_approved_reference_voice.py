@@ -101,5 +101,5 @@ def test_all_workflows_keep_reference_secret_private():
         assert "secrets.PURFFLE_REFERENCE_OPUS_B64" in content
         assert "scripts/reference_voice_smoke.py" in content
         assert "PURFFLE_NARRATOR_LOCK: '1'" in content
-        assert "chatterbox-tts==0.1.7" in content
+        assert "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217" in content
     assert not list(root.rglob("*approved-reference*.wav"))
