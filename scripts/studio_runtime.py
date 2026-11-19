@@ -759,7 +759,8 @@ def with_voice_deadline(synthesize, timeout_seconds=180, stage="Edge TTS"):
     """
     if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "setitimer"):
         raise RuntimeError(f"{stage} deadline requires a Linux/POSIX main-thread worker")
-    timeout_seconds = max(1, min(180, float(timeout_seconds)))
+    timeout_seconds = max(1, min(600 if stage == "Approved private reference narrator" else 180,
+                                 float(timeout_seconds)))
     previous_handler = signal.getsignal(signal.SIGALRM)
     previous_timer = signal.getitimer(signal.ITIMER_REAL)
     started = time.monotonic()
