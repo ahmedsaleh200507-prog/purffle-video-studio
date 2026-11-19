@@ -1062,7 +1062,7 @@ scrolling social media, or watching a video unless the user explicitly asks
 for that exact subject. Avoid generic engagement-bait endings such as
 "comment below", "like and subscribe", or "what do you think?".
 For a blue-sky explanation, end with directly filmable sky, clouds, sunset,
-or sunlight footage, never people commenting on the explanation. Target a roughly 20–35-second Short using its 3–4 VERIFIED footage scenes, not filler or loops. Follow four phases in this approximate 30-second timeline: 0–2 hook; 2–8 curiosity; 8–22 development with fresh facts; 22–30 truthful payoff. The system will fail a scene when
+or sunlight footage, never people commenting on the explanation. Length is FLEXIBLE based on the topic, available verified footage and real facts: do not force 30 seconds, pad narration or loop clips. FIRST 1–2 SECONDS: immediate compelling real moving subject with a short truthful spoken hook (NO giant title overlay). Then move through curiosity, development with fresh facts, and a complete truthful payoff. Keep the opening short regardless of the video length. The system will fail a scene when
 exact suitable footage cannot be verified; never weaken the scene to hide that failure.
 """
         from media_first import active_palette, footage_prompt
