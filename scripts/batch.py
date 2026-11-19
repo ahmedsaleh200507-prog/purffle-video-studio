@@ -78,6 +78,8 @@ def classify_failure(message: str, log_text: str = "", details=None) -> str:
         ("science_sources_unavailable", "science_reference_unavailable"),
         ("science_claim_unverified", "science_claim_unsupported"),
         ("reference_voice_not_ready", "approved_english_voice_unavailable"),
+        ("reference_voice_failed", "approved_english_voice_validation"),
+        ("offtopic_lava_ocean", "offtopic_footage"),
     ):
         if prefix in direct:
             return category
