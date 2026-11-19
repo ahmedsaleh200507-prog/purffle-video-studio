@@ -91,9 +91,9 @@ def _safe_split_for_exact_audio(text: str) -> list[str]:
     ASR and the approved speaker gate MUST still validate each fragment.
     """
     whole = " ".join(str(text).split())
-    pieces = re.split(r"(?<=[.!?])\\s+", whole)
+    pieces = re.split(r"(?<=[.!?])\s+", whole)
     if len(pieces) < 2:
-        pieces = re.split(r"(?<=,)\\s+", whole)
+        pieces = re.split(r"(?<=,)\s+", whole)
     if len(pieces) < 2 and len(_tokens(whole)) >= 10:
         raw = whole.split()
         midpoint = len(raw) // 2
@@ -272,7 +272,7 @@ def synthesize(text, out, settings, *, segments=None):
                     similarities.append(score)
                     if index < len(fragments) - 1:
                         padding = round(sample_rate * .08)
-                        pieces_audio.append(b"\\x00\\x00" * padding)
+                        pieces_audio.append(b"\x00\x00" * padding)
                         offset += padding / sample_rate
                     part_file.unlink(missing_ok=True)
                 if [token for word, _, _ in combined_words for token in _tokens(word)] != _tokens(sentence):
