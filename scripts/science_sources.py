@@ -25,6 +25,14 @@ _STOP = set("what why where when how which who does do is are can a an the to of
             "warum wie was wann wo wer wieso weshalb ist sind die der das den dem "
             "ein eine einer und von zu im mit bei auf als er sie es".split())
 _OFFICIAL = {
+    "lightning_thunder_delay": (
+        "https://www.nesdis.noaa.gov/about/k-12-education/severe-weather/what-causes-lightning-and-thunder",
+        "https://www.nssl.noaa.gov/education/svrwx101/lightning/",
+    ),
+    "northern_lights_glow": (
+        "https://www.spaceweather.gov/phenomena/aurora",
+        "https://science.nasa.gov/sun/auroras/",
+    ),
     "mirror_condensation": (
         "https://www.nesdis.noaa.gov/about/k-12-education/atmosphere/what-humidity",
         "https://scied.ucar.edu/learning-zone/how-weather-works/humidity",
