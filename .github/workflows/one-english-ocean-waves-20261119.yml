@@ -1,4 +1,5 @@
 # One-off English Shorts production explicitly requested by user on 2026-11-19.
+# Second attempt: pin working PyAV 18.1.0 for faster-whisper metadata_errors.
 # Real 720p vertical video, approved PRIVATE English male voice only,
 # synchronized hook and captions, no PurffleStudios watermark.
 # This workflow is intentionally triggered ONLY by adding/modifying this exact
