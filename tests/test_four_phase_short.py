@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from retention_storyboard import (
-    PHASES, audit_storyboard, editorial_phase_windows,
+    PHASES, audit_storyboard, editorial_phase_windows, choose_duration_seconds,
     save_storyboard_report, storyboard_writer_brief,
 )
 
@@ -41,7 +41,7 @@ def test_four_phase_times_are_the_exact_requested_framework():
     assert windows[0]["start_seconds"] == 0
     assert windows[-1]["end_seconds"] == 30
     shortened = editorial_phase_windows(22.5)
-    assert shortened[1]["start_seconds"] == 1.5
+    assert shortened[1]["start_seconds"] == 2.0
     assert shortened[-1]["end_seconds"] == 22.5
     assert shortened[2]["end_seconds"] == 16.5
 
@@ -50,10 +50,10 @@ def test_brief_guides_all_verifiable_three_and_four_scene_shorts():
     for scenes in (3,4):
         words = storyboard_writer_brief(scenes)
         assert "0–2s HOOK" in words
-        assert "2–8s CURIOSITY" in words
-        assert "8–22s DEVELOPMENT" in words
-        assert "22–30s PAYOFF" in words
-        assert "NO huge title overlay" in words
+        assert "CURIOSITY —" in words
+        assert "DEVELOPMENT —" in words
+        assert "PAYOFF —" in words
+        assert "No title card" in words
         assert "UNIQUE source-grounded explanation" in words
         assert f"{scenes} verified shots" in words
     assert "1 verified shots" in storyboard_writer_brief(1)
@@ -70,7 +70,7 @@ def test_science_explanations_pass_with_no_filler(story, topic):
     assert result["state"] == "editorial_screen_passed"
     assert result["scene_count"] == 3
     assert result["last_scene_word_count"] >= 7
-    assert result["template_target_seconds"] == 30
+    assert result["duration_policy"] == "topic_and_verified_footage_adaptive_not_fixed"
     assert "not an audience-retention guarantee" in result["scope"]
 
 
@@ -143,7 +143,9 @@ def test_pipeline_enforces_editorial_audit_before_narrator_and_saves_zip_report(
     renderer = (root / "scripts" / "render_job.py").read_text()
     batch = (root / "scripts" / "batch.py").read_text()
     palette = (root / "scripts" / "media_first.py").read_text()
-    assert "target_seconds=30" in renderer
+    assert "target_seconds=24" in renderer
+    assert "choose_duration_seconds(" in renderer
+    assert "studio.s = s" in renderer
     assert renderer.index("audit_storyboard(") < renderer.index("studio.produce(")
     assert renderer.index("screen_narration(") < renderer.index("studio.produce(")
     assert "RETENTION_REPORT=" in batch
@@ -151,3 +153,35 @@ def test_pipeline_enforces_editorial_audit_before_narrator_and_saves_zip_report(
     assert "storyboard_writer_brief(" in palette
     assert "hook_overlay=False" in renderer
     assert "PURFFLE_STRICT" in batch
+
+
+
+def test_adaptive_duration_changes_for_topic_and_evidence_not_fixed_30():
+    short = choose_duration_seconds("Why does ice float?", 3, fact_count=1)
+    rich = choose_duration_seconds(
+        "How does a giant underwater volcanic eruption build a new island?",
+        4, fact_count=5)
+    assert 16 <= short < 30
+    assert 30 < rich <= 55
+    assert rich > short
+    assert choose_duration_seconds("Why does ice float?", 3, fact_count=4) > short
+    assert len({choose_duration_seconds("Short", 3),
+                choose_duration_seconds("Much more complex scientific explanation", 4)}) == 2
+
+
+@pytest.mark.parametrize("duration", [17.0, 22.5, 30.0, 45.0, 54.0])
+def test_hook_ends_by_two_seconds_for_every_length(duration):
+    phases = editorial_phase_windows(duration)
+    assert phases[0]["end_seconds"] <= 2.0
+    assert phases[0]["end_seconds"] >= 1.0
+    assert phases[1]["start_seconds"] == phases[0]["end_seconds"]
+    assert phases[-1]["end_seconds"] == duration
+    assert all(row["end_seconds"] > row["start_seconds"] for row in phases)
+
+
+def test_writer_explicitly_forbids_filler_and_static_title_even_at_45_seconds():
+    prompt = storyboard_writer_brief(4, planned_seconds=45)
+    assert "approx 45 seconds" in prompt
+    assert "NO mandatory" in prompt
+    assert "FIRST 1–2 SECONDS ARE MOST IMPORTANT" in prompt
+    assert "Do not loop footage or stretch narration" in prompt
