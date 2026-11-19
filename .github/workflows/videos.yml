@@ -162,7 +162,10 @@ jobs:
       - name: Install approved reference-only English model and audio validation
         if: steps.selected.outputs.render == 'true' && startsWith(inputs[matrix.input], 'en|')
         run: |
-          python -m pip install --no-cache-dir 'faster-whisper==1.2.1' 'resemblyzer==0.1.4'
+          python -m pip install --no-cache-dir 'faster-whisper==1.2.1' 'resemblyzer==0.1.4' 'av==18.1.0'
+          # PyAV 19.x removed 'metadata_errors'; faster-whisper 1.2.1 requires it.
+          # Voice smoke #6 succeeded with av==18.1.0. Reject accidental upgrades.
+          python -c "import av; assert av.__version__ == '18.1.0', 'Incompatible PyAV version'; print('[VOICE DEPENDENCY] PyAV 18.1.0 pinned for real word timing')"
           python -m venv --system-site-packages .venv-reference
           .venv-reference/bin/python -m pip install --upgrade pip
           .venv-reference/bin/python -m pip install 'torchaudio==2.6.0+cpu' --index-url https://download.pytorch.org/whl/cpu
