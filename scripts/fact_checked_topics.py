@@ -147,7 +147,7 @@ _DOCUMENTARY_FACTS = {
         # University of Hawai'i, Transportation and Ship Design:
         # https://manoa.hawaii.edu/exploringourfluidearth/physical/navigation-and-transportation/transportation-and-ship-design
         "en": [
-            "Solid steel sinks. But this giant steel ship stays afloat.",
+            "A solid block of steel sinks in water. But this enormous cargo ship still floats.",
             "Its wide hollow hull holds air and displaces a large volume of water.",
             "That displaced water pushes upward with a buoyant force equal to the water's weight.",
             "The ship floats when buoyancy balances its weight. Extra cargo makes it sit deeper.",
@@ -461,7 +461,7 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
     if scene_count == 3 and kind == "steel_ship_buoyancy":
         narration = (
             [
-                "Solid steel sinks. But this giant steel ship floats.",
+                "A solid block of steel sinks in water. But this enormous cargo ship still floats.",
                 "Its broad hollow hull contains air and pushes a large volume of water aside.",
                 "That displaced water pushes upward. When buoyancy balances the ship's weight, it floats, even with cargo.",
             ] if language == "en" else [
