@@ -28,20 +28,38 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
     voice = str(metadata.get('voice', ''))
     # A rendered MP4 with old Piper Joe must not pass a STRICT English
     # workflow, even if the caller bypasses the early voice preflight.
-    from english_reference_policy import enforce_english_reference_only
-    enforce_english_reference_only(
-        metadata.get('language') or os.environ.get('LANGUAGE', 'en'))
-    if not voice.startswith(('edge:', 'piper:')) or metadata.get('timing') not in ('native', 'aligned'):
+    from english_reference_policy import (
+        enforce_english_reference_only, REFERENCE_VOICE_ID,
+        ENGLISH_REFERENCE_SHA256, ENGLISH_REFERENCE_OPUS_SHA256)
+    language = str(metadata.get('language') or os.environ.get('LANGUAGE', 'en'))
+    if language == 'en':
+        # No output can ever pass with Piper Joe/Edge/LJSpeech or a fake voice.
+        if voice != 'reference:' + REFERENCE_VOICE_ID:
+            raise RuntimeError('Narrator identity mismatch: approved English reference was not used')
+        enforce_english_reference_only(language)
+        if voice_report is None or not voice_report.is_file():
+            raise RuntimeError('Approved reference voice verification report missing')
+        reference_proof = json.loads(voice_report.read_text(encoding='utf-8'))
+        provenance = reference_proof.get('provenance', {})
+        if (reference_proof.get('state') != 'ready'
+                or reference_proof.get('engine') != 'reference'
+                or reference_proof.get('voice') != REFERENCE_VOICE_ID
+                or reference_proof.get('timing') != 'aligned'
+                or provenance.get('reference_original_sha256') != ENGLISH_REFERENCE_SHA256
+                or provenance.get('reference_opus_sha256') != ENGLISH_REFERENCE_OPUS_SHA256
+                or provenance.get('voice') != REFERENCE_VOICE_ID
+                or provenance.get('reference_private') is not True
+                or provenance.get('alignment') !=
+                    'faster-whisper-base.en actual generated WAV word timestamps'
+                or float(provenance.get('speaker_similarity_cosine', 0)) < .70):
+            raise RuntimeError('Approved English reference speaker or real caption alignment not verified')
+    elif language == 'de':
+        if os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1' and voice != 'piper:de_DE-thorsten-medium':
+            raise RuntimeError('Narrator identity mismatch: locked German Thorsten was not used')
+    else:
+        raise RuntimeError('Unsupported narrator language')
+    if not voice.startswith(('reference:', 'edge:', 'piper:')) or metadata.get('timing') not in ('native', 'aligned'):
         raise RuntimeError('Narration does not have verified native/aligned timing')
-    narrator_locked = os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1'
-    if narrator_locked:
-        language = str(metadata.get('language') or os.getenv('LANGUAGE', 'en'))
-        locked = ('piper:en_US-joe-medium' if language == 'en'
-                  else 'piper:de_DE-thorsten-medium' if language == 'de'
-                  else None)
-        if locked is None or voice != locked:
-            raise RuntimeError(
-                'Narrator identity mismatch: locked male voice was not used')
     if voice.startswith('piper:'):
         if voice_report is None or not voice_report.is_file():
             raise RuntimeError('Local voice alignment/license report missing')
