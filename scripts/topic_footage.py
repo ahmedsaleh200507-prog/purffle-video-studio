@@ -151,6 +151,25 @@ def related_to_topic(topic, obj, query, existing_subjects=()):
     return bool(object_words & approved and query_words & wanted)
 
 
+def is_lava_ocean_topic(topic: str) -> bool:
+    """Only the literal lava-meeting-seawater topic, not every ocean explainer."""
+    t = words(topic)
+    return bool(t & {"lava", "magma", "lavastrom"} and
+                t & {"ocean", "sea", "seawater", "meer", "meerwasser"})
+
+
+def lava_subject_in_metadata(metadata: str) -> bool:
+    """Reject unrelated generic ocean footage for explicit lava-ocean videos.
+
+    This is a necessary metadata gate, not proof of the visible action.
+    Licensed motion, native crop and CLIP verification still run afterward.
+    """
+    text = str(metadata or "").casefold()
+    if any(term in text for term in ("lava lamp", "lava lamps", "molten chocolate")):
+        return False
+    return bool(words(text) & {"lava", "volcano", "volcanoes", "volcanic", "eruption", "magma"})
+
+
 def deterministic_stock_shots(topic: str):
     """Grounded seed shots prevent a nonsense/empty LLM reply from ending work
     *before searching the providers*. Never assert footage was found here.
@@ -159,7 +178,19 @@ def deterministic_stock_shots(topic: str):
     with unrelated sky shots or black sand with arbitrary beaches.
     """
     t = words(topic)
-    if "northern" in t and ("light" in t or "aurora" in t):
+    if is_lava_ocean_topic(topic):
+        # #77 incorrectly picked four generic ocean clips; the visual hook
+        # must show lava/volcanic activity or fail before spending on voice.
+        choices = [
+            ("lava", "lava flowing into ocean"),
+            ("lava", "lava ocean entry"),
+            ("lava", "volcanic lava coastline"),
+            ("volcano", "lava sea steam eruption"),
+            ("lava", "lava flow near water"),
+            ("volcano", "volcano lava eruption"),
+            ("lava", "molten lava flow"),
+        ]
+    elif "northern" in t and ("light" in t or "aurora" in t):
         choices = [
             ("aurora", "aurora borealis"),
             ("aurora", "northern lights timelapse"),
