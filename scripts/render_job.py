@@ -130,7 +130,7 @@ def main():
                     caption_emoji=False, color_grade='none', ken_burns=False,
                     end_cta='', watermark='none', hook_overlay=False,  # Keep title area blank in every Short; preserve word captions.
                     upload=False, also_languages=[], localize_metadata=[], notify_webhook='',
-                    workers=1, crf=18, preset='medium', target_seconds=30)
+                    workers=1, crf=18, preset='medium', target_seconds=24)  # Bootstrap only; topic-adaptive duration set after footage/evidence
         stage = 'production'
         studio = Studio(s)
         if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1':
@@ -149,6 +149,17 @@ def main():
                 write_source_failure(str(source_error),
                                      os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                 raise
+            from retention_storyboard import choose_duration_seconds
+            fact_count = len(getattr(evidence, 'sources', []) or [])
+            planned_seconds = choose_duration_seconds(
+                os.environ['VIDEO_TOPIC'], len(palette.items),
+                fact_count=fact_count)
+            palette.planned_seconds = planned_seconds
+            s = replace(s, target_seconds=planned_seconds)
+            studio.s = s
+            studio.clock.scale = max(.25, planned_seconds / 40)
+            logging.info('Adaptive Shorts target: %d seconds from %d verified scenes and %d evidence sources',
+                         planned_seconds, len(palette.items), fact_count)
             stage = 'grounded_script'
             for attempt in range(2):
                 with use_palette(palette), use_evidence(evidence):
@@ -162,7 +173,8 @@ def main():
                     stage = 'retention_review'
                     from retention_storyboard import audit_storyboard
                     storyboard_audit = audit_storyboard(
-                        os.environ['VIDEO_TOPIC'], screenplay, s.language)
+                        os.environ['VIDEO_TOPIC'], screenplay, s.language,
+                        planned_seconds=planned_seconds)
                     stage = 'science_review'
                     screen_narration(
                         screenplay, evidence, studio.llm,
