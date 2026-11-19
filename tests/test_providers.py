@@ -71,12 +71,14 @@ def test_missing_keys_do_not_call_api(source):
     assert reg.events[-1]["status"] == "skipped"
 
 
-def test_coverr_is_blocked_even_with_key(monkeypatch):
-    monkeypatch.setenv("COVERR_API_KEY", "not-a-real-key")
-    reg = registry()
+def test_coverr_is_enabled_if_key_present_but_never_assumed_to_have_stock(monkeypatch):
+    monkeypatch.setenv("COVERR_API_KEY", "test-secret-do-not-store")
+    reg = registry({"hits": []})
     assert reg.search("coverr-video", "street") == []
-    assert "policy_blocked" in reg.events[-1]["detail"]
-    reg.client.get.assert_not_called()
+    reg.client.get.assert_called_once()
+    assert reg.client.get.call_args.kwargs["headers"] == {"x-api-key": "test-secret-do-not-store"}
+    assert reg.client.get.call_args.kwargs["params"]["filter"] == "is_ai_generated:false"
+    assert reg.events[-1]["status"] == "empty"
 
 
 @pytest.mark.parametrize("source", ["wikimedia-video", "nasa-video", "archive-video"])

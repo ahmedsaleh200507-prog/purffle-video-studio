@@ -26,12 +26,13 @@ jobs:
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
       COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
+      PURFFLE_COVERR_MAX_CALLS: '5'
       EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
       LLM_PROVIDER: groq
       LLM_MODEL: openai/gpt-oss-20b
       SCRIPT_REVIEW: 'off'
       SEO_KEYWORDS: 'false'
-      VISUAL_SOURCES: freenaturestock-video,pixabay,pexels,coverr-video,europeana-video,wikimedia-video,nasa-video,archive-video
+      VISUAL_SOURCES: freenaturestock-video,coverr-video,pixabay,pexels,europeana-video,wikimedia-video,nasa-video,archive-video
       PURFFLE_NARRATOR_LOCK: '1'
       PURFFLE_MEDIA_FIRST: '1'
       TTS_ENGINE: edge

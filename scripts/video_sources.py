@@ -55,6 +55,7 @@ class LicenseValidator:
     STOCK = {
         "PIXABAY": "https://pixabay.com/service/license-summary/",
         "PEXELS": "https://www.pexels.com/license/",
+        "COVERR": "https://coverr.co/license",
         "NASA-MEDIA": NASA_POLICY,
     }
 
@@ -111,11 +112,13 @@ class JsonClient:
 
     def get(self, url, params=None, headers=None):
         headers = {**HEADERS, **(headers or {})}
+        # Coverr returns signed JWT video links; never persist these in caches.
+        sensitive_ephemeral = urlparse(url).hostname == "api.coverr.co"
         identity = json.dumps([url, params or {}, headers], sort_keys=True)
         cache = self.cache_dir / (hashlib.sha256(identity.encode()).hexdigest() + ".json")
         with self._lock:
             try:
-                if cache.exists() and time.time() - cache.stat().st_mtime < self.ttl:
+                if not sensitive_ephemeral and cache.exists() and time.time() - cache.stat().st_mtime < self.ttl:
                     return json.loads(cache.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 pass
@@ -167,11 +170,30 @@ class JsonClient:
             except (requests.RequestException, ValueError, OSError):
                 # Never return request URLs or response bodies: they may contain keys.
                 raise ProviderError("network_or_json_error", "API request or JSON parsing failed") from None
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            temp = cache.with_suffix(".tmp")
-            temp.write_text(json.dumps(data), encoding="utf-8")
-            temp.replace(cache)
+            if not sensitive_ephemeral:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                temp = cache.with_suffix(".tmp")
+                temp.write_text(json.dumps(data), encoding="utf-8")
+                temp.replace(cache)
             return data
+
+    def patch(self, url, *, headers=None):
+        """Report a Coverr clip download via official API, no exposed tokens."""
+        if urlparse(url).hostname != "api.coverr.co" or not secure_url(url):
+            raise ProviderError("unsafe_endpoint", "Expected official Coverr HTTPS API")
+        try:
+            response = self.session.patch(
+                url, headers={**HEADERS, **(headers or {})},
+                timeout=(8, 15), allow_redirects=False)
+            with response:
+                if response.status_code != 204:
+                    raise ProviderError(f"http_{response.status_code}",
+                                        "Coverr download tracking rejected")
+        except ProviderError:
+            raise
+        except requests.RequestException:
+            raise ProviderError("network_error", "Coverr download tracking unavailable") from None
+        return True
 
     @staticmethod
     def _save_cooldown(path, headers):
@@ -217,8 +239,9 @@ PROVIDERS = [
     VideoProvider("archive-video"), VideoProvider("europeana-video", "EUROPEANA_API_KEY"),
     # No external API or website parsing. Offline allowlist of official CC0 MP4 URLs.
     VideoProvider("freenaturestock-video"),
-    VideoProvider("coverr-video", "COVERR_API_KEY",
-                  "policy_blocked: free production API permission not verified"),
+    # Coverr Nov 4 2026: free commercial API use requires attribution and
+    # tracking. We reject premium, sponsored, AI-generated stock media.
+    VideoProvider("coverr-video", "COVERR_API_KEY"),
 ]
 
 
@@ -232,6 +255,7 @@ class ProviderRegistry:
         self.enabled = [p.name for p in PROVIDERS if not p.unavailable_reason()]
         self.events = []
         self._circuit = set()
+        self._coverr_requests = 0
         self._event_lock = threading.Lock()
 
     def health(self):
@@ -292,7 +316,7 @@ class ProviderRegistry:
     @staticmethod
     def license(lid, url, creator, page):
         return {"id": lid, "url": url, "creator": clean(creator), "source_page": page,
-                "attribution_required": lid.startswith("CC-BY-"),
+                "attribution_required": lid.startswith("CC-BY-") or lid == "COVERR",
                 "attribution": " | ".join([clean(creator), lid, url, page,
                     "Trimmed and cropped to vertical; original audio removed"]),
                 "changes": "Trimmed and cropped to vertical; original audio removed"}
@@ -308,6 +332,120 @@ class ProviderRegistry:
             w, h = int(f.get("width") or 0), int(f.get("height") or 0)
             return (min(w, h) >= 1080, min(w, h), w * h)
         return max(files, key=score)
+
+    def _coverr_budget(self):
+        # Shared Free plan: 50 requests/hour. Limit calls per job to avoid
+        # consuming the entire quota in a ten-video GitHub Actions run.
+        try:
+            cap = int(os.environ.get("PURFFLE_COVERR_MAX_CALLS", "5"))
+        except ValueError:
+            cap = 5
+        cap = max(0, min(10, cap))
+        if self._coverr_requests >= cap:
+            raise ProviderError("quota_budget", "Coverr free API per-job budget reached")
+        self._coverr_requests += 1
+
+    @staticmethod
+    def _coverr_download_url(value):
+        if not secure_url(value):
+            return False
+        try:
+            u = urlparse(value)
+            return (u.hostname in ("storage.coverr.co", "cdn.coverr.co")
+                    and u.port in (None, 443) and not u.fragment
+                    and u.path.startswith("/videos/")
+                    and not re.search(r"preview|thumbnail|watermark", u.path, re.I))
+        except (TypeError, ValueError):
+            return False
+
+    def _coverr(self, query):
+        """Free API: original filmed clips only; reject unknown origin."""
+        self._coverr_budget()
+        data = self.client.get("https://api.coverr.co/videos",
+            params={"query": query[:90], "page": 0, "page_size": 12,
+                    "urls": "true", "filter": "is_ai_generated:false"},
+            headers={"x-api-key": os.environ["COVERR_API_KEY"]})
+        hits = data.get("hits", [])
+        if not isinstance(hits, list):
+            raise ProviderError("invalid_schema", "Coverr hits list missing")
+        result = []
+        for rank, clip in enumerate(hits[:12]):
+            if not isinstance(clip, dict) or clip.get("is_ai_generated") is not False:
+                continue
+            if any(clip.get(k) for k in (
+                    "is_sponsored", "sponsored", "sponsored_by", "partner",
+                    "is_premium", "premium", "watermarked", "is_watermarked")):
+                continue
+            if str(clip.get("access_tier", "free")).lower() not in ("free", "demo", "stock", ""):
+                continue
+            if str(clip.get("source", "coverr")).lower() not in ("coverr", ""):
+                continue
+            urls = clip.get("urls") or {}
+            if not isinstance(urls, dict):
+                continue
+            video = urls.get("mp4") or ""
+            if not self._coverr_download_url(video):
+                continue
+            identifier = str(clip.get("id") or "")
+            if not re.fullmatch(r"[A-Za-z0-9_-]{3,64}", identifier):
+                continue
+            title = clean(clip.get("title"))
+            if not title:
+                continue
+            slug = str(clip.get("slug") or "")
+            page = str(clip.get("url") or "")
+            if not (secure_url(page) and urlparse(page).hostname in
+                    ("coverr.co", "www.coverr.co")):
+                page = ("https://coverr.co/videos/" + slug
+                        if re.fullmatch(r"[a-z0-9-]{4,140}", slug)
+                        else "https://coverr.co/")
+            person = clip.get("creator") or clip.get("contributor") or {}
+            if isinstance(person, dict):
+                creator = clean(person.get("name") or person.get("username"))
+                profile = str(person.get("url") or person.get("profile_url") or "")
+            else:
+                creator, profile = clean(person), ""
+            creator = creator or "Coverr contributor"
+            if not (secure_url(profile) and urlparse(profile).hostname in
+                    ("coverr.co", "www.coverr.co")):
+                profile = "https://coverr.co/"
+            lic = self.license("COVERR", LicenseValidator.STOCK["COVERR"],
+                               creator, page)
+            lic["attribution_required"] = True
+            lic["attribution"] = (
+                f"Video by {creator} on Coverr ({profile}) | "
+                f"https://coverr.co/ | Source: {page} | Cropped/trimmed")
+            details = clean([title, clip.get("description"), clip.get("tags")])
+            try:
+                width = int(clip.get("max_width") or clip.get("width") or 0)
+                height = int(clip.get("max_height") or clip.get("height") or 0)
+                duration = float(clip.get("duration") or 0)
+            except (TypeError, ValueError):
+                continue
+            if width and height and min(width, height) < 720:
+                continue
+            item = self._item("coverr-video", identifier, video, query, rank,
+                              details, lic, width, height, duration)
+            if item is not None:
+                item.extra["coverr_original_stock"] = True
+                item.extra["coverr_download_tracking_required"] = True
+                item.extra["signed_download_url_private"] = True
+                result.append(item)
+        return sorted(result, key=lambda x:
+                      (x.height > x.width, min(x.width, x.height)), reverse=True)
+
+    def track_download(self, item):
+        """Mandatory Nov 2026 Coverr download reporting before acceptance."""
+        if item.source != "coverr-video":
+            return
+        if (not item.extra.get("coverr_original_stock") or
+                not item.extra.get("coverr_download_tracking_required") or
+                not re.fullmatch(r"[A-Za-z0-9_-]{3,64}", item.id)):
+            raise ProviderError("license_blocked", "Coverr free stock provenance missing")
+        self._coverr_budget()
+        self.client.patch(
+            "https://api.coverr.co/videos/" + item.id + "/stats/downloads",
+            headers={"x-api-key": os.environ["COVERR_API_KEY"]})
 
     def _freenaturestock(self, query):
         """Search a finite manually verified CC0 video manifest, not the website.

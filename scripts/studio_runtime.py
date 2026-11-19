@@ -476,6 +476,10 @@ class StrictVisuals:
                 path, digest = None, None
                 try:
                     path = self.downloader.download(item.url)
+                    if source == "coverr-video":
+                        # Count a real asset download using Coverr's official
+                        # PATCH endpoint, as required on the free API tier.
+                        self.registry.track_download(item)
                     digest = self.downloader.digest(path)
                     if digest in self.used_hashes:
                         raise ValueError("duplicate content hash")
@@ -509,6 +513,12 @@ class StrictVisuals:
                         raise ValueError("Missing license provenance/attribution")
                     self.credits.add(attribution)
                     self._remember(item, url_key, digest)
+                    # Coverr's MP4 link contains a signed access token tied
+                    # to the private API key. The renderer already uses the
+                    # validated local path: discard the token before emitting
+                    # reports, metadata, logs or artifact ZIPs.
+                    if source == "coverr-video":
+                        item.url = license_info["source_page"]
                     scene.update({"status": "selected", "source": source, "id": item.id,
                                   "source_url": item.url, "downloaded_file": str(path),
                                   "sha256": digest, "quality": quality, "match": match,
