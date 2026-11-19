@@ -95,12 +95,10 @@ def _safe_split_for_exact_audio(text: str) -> list[str]:
     pieces = re.split(r"(?<=[.!?])\s+", whole)
     if len(pieces) < 2:
         pieces = re.split(r"(?<=,)\s+", whole)
-    if len(pieces) < 2 and len(_tokens(whole)) >= 10:
-        raw = whole.split()
-        midpoint = len(raw) // 2
-        pieces = [" ".join(raw[:midpoint]), " ".join(raw[midpoint:])]
+    # Never cut a sentence mid-way or synthesize 2-3 word fragments.
+    # Chatterbox favors complete utterances of six or more words.
     if (not 2 <= len(pieces) <= 4 or
-            any(not 2 <= len(_tokens(p)) <= 18 for p in pieces) or
+            any(not 6 <= len(_tokens(p)) <= 35 for p in pieces) or
             _tokens(" ".join(pieces)) != _tokens(whole)):
         return []
     return pieces
