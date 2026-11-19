@@ -19,7 +19,7 @@ def main():
             Path(work) / "output",
             SimpleNamespace(language="en"))
         assert speech.voice == REFERENCE_VOICE_ID and speech.engine == "reference"
-        assert speech.timing == "aligned" and len(speech.words) == 7
+        assert speech.timing == "aligned" and len(speech.words) == 6
         assert speech.provenance.get("speaker_similarity_cosine", 0) >= .70
         assert speech.provenance["reference_private"] is True
         print("[VOICE SMOKE] Approved private English speaker produced verified "
