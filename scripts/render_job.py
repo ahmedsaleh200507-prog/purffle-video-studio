@@ -210,12 +210,19 @@ def main():
         stage = 'output_validation'
         info, footage = validate_result(video, metadata, folder / 'captions.srt', Path(os.environ['FOOTAGE_REPORT']), voice_report)
         if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1':
+            stage = 'final_opening_qa'
+            if footage.get('opening_review', {}).get('state') != 'selected':
+                raise RuntimeError('opening_quality_unverified: real opening selection proof missing')
+            from shorts_final_qa import audit_rendered_opening
+            final_opening = audit_rendered_opening(video)
             from retention_storyboard import save_storyboard_report
             save_storyboard_report(
                 os.environ.get('RETENTION_REPORT',
                                str(target.with_name('retention-report.json'))),
-                storyboard_audit,
+                {**storyboard_audit, 'final_opening_qa': final_opening,
+                 'verified_source_opening': footage['opening_review']},
                 duration_seconds=info['duration'])
+            stage = 'output_validation'
         result.update(status='ok', stage='complete', mp4=str(video), output_probe=info,
                       footage_report=os.environ['FOOTAGE_REPORT'],
                       metadata=str(folder / 'metadata.json'), captions=str(folder / 'captions.srt'),
