@@ -257,7 +257,7 @@ def synthesize(text, out, settings, *, segments=None):
                 similarities.append(score)
                 if index < len(parts)-1:
                     silence_samples = round(rate * 0.14)
-                    audio_chunks.append(b"\\x00\\x00" * silence_samples)
+                    audio_chunks.append(b"\x00\x00" * silence_samples)
                     offset += silence_samples / rate
                 partial.unlink(missing_ok=True)
             if [token for word, _, _ in verified_words for token in _tokens(word)] != _tokens(text):
