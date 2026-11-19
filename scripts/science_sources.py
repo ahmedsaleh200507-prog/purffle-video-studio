@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 from urllib.parse import quote
 
 from topic_footage import words
@@ -306,33 +307,43 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
     script_text = "\n".join(f"SCENE {i}: {x.narration}"
                             for i, x in enumerate(scenes, 1))
     try:
-        result = llm.complete_json(
-            system, source_text + "\n\nNARRATION TO CHECK:\n" + script_text, schema)
-        checks = result.get("checks") if isinstance(result, dict) else None
-        if not isinstance(checks, list) or len(checks) != len(scenes):
-            raise ValueError("review returned incomplete scene checks")
-        sources_by_id = {s["id"]: s for s in bundle.sources}
-        accepted = []
-        for i, item in enumerate(checks, 1):
-            if not isinstance(item, dict) or type(item.get("scene")) is not int or item["scene"] != i:
-                raise ValueError("review returned invalid scene index")
-            source = sources_by_id.get(item.get("source_id"))
-            quote = str(item.get("quote") or "").strip()
-            supported = item.get("supported") is True
-            anchored = (source is not None and 20 <= len(quote) <= 300
-                        and _normalize_quote(quote) in _normalize_quote(source["excerpt"]))
-            # Simple literal checks supplement, but never replace, the semantic
-            # review: 'always' and 'never' cannot be inferred from hedged text.
-            narration = str(scenes[i-1].narration).casefold()
-            absolutes = re.findall(r"\b(always|never|only|immer|niemals|nur)\b", narration)
-            if absolutes and not all(word in quote.casefold() for word in absolutes):
-                anchored = False
-            accepted.append({
-                "scene": i, "source_id": str(item.get("source_id") or "")[:40],
-                "supported": supported and anchored,
-                "quote": quote[:180] if anchored else "",
-                "reason": str(item.get("reason") or "")[:180],
-            })
+        # A valid HTTP response can still contain malformed model JSON.
+        # Retry the SAME independent review without redrafting or bypassing
+        # any evidence/quote checks. Unsupported claims remain rejected.
+        for review_attempt in range(3):
+            try:
+                result = llm.complete_json(
+                    system, source_text + "\n\nNARRATION TO CHECK:\n" + script_text, schema)
+                checks = result.get("checks") if isinstance(result, dict) else None
+                if not isinstance(checks, list) or len(checks) != len(scenes):
+                    raise ValueError("review returned incomplete scene checks")
+                sources_by_id = {s["id"]: s for s in bundle.sources}
+                accepted = []
+                for i, item in enumerate(checks, 1):
+                    if not isinstance(item, dict) or type(item.get("scene")) is not int or item["scene"] != i:
+                        raise ValueError("review returned invalid scene index")
+                    source = sources_by_id.get(item.get("source_id"))
+                    quote = str(item.get("quote") or "").strip()
+                    supported = item.get("supported") is True
+                    anchored = (source is not None and 20 <= len(quote) <= 300
+                                and _normalize_quote(quote) in _normalize_quote(source["excerpt"]))
+                    # Simple literal checks supplement, but never replace, the semantic
+                    # review: 'always' and 'never' cannot be inferred from hedged text.
+                    narration = str(scenes[i-1].narration).casefold()
+                    absolutes = re.findall(r"\b(always|never|only|immer|niemals|nur)\b", narration)
+                    if absolutes and not all(word in quote.casefold() for word in absolutes):
+                        anchored = False
+                    accepted.append({
+                        "scene": i, "source_id": str(item.get("source_id") or "")[:40],
+                        "supported": supported and anchored,
+                        "quote": quote[:180] if anchored else "",
+                        "reason": str(item.get("reason") or "")[:180],
+                    })
+                break
+            except (ValueError, TypeError, KeyError):
+                if review_attempt == 2:
+                    raise
+                time.sleep(2 * (review_attempt + 1))
         if not all(row["supported"] for row in accepted):
             _report(report, bundle, "failed", checks=accepted,
                     error="source passage cannot substantiate all scene claims")
