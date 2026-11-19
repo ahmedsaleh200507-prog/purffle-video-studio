@@ -38,6 +38,11 @@ _OFFICIAL = {
         "https://oceanservice.noaa.gov/education/tutorial_currents/03coastal1.html",
         "https://www.ndbc.noaa.gov/education/pacwave.shtml",
     ),
+    "ocean_glow_bioluminescence": (
+        "https://oceanexplorer.noaa.gov/ocean-fact/bioluminescence/",
+        "https://ocean.si.edu/ocean-life/six-ways-see-ocean-ocean-bioluminescence",
+        "https://oceanservice.noaa.gov/facts/biolum.html",
+    ),
     "mirror_condensation": (
         "https://www.nesdis.noaa.gov/about/k-12-education/atmosphere/what-humidity",
         "https://scied.ucar.edu/learning-zone/how-weather-works/humidity",
@@ -234,7 +239,7 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         from fact_checked_topics import (
             verified_documentary_kind, ground_verified_documentary)
         kind = verified_documentary_kind(bundle.topic)
-        if kind == "ocean_waves":
+        if kind in ("ocean_waves", "ocean_glow_bioluminescence"):
             scenes = getattr(script, "scenes", [])
             spoken = [str(x.narration) for x in scenes]
             approved_variants = [
@@ -248,8 +253,8 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
                         s.get("tier") == "editor_reviewed_official_dossier"
                         for s in bundle.sources)):
                 _report(report, bundle, "failed",
-                        error="ocean wave narration differs from source-backed dossier")
-                raise RuntimeError("science_claim_unverified: unknown ocean wave claims")
+                        error="curated narration differs from official-source-backed dossier")
+                raise RuntimeError("science_claim_unverified: nonapproved curated factual claims")
         _report(report, bundle, "curated_editor_reviewed")
         return
     scenes = getattr(script, "scenes", [])
