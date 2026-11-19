@@ -26,6 +26,10 @@ _STOP = set("what why where when how which who does do is are can a an the to of
             "warum wie was wann wo wer wieso weshalb ist sind die der das den dem "
             "ein eine einer und von zu im mit bei auf als er sie es".split())
 _OFFICIAL = {
+    "steel_ship_buoyancy": (
+        "https://openstax.org/books/university-physics-volume-1/pages/14-4-archimedes-principle-and-buoyancy",
+        "https://manoa.hawaii.edu/exploringourfluidearth/physical/navigation-and-transportation/transportation-and-ship-design",
+    ),
     "lightning_thunder_delay": (
         "https://www.nesdis.noaa.gov/about/k-12-education/severe-weather/what-causes-lightning-and-thunder",
         "https://www.nssl.noaa.gov/education/svrwx101/lightning/",
@@ -262,7 +266,7 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         from fact_checked_topics import (
             verified_documentary_kind, ground_verified_documentary)
         kind = verified_documentary_kind(bundle.topic)
-        if kind in ("ocean_waves", "ocean_glow_bioluminescence", "lava_ocean_entry", "northern_lights_dance"):
+        if kind in ("ocean_waves", "ocean_glow_bioluminescence", "lava_ocean_entry", "northern_lights_dance", "steel_ship_buoyancy"):
             scenes = getattr(script, "scenes", [])
             spoken = [str(x.narration) for x in scenes]
             approved_variants = [
