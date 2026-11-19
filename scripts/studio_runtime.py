@@ -1037,8 +1037,9 @@ AUDIENCE RETENTION STORYBOARD — for accurate educational Shorts:
 - Use natural spoken English or German with short sentences. Let scenes shift
   with the VERIFIED moving footage; never say an unrelated clip depicts
   an event that is not actually shown. Captions will follow exactly spoken words.
-- Do not put the entire title in spoken narration; the on-screen hook already
-  conveys the question. Prefer specific nouns and active verbs; keep each
+- Do not recite the entire title: oversized on-screen title cards are disabled.
+  The hook is the actual first moving footage plus your concise spoken line,
+  supported by synchronized word captions. Prefer specific nouns and active verbs; keep each
   narration line within the verified shot's time limit.
 - This is an editorial pacing guideline, NOT permission to exaggerate or
   override any of the independent source, license, safety or accuracy checks.
@@ -1061,7 +1062,7 @@ scrolling social media, or watching a video unless the user explicitly asks
 for that exact subject. Avoid generic engagement-bait endings such as
 "comment below", "like and subscribe", or "what do you think?".
 For a blue-sky explanation, end with directly filmable sky, clouds, sunset,
-or sunlight footage, never people commenting on the explanation. Use 3–5 scenes for a 25-second video, at most 6 scenes. The system will fail a scene when
+or sunlight footage, never people commenting on the explanation. Target a roughly 20–35-second Short using its 3–4 VERIFIED footage scenes, not filler or loops. Follow four phases in this approximate 30-second timeline: 0–2 hook; 2–8 curiosity; 8–22 development with fresh facts; 22–30 truthful payoff. The system will fail a scene when
 exact suitable footage cannot be verified; never weaken the scene to hide that failure.
 """
         from media_first import active_palette, footage_prompt
