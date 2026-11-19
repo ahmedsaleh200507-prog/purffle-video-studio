@@ -113,9 +113,24 @@ def prioritize_opening(topic, items, plans, reports, *, analyzer=None) -> dict:
         raise RuntimeError("opening_quality_unverified: one source has no video file")
     analyze = analyzer or inspect_opening
     lava = is_lava_ocean_topic(topic)
+    from topic_footage import words
+    topic_tokens = words(topic)
+    steel_ship = bool(({"steel", "ship", "float"} <= topic_tokens
+                       or {"steel", "ships", "float"} <= topic_tokens)
+                      and not {"submarine", "sinking", "capsize"} & topic_tokens)
     choices = []
     for idx, (item, plan, report, path) in enumerate(zip(items, plans, reports, paths)):
         measurements = dict(analyze(path))
+        source_hint = str(report.get("source_page") or report.get("source_url") or "").casefold()
+        if (steel_ship and any(term in source_hint for term in (
+                "abandoned", "shipwreck", "wrecked", "beached",
+                "dry-dock", "drydock"))):
+            # #83's highest-impact Coverr shot was tagged "abandoned
+            # ship in Tierra del Fuego". An attractive wreck is not
+            # evidence that a steel ship FLOATS. Prefer verified in-water
+            # vessel footage; do not promote ambiguous wrecks as the hook.
+            measurements["verified"] = False
+            measurements["reason"] = "opening_source_does_not_demonstrate_floating_ship"
         if measurements.get("verified") is not True:
             rating = -1.0
         else:
