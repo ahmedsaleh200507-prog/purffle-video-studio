@@ -27,9 +27,13 @@ def main():
     text = args.text_file.read_text(encoding="utf-8").strip()
     if not 4 <= len(text) <= 1600 or "\n" in text:
         raise RuntimeError("reference_voice_not_ready: invalid single-narrator text input")
+    print("[VOICE SAFE STAGE] text-validated", flush=True)
     import numpy as np
+    print("[VOICE SAFE STAGE] numpy-loaded", flush=True)
     import soundfile as sf
+    print("[VOICE SAFE STAGE] soundfile-loaded", flush=True)
     import torch
+    print("[VOICE SAFE STAGE] torch-loaded", flush=True)
     from chatterbox.tts_turbo import ChatterboxTurboTTS
     print("[VOICE SAFE STAGE] dependencies-loaded", flush=True)
     torch.set_num_threads(2)
