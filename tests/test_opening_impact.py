@@ -143,3 +143,35 @@ def test_integration_happens_before_script_voice_and_render():
     assert producer.index("studio.draft(") < producer.index("studio.produce(")
     assert "hook_overlay=False" in producer
     assert "screen_narration(" in producer
+
+
+def test_production_83_abandoned_ship_does_not_win_buoyancy_hook():
+    items, plans, reports = palette()
+    reports[0]["source_url"] = (
+        "https://coverr.co/videos/an-abandoned-ship-in-tierra-del-fuego-argentina")
+    reports[1]["source_url"] = "https://pixabay.com/videos/freighter-cruising-at-sea"
+    reports[2]["source_url"] = "https://pixabay.com/videos/cargo-ship-on-water"
+    scores = {
+        "shot-0": record(1, True, 97),
+        "shot-1": record(2, True, 68),
+        "shot-2": record(3, True, 53),
+    }
+    result = prioritize_opening("Why Do Steel Ships Float?", items, plans,
+                                reports, analyzer=lambda path: scores[path])
+    assert result["original_scene"] == 2
+    assert result["clip_scores"][0]["verified"] is False
+    assert result["clip_scores"][0]["reason"] == (
+        "opening_source_does_not_demonstrate_floating_ship")
+    assert items[0].path == "shot-1"
+
+
+def test_unrelated_documentary_does_not_inherit_ship_hook_rejection():
+    items, plans, reports = palette()
+    reports[0]["source_url"] = "https://coverr.co/videos/an-abandoned-ship"
+    scores = {"shot-0": record(1, True, 97),
+              "shot-1": record(2, True, 68),
+              "shot-2": record(3, True, 53)}
+    result = prioritize_opening("How Did an Abandoned Ship Become a Wreck?",
+                                items, plans, reports,
+                                analyzer=lambda path: scores[path])
+    assert result["original_scene"] == 1
