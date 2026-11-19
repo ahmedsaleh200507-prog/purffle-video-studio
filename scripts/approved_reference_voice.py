@@ -160,7 +160,7 @@ def _model_interpreter() -> Path:
     return Path(os.path.abspath(os.path.expanduser(configured)))
 
 
-def synthesize(text, out, settings):
+def synthesize(text, out, settings, *, segments=None):
     """Return an upstream Speech, timed solely from recognized actual audio."""
     if settings.language != "en":
         raise RuntimeError("Reference narrator is English-only")
@@ -184,30 +184,97 @@ def synthesize(text, out, settings):
         model_python = _model_interpreter()
         if not model_python.is_file():
             raise RuntimeError("reference_voice_not_ready: isolated CPU reference model is not installed")
-        # Chatterbox sampling and small ASR models can occasionally omit or
-        # misrecognize a word. Retry with the SAME private approved reference
-        # and distinct seeds; never accept mismatched speech, fake timestamps
-        # or substitute another narrator. Remove rejected audio immediately.
+        # #77: avoid asking a small CPU voice model to speak an entire
+        # multi-scene Short in one generation. Short real scene utterances are
+        # independently verified against their own actual WAV / ASR output,
+        # then concatenated without inventing timestamps or changing speaker.
+        # The entire requested transcript must equal the concatenation of the
+        # parts before this path is allowed.
+        parts = [str(part).strip() for part in (segments or [])]
+        segmented = (2 <= len(parts) <= 6
+                     and all(10 <= len(p) <= 350 and len(_tokens(p)) >= 2
+                             for p in parts)
+                     and _tokens(" ".join(parts)) == _tokens(text))
         seeds = (190526, 220917, 314159)
-        for attempt, seed in enumerate(seeds, 1):
-            target.unlink(missing_ok=True)
-            try:
-                _run([str(model_python), str(Path(__file__).with_name("reference_voice_worker.py")),
-                      "--reference", str(reference), "--text-file", str(text_file),
-                      "--wav", str(target), "--seed", str(seed)],
-                     timeout=300, stage="nano-reference-worker")
-                duration = _wav_duration(target)
-                similarity = voice_similarity(reference, target)
-                timed = check_real_word_timing(text, target)
-                break
-            except RuntimeError:
-                target.unlink(missing_ok=True)
-                print(f"[VOICE RETRY] approved private reference attempt={attempt}/3 "
-                      "failed exact speech or identity validation", flush=True)
-        else:
+        attempts_total = 0
+
+        def verified_generation(sentence, output):
+            nonlocal attempts_total
+            text_file.write_text(sentence, encoding="utf-8")
+            for attempt, seed in enumerate(seeds, 1):
+                attempts_total += 1
+                output.unlink(missing_ok=True)
+                try:
+                    _run([str(model_python), str(Path(__file__).with_name("reference_voice_worker.py")),
+                          "--reference", str(reference), "--text-file", str(text_file),
+                          "--wav", str(output), "--seed", str(seed)],
+                         timeout=300, stage="nano-reference-worker")
+                    length = _wav_duration(output)
+                    score = voice_similarity(reference, output)
+                    timed_words = check_real_word_timing(sentence, output)
+                    return length, score, timed_words
+                except (RuntimeError, wave.Error) as exc:
+                    output.unlink(missing_ok=True)
+                    reason = str(exc).lower()
+                    # Do not reveal private speech, exact reference text, file
+                    # paths, embeddings, generated transcript or model output.
+                    safe = ("speaker_similarity" if "speaker similarity" in reason else
+                            "asr_word_mismatch" if "does not exactly match" in reason else
+                            "asr_alignment" if "word alignment" in reason else
+                            "model_or_audio")
+                    print(f"[VOICE RETRY] approved private reference "
+                          f"attempt={attempt}/3 failure_kind={safe}", flush=True)
             raise RuntimeError(
                 "reference_voice_failed: all approved-reference narration "
-                "attempts failed exact audio/word verification") from None
+                "attempts failed exact audio/word verification")
+
+        target.unlink(missing_ok=True)
+        if segmented:
+            # Audio is stitched only AFTER every independently generated chunk
+            # passes BOTH the same speaker check and exact spoken-word check.
+            audio_chunks = []
+            verified_words = []
+            similarities = []
+            rate = None
+            offset = 0.0
+            for index, part in enumerate(parts):
+                partial = Path(private) / f"verified-scene-{index}.wav"
+                _, score, part_words = verified_generation(part, partial)
+                with wave.open(str(partial), "rb") as chunk:
+                    sr = chunk.getframerate()
+                    if (chunk.getnchannels() != 1 or chunk.getsampwidth() != 2
+                            or sr not in (22050, 24000, 32000, 44100, 48000)
+                            or (rate is not None and sr != rate)):
+                        raise RuntimeError("reference_voice_failed: incompatible verified scene PCM")
+                    rate = sr
+                    audio = chunk.readframes(chunk.getnframes())
+                    audio_seconds = chunk.getnframes() / sr
+                audio_chunks.append(audio)
+                verified_words.extend(
+                    (word, start + offset, end + offset)
+                    for word, start, end in part_words)
+                offset += audio_seconds
+                similarities.append(score)
+                if index < len(parts)-1:
+                    silence_samples = round(rate * 0.14)
+                    audio_chunks.append(b"\\x00\\x00" * silence_samples)
+                    offset += silence_samples / rate
+                partial.unlink(missing_ok=True)
+            if [token for word, _, _ in verified_words for token in _tokens(word)] != _tokens(text):
+                raise RuntimeError("reference_voice_failed: concatenated narration transcript mismatch")
+            with wave.open(str(target), "wb") as joined:
+                joined.setnchannels(1)
+                joined.setsampwidth(2)
+                joined.setframerate(rate)
+                joined.writeframes(b"".join(audio_chunks))
+            duration = _wav_duration(target)
+            similarity = min(similarities)
+            timed = verified_words
+            print(f"[VOICE SEGMENTED] approved speaker verified across "
+                  f"{len(parts)} exact spoken scenes", flush=True)
+        else:
+            duration, similarity, timed = verified_generation(text, target)
+        attempt = attempts_total
     words = [Word(word, start, end) for word, start, end in timed]
     proof = {
         "engine": "reference",
@@ -224,7 +291,8 @@ def synthesize(text, out, settings):
         "alignment": "faster-whisper-base.en actual generated WAV word timestamps",
         "duration_seconds": round(duration, 3),
         "words": len(words),
-        "synthesis_attempts": attempt
+        "synthesis_attempts": attempt,
+        "verified_scene_segments": len(parts) if segmented else 1
     }
     speech = Speech(target, words, duration, "reference", REFERENCE_VOICE_ID, "aligned")
     speech.provenance = proof
