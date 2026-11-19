@@ -1,4 +1,5 @@
 # One-off real private reference speaker test; NEVER upload audio or secret.
+# Retry after safe, allowlisted worker stage logging; no audio disclosure.
 name: Approved English narrator | private live check
 run-name: "Approved English reference | Secret, clone, speaker and caption validation | #${{ github.run_number }}"
 on:
