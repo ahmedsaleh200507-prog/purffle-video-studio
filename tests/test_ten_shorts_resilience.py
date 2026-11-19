@@ -88,12 +88,12 @@ def test_output_uses_bounded_documented_upscale(tmp_path, monkeypatch, scale, ac
     fake = {"width": 720, "height": 1280, "duration": 25.0, "has_audio": True}
     with patch("media_validation.QualityValidator.validate", return_value=fake):
         if accepted:
-            info, report = validate_result(clip, {"voice": "edge:en", "timing": "native"},
+            info, report = validate_result(clip, {"language": "de", "voice": "edge:de", "timing": "native"},
                                            captions, footage)
             assert report["scenes"][0]["quality"]["portrait_crop_scale"] == scale
         else:
             with pytest.raises(RuntimeError, match="insufficient_native_resolution"):
-                validate_result(clip, {"voice": "edge:en", "timing": "native"},
+                validate_result(clip, {"language": "de", "voice": "edge:de", "timing": "native"},
                                 captions, footage)
 
 
