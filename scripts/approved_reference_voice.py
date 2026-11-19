@@ -149,6 +149,17 @@ def voice_similarity(reference: Path, generated: Path, *, loader=None) -> float:
     return score
 
 
+def _model_interpreter() -> Path:
+    """Preserve the dedicated virtualenv entrypoint, including its symlink.
+
+    Path.resolve() is a serious bug here: on Ubuntu it returns the global
+    interpreter, so dependencies installed only in .venv-reference vanish.
+    """
+    configured = os.getenv("PURFFLE_REFERENCE_PYTHON",
+                           ".venv-reference/bin/python")
+    return Path(os.path.abspath(os.path.expanduser(configured)))
+
+
 def synthesize(text, out, settings):
     """Return an upstream Speech, timed solely from recognized actual audio."""
     if settings.language != "en":
@@ -170,8 +181,7 @@ def synthesize(text, out, settings):
         text_file.write_text(text, encoding="utf-8")
         text_file.chmod(0o600)
         target = folder / "voice-reference.wav"
-        model_python = Path(os.getenv("PURFFLE_REFERENCE_PYTHON",
-                                    ".venv-reference/bin/python")).resolve()
+        model_python = _model_interpreter()
         if not model_python.is_file():
             raise RuntimeError("reference_voice_not_ready: isolated CPU reference model is not installed")
         _run([str(model_python), str(Path(__file__).with_name("reference_voice_worker.py")),

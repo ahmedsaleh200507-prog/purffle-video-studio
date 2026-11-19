@@ -2,6 +2,8 @@
 import base64
 import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 import wave
@@ -103,3 +105,31 @@ def test_all_workflows_keep_reference_secret_private():
         assert "PURFFLE_NARRATOR_LOCK: '1'" in content
         assert "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217" in content
     assert not list(root.rglob("*approved-reference*.wav"))
+
+
+
+def test_private_voice_launch_keeps_venv_python_symlink(tmp_path, monkeypatch):
+    """The actual failure in live #5 was resolving the venv python symlink.
+
+    The system executable exists, but cannot import the Nano model that was
+    intentionally installed only inside the dedicated virtual environment.
+    """
+    interpreter = tmp_path / "private-venv" / "bin" / "python"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.symlink_to(sys.executable)
+    monkeypatch.setenv("PURFFLE_REFERENCE_PYTHON", str(interpreter))
+    selected = voice._model_interpreter()
+    assert selected == interpreter
+    assert selected.is_symlink()
+    assert selected.resolve() != selected
+    assert selected.is_file()
+
+
+def test_private_voice_launch_uses_absolute_path_without_following_symlinks(tmp_path, monkeypatch):
+    interpreter = tmp_path / "private-venv" / "bin" / "python"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.symlink_to(sys.executable)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PURFFLE_REFERENCE_PYTHON",
+                       "private-venv/bin/python")
+    assert voice._model_interpreter() == interpreter

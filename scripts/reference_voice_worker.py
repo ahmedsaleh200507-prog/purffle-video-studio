@@ -23,6 +23,10 @@ def main():
         raise RuntimeError("reference_voice_not_ready: private reference/text files missing")
     # Public CI may receive only these fixed stage labels, never actual
     # approved voice data, transcript, model error or private file paths.
+    # Never fall back to a global Python when the private Chatterbox virtualenv
+    # was required. Path.resolve() in the caller used to break this invariant.
+    if sys.prefix == sys.base_prefix:
+        raise RuntimeError("private reference model interpreter is not an active virtualenv")
     print("[VOICE SAFE STAGE] worker-start", flush=True)
     text = args.text_file.read_text(encoding="utf-8").strip()
     if not 4 <= len(text) <= 1600 or "\n" in text:
