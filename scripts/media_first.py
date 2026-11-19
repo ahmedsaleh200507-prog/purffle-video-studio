@@ -29,6 +29,7 @@ class VerifiedPalette:
     items: list[object]
     credits: set[str]
     attempts: list[dict]
+    planned_seconds: int | None = None
 
     @property
     def media_map(self):
@@ -326,7 +327,8 @@ def footage_prompt(palette) -> str:
         f"Write EXACTLY {len(palette.plans)} scenes in this order. "
         "Each scene corresponds to the indicated real footage. "
         "Do NOT request new shots or more scenes. Write 12-19 spoken words "
-        "per scene; concise lines ensure the audio fits each unlooped clip.",
+        "per scene as an initial guideline; use fewer words for simple facts, "
+        "and always fit the real unlooped clip and natural pacing.",
         "RETENTION PACING: The first scene must begin directly with the real, "
         "specific visual subject — never a greeting, channel intro, generic "
         "question repeated from the title or 'Did you know?'. Start with an "
@@ -346,7 +348,7 @@ def footage_prompt(palette) -> str:
         "The image illustrates the subject; it is not a recording of the exact event.",
     ]
     from retention_storyboard import storyboard_writer_brief
-    lines.append(storyboard_writer_brief(len(palette.plans)))
+    lines.append(storyboard_writer_brief(len(palette.plans), palette.planned_seconds))
     for index, (plan, clip) in enumerate(zip(palette.plans, palette.items), 1):
         duration = float(getattr(clip, "duration", 12) or 12)
         max_words = max(10, min(21, int((duration - 1.5) * 2.0)))
