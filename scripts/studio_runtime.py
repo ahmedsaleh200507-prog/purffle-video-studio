@@ -705,7 +705,9 @@ def collect_edge_chunks(communicate, timeout_seconds=70):
 
 
 def strict_edge(text, out, settings):
-    """Free neural speech and native WordBoundary timings, with bounded retries."""
+    """German-only fallback. English Edge synthesis is never permitted."""
+    if settings.language == "en":
+        raise RuntimeError("Generic English Edge narrators removed: approved private reference required")
     import edge_tts
     from purffle_shorts.tts import EDGE_VOICES, _pick_voice
     from purffle_shorts.timing import Word
@@ -790,16 +792,25 @@ def _validate_free_speech(speech, engine, language=None):
         previous_start = word.start
     if not Path(speech.audio).is_file() or Path(speech.audio).stat().st_size == 0:
         raise RuntimeError("Narration audio is missing")
+    if engine == "reference":
+        from english_reference_policy import REFERENCE_VOICE_ID, ENGLISH_REFERENCE_SHA256
+        proof = getattr(speech, "provenance", {})
+        if (language != "en" or speech.voice != REFERENCE_VOICE_ID
+                or proof.get("engine") != "reference"
+                or proof.get("voice") != REFERENCE_VOICE_ID
+                or proof.get("reference_original_sha256") != ENGLISH_REFERENCE_SHA256
+                or proof.get("reference_private") is not True
+                or proof.get("alignment") !=
+                    "faster-whisper-base.en actual generated WAV word timestamps"
+                or float(proof.get("speaker_similarity_cosine", 0)) < .70):
+            raise RuntimeError("English narration reference identity/word alignment proof invalid")
     if engine == "piper":
         proof = getattr(speech, "provenance", {})
         if proof.get("alignment") != "native_phoneme_samples":
             raise RuntimeError("Piper narration has no native sample alignment provenance")
-        male_lock = os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1'
-        approved = {
-            "en": ("en_US-joe-medium", "CC0") if male_lock
-                  else ("en_US-ljspeech-high", "Public-Domain"),
-            "de": ("de_DE-thorsten-medium", "CC0-1.0"),
-        }
+        # Only German local Piper is permitted. All English generic model
+        # allowlist entries have been physically removed.
+        approved = {"de": ("de_DE-thorsten-medium", "CC0-1.0")}
         expected = approved.get(language)
         if (expected is None or proof.get("model") != expected[0]
                 or speech.voice != expected[0]):
@@ -832,6 +843,37 @@ def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_
         _atomic_json(voice_report, report)
 
     save()
+    if settings.language == "en":
+        # Absolute English-only speaker identity: NO Piper Joe, LJSpeech,
+        # Edge, alternative voice, local default or fallback, even non-strict.
+        from approved_reference_voice import synthesize as approved_synthesize
+        started = time.monotonic()
+        try:
+            speech = with_voice_deadline(
+                lambda: approved_synthesize(
+                    screenplay.narration, Path(work) / "approved-reference-voice", settings),
+                timeout_seconds=900, stage="Approved private reference narrator")
+            _validate_free_speech(speech, "reference", "en")
+            report["attempts"].append({
+                "engine": "reference", "status": "ok",
+                "seconds": round(time.monotonic()-started, 3)})
+            report.update(state="ready", engine="reference", voice=speech.voice,
+                          timing=speech.timing, duration=speech.duration,
+                          word_count=len(speech.words),
+                          provenance=getattr(speech, "provenance", {}))
+            save()
+            return speech
+        except Exception as exc:
+            report["attempts"].append({
+                "engine": "reference", "status": "failed",
+                "seconds": round(time.monotonic()-started, 3),
+                "error": _redact(f"{type(exc).__name__}: {exc}")[:500]})
+            report["state"] = "failed"
+            save()
+            raise RuntimeError(
+                "reference_voice_failed: only approved private English narrator "
+                "can be used; no alternate English speaker") from exc
+
     # A locked narrator must never randomly change between Edge and Piper or
     # revert to the old female LJSpeech voice after a timeout. Keep one local,
     # reproducible identity per language for every successful upload.

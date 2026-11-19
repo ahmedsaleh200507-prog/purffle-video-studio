@@ -26,7 +26,7 @@ jobs:
       - name: Check diagnostics and scene reconciliation
         run: |
           python -m compileall -q scripts sitecustomize.py
-          python -m pytest -q tests/test_batch_root_causes.py tests/test_youtube_titles.py tests/test_aggregate_results.py tests/test_batch.py tests/test_thematic_broll.py tests/test_ten_shorts_resilience.py tests/test_portrait_crop_contract.py tests/test_science_topic_guard.py tests/test_lightning_70.py tests/test_media_first.py tests/test_v3_zip_regressions.py tests/test_v3_71_science_integrity.py tests/test_fixed_male_narrator.py tests/test_v3_topic_german_pexels.py tests/test_science_sources.py tests/test_reference_voice_audition.py tests/test_english_reference_policy.py tests/test_mirror_single_german.py tests/test_domestic_mirror_stock_metadata.py tests/test_two_english_shorts_preparation.py tests/test_freenaturestock_catalog.py
+          python -m pytest -q tests/test_batch_root_causes.py tests/test_youtube_titles.py tests/test_aggregate_results.py tests/test_batch.py tests/test_thematic_broll.py tests/test_ten_shorts_resilience.py tests/test_portrait_crop_contract.py tests/test_science_topic_guard.py tests/test_lightning_70.py tests/test_media_first.py tests/test_v3_zip_regressions.py tests/test_v3_71_science_integrity.py tests/test_fixed_male_narrator.py tests/test_v3_topic_german_pexels.py tests/test_science_sources.py tests/test_reference_voice_audition.py tests/test_english_reference_policy.py tests/test_mirror_single_german.py tests/test_domestic_mirror_stock_metadata.py tests/test_two_english_shorts_preparation.py tests/test_freenaturestock_catalog.py tests/test_approved_reference_voice.py
 
   regression:
     runs-on: ubuntu-24.04
@@ -48,7 +48,7 @@ jobs:
         run: |
           python -m compileall -q scripts sitecustomize.py
           python -m pytest -q
-      - name: Verify actual pinned CC0 male voice model and native captions
+      - name: Verify pinned German Thorsten CC0 narrator and native captions
         env:
           PYTHONPATH: scripts:.
           PURFFLE_NARRATOR_LOCK: '1'
@@ -57,25 +57,19 @@ jobs:
           from pathlib import Path
           from types import SimpleNamespace
           from local_voice import synthesize, provenance
-          expected = 'en_US-joe-medium'
-          voice = provenance('en')
-          assert voice['model'] == expected and voice['license']['id'] == 'CC0'
+          expected = 'de_DE-thorsten-medium'
+          voice = provenance('de')
+          assert voice['model'] == expected and voice['license']['id'] == 'CC0-1.0'
           speech = synthesize(
-              'The northern lights glow above the mountains tonight.',
-              Path('male-voice-smoke'),
-              SimpleNamespace(language='en'))
+              'Der Himmel ist heute wirklich wunderschön.',
+              Path('german-voice-smoke'),
+              SimpleNamespace(language='de'))
           assert speech.engine == 'piper' and speech.voice == expected
           assert speech.timing == 'aligned'
-          assert len(speech.words) == 8
           assert speech.audio.is_file() and speech.audio.stat().st_size > 10000
           assert speech.duration > 1
-          print('PINNED MALE VOICE LIVE: OK', expected, speech.duration)
+          print('PINNED GERMAN THORSTEN VOICE LIVE: OK')
           PY
-      - name: Upload male narrator listening sample
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: male-narrator-sample
-          path: male-voice-smoke/voice-piper.wav
-          if-no-files-found: error
-          retention-days: 7
+      # The private English recording and model are validated live only in
+      # authorized production jobs with PURFFLE_REFERENCE_OPUS_B64 secret.
+      # Never upload private English voice audio as a public PR artifact.

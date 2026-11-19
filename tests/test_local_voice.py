@@ -23,18 +23,18 @@ def fake_voice(*, native=True, silent=False):
 
 
 def test_only_audited_free_models_are_available():
-    en = local_voice.provenance('en')
     de = local_voice.provenance('de')
-    assert en['model'] == 'en_US-ljspeech-high'
-    assert en['license']['id'] == 'Public-Domain'
+    assert list(local_voice.VOICES) == ['de']
     assert de['license']['id'] == 'CC0-1.0'
-    assert en['alignment'] == 'native_phoneme_samples'
-    assert len(en['model_sha256']) == 64
-    assert local_voice.REVISION in en['model_url']
-    with pytest.raises(RuntimeError):
+    assert de['alignment'] == 'native_phoneme_samples'
+    assert len(de['model_sha256']) == 64
+    assert local_voice.REVISION in de['model_url']
+    with pytest.raises(RuntimeError, match='removed'):
+        local_voice.provenance('en')
+    with pytest.raises(RuntimeError, match='removed'):
         local_voice.provenance('fr')
-    en['license']['id'] = 'changed'
-    assert local_voice.provenance('en')['license']['id'] == 'Public-Domain'
+    de['license']['id'] = 'changed'
+    assert local_voice.provenance('de')['license']['id'] == 'CC0-1.0'
 
 
 def test_word_boundary_mapping_preserves_expanded_number():
@@ -67,7 +67,7 @@ def test_unknown_phoneme_is_rejected_instead_of_dropped():
 
 def test_nonempty_native_speech_has_exact_caption_words(tmp_path, monkeypatch):
     monkeypatch.setattr(local_voice, '_load_voice', lambda lang: fake_voice())
-    speech = local_voice.synthesize('Fish 100 swim.', tmp_path, SimpleNamespace(language='en'))
+    speech = local_voice.synthesize('Fish 100 swim.', tmp_path, SimpleNamespace(language='de'))
     assert speech.engine == 'piper' and speech.timing == 'aligned'
     assert [w.text for w in speech.words] == ['Fish', '100', 'swim.']
     assert speech.words[-1].end < speech.duration

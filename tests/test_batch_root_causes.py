@@ -139,12 +139,12 @@ def test_output_rejects_duplicate_or_upscaled_scene(tmp_path, monkeypatch):
     report_path.write_text(json.dumps({"scenes": [
         dict(base, index=1), dict(base, index=2)]}))
     with pytest.raises(RuntimeError, match="Duplicate footage"):
-        render_job.validate_result(video, {"voice": "edge:test", "timing": "native"},
+        render_job.validate_result(video, {"language": "de", "voice": "edge:test", "timing": "native"},
                                    captions, report_path)
     report_path.write_text(json.dumps({"scenes": [
         dict(base, index=1, sha256="unique", quality={"portrait_crop_scale": 1.5})]}))
     with pytest.raises(RuntimeError, match="insufficient_native_resolution"):
-        render_job.validate_result(video, {"voice": "edge:test", "timing": "native"},
+        render_job.validate_result(video, {"language": "de", "voice": "edge:test", "timing": "native"},
                                    captions, report_path)
 
 
