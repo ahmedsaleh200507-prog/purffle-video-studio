@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import sys
 import wave
+import types
 
 import pytest
 import approved_reference_voice as voice
@@ -22,6 +23,20 @@ def _write_wav(path):
 
 
 def _prepare(monkeypatch, seeds):
+    # Lightweight CI intentionally does not install the expensive upstream
+    # media library. Stub only the two return classes, not the voice logic.
+    package = types.ModuleType("purffle_shorts")
+    package.__path__ = []
+    timing = types.ModuleType("purffle_shorts.timing")
+    timing.Word = lambda word, start, end: SimpleNamespace(
+        text=word, word=word, start=start, end=end)
+    tts = types.ModuleType("purffle_shorts.tts")
+    tts.Speech = lambda audio, words, duration, engine, speaker, timing: SimpleNamespace(
+        audio=audio, words=words, duration=duration,
+        engine=engine, voice=speaker, timing=timing)
+    monkeypatch.setitem(sys.modules, "purffle_shorts", package)
+    monkeypatch.setitem(sys.modules, "purffle_shorts.timing", timing)
+    monkeypatch.setitem(sys.modules, "purffle_shorts.tts", tts)
     monkeypatch.setattr(voice, "approved_secret_bytes", lambda: b"private-but-not-a-real-recording")
     def reference(folder):
         path = folder / "approved-reference.wav"
