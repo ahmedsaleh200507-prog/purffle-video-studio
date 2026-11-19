@@ -705,7 +705,9 @@ def collect_edge_chunks(communicate, timeout_seconds=70):
 
 
 def strict_edge(text, out, settings):
-    """Free neural speech and native WordBoundary timings, with bounded retries."""
+    """German-only fallback. English Edge synthesis is never permitted."""
+    if settings.language == "en":
+        raise RuntimeError("Generic English Edge narrators removed: approved private reference required")
     import edge_tts
     from purffle_shorts.tts import EDGE_VOICES, _pick_voice
     from purffle_shorts.timing import Word
@@ -806,12 +808,9 @@ def _validate_free_speech(speech, engine, language=None):
         proof = getattr(speech, "provenance", {})
         if proof.get("alignment") != "native_phoneme_samples":
             raise RuntimeError("Piper narration has no native sample alignment provenance")
-        male_lock = os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1'
-        approved = {
-            "en": ("en_US-joe-medium", "CC0") if male_lock
-                  else ("en_US-ljspeech-high", "Public-Domain"),
-            "de": ("de_DE-thorsten-medium", "CC0-1.0"),
-        }
+        # Only German local Piper is permitted. All English generic model
+        # allowlist entries have been physically removed.
+        approved = {"de": ("de_DE-thorsten-medium", "CC0-1.0")}
         expected = approved.get(language)
         if (expected is None or proof.get("model") != expected[0]
                 or speech.voice != expected[0]):
