@@ -184,12 +184,30 @@ def synthesize(text, out, settings):
         model_python = _model_interpreter()
         if not model_python.is_file():
             raise RuntimeError("reference_voice_not_ready: isolated CPU reference model is not installed")
-        _run([str(model_python), str(Path(__file__).with_name("reference_voice_worker.py")),
-              "--reference", str(reference), "--text-file", str(text_file),
-              "--wav", str(target)], timeout=900, stage="nano-reference-worker")
-        duration = _wav_duration(target)
-        similarity = voice_similarity(reference, target)
-        timed = check_real_word_timing(text, target)
+        # Chatterbox sampling and small ASR models can occasionally omit or
+        # misrecognize a word. Retry with the SAME private approved reference
+        # and distinct seeds; never accept mismatched speech, fake timestamps
+        # or substitute another narrator. Remove rejected audio immediately.
+        seeds = (190526, 220917, 314159)
+        for attempt, seed in enumerate(seeds, 1):
+            target.unlink(missing_ok=True)
+            try:
+                _run([str(model_python), str(Path(__file__).with_name("reference_voice_worker.py")),
+                      "--reference", str(reference), "--text-file", str(text_file),
+                      "--wav", str(target), "--seed", str(seed)],
+                     timeout=300, stage="nano-reference-worker")
+                duration = _wav_duration(target)
+                similarity = voice_similarity(reference, target)
+                timed = check_real_word_timing(text, target)
+                break
+            except RuntimeError:
+                target.unlink(missing_ok=True)
+                print(f"[VOICE RETRY] approved private reference attempt={attempt}/3 "
+                      "failed exact speech or identity validation", flush=True)
+        else:
+            raise RuntimeError(
+                "reference_voice_failed: all approved-reference narration "
+                "attempts failed exact audio/word verification") from None
     words = [Word(word, start, end) for word, start, end in timed]
     proof = {
         "engine": "reference",
@@ -205,7 +223,8 @@ def synthesize(text, out, settings):
         "timing": "aligned",
         "alignment": "faster-whisper-base.en actual generated WAV word timestamps",
         "duration_seconds": round(duration, 3),
-        "words": len(words)
+        "words": len(words),
+        "synthesis_attempts": attempt
     }
     speech = Speech(target, words, duration, "reference", REFERENCE_VOICE_ID, "aligned")
     speech.provenance = proof
