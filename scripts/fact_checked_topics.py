@@ -214,6 +214,30 @@ _DOCUMENTARY_FACTS = {
         },
         "tags": ["ocean waves", "wind", "surf", "wave formation", "ocean science"],
     },
+    "ocean_glow_bioluminescence": {
+        # NOAA Ocean Exploration and Smithsonian Ocean educational sources:
+        # https://oceanexplorer.noaa.gov/ocean-fact/bioluminescence/
+        # https://ocean.si.edu/ocean-life/six-ways-see-ocean-ocean-bioluminescence
+        "en": [
+            "Some ocean waves can glow bright blue at night.",
+            "The light comes from tiny marine organisms, including certain plankton, not from the water itself.",
+            "Movement in the water can trigger those organisms to flash.",
+            "This natural light is called bioluminescence. It is produced by a chemical reaction inside living organisms.",
+        ],
+        "de": [
+            "Manche Meereswellen können nachts blau leuchten.",
+            "Das Licht stammt von winzigen Meeresorganismen, darunter bestimmtem Plankton, und nicht vom Wasser selbst.",
+            "Durch Bewegung im Wasser können diese Organismen aufleuchten.",
+            "Das Licht heißt Biolumineszenz und entsteht durch eine chemische Reaktion in Lebewesen.",
+        ],
+        "title": {"en": "Why Does the Ocean Glow Blue at Night?",
+                  "de": "Warum leuchtet das Meer nachts blau?"},
+        "description": {
+            "en": "Some plankton emit blue light when the water moves. The phenomenon is called bioluminescence.",
+            "de": "Manches Plankton erzeugt bei Bewegung blaues Licht: Biolumineszenz.",
+        },
+        "tags": ["bioluminescence", "glowing ocean", "glowing plankton", "marine science"],
+    },
     "mirror_condensation": {
         "en": [
             "Hot shower water evaporates and makes bathroom air humid.",
@@ -300,6 +324,12 @@ def verified_documentary_kind(topic: str) -> str | None:
         and not (tokens & {"tsunami", "tsunamis", "tidal", "tides",
                            "rogue", "earthquake", "erdbeben", "swell"})):
         return "ocean_waves"
+    if (tokens & {"ocean", "sea", "meer", "meereswellen"}
+        and tokens & {"glow", "glows", "glowing", "shine", "shines", "shining",
+                      "leuchtet", "leuchten", "bioluminescence", "biolumineszenz"}
+        and tokens & {"blue", "night", "nachts", "blau", "bioluminescence", "biolumineszenz"}
+        and not tokens & {"sunlight", "daytime", "sunset", "reflection", "reflections"}):
+        return "ocean_glow_bioluminescence"
     if (("badezimmerspiegel" in raw or
          ("spiegel" in raw and ("bad" in tokens or "dusche" in raw)))
         and ("beschl" in raw or "dampf" in raw or "kondens" in raw)):
@@ -364,6 +394,17 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
                 "Die Wellenhöhe hängt von Windstärke, Dauer und der Strecke über Wasser ab.",
                 "In Küstennähe werden Wellen durch flaches Wasser steiler und brechen.",
             ])
+    elif scene_count == 3 and kind == "ocean_glow_bioluminescence":
+        narration = (
+            [
+                "Some ocean waves glow bright blue at night because of tiny marine organisms.",
+                "Certain plankton emit flashes when the water moves.",
+                "This natural light is called bioluminescence, produced by a chemical reaction in living organisms.",
+            ] if language == "en" else [
+                "Manche Meereswellen leuchten nachts blau, weil winzige Meeresorganismen Licht erzeugen.",
+                "Bestimmtes Plankton leuchtet auf, wenn sich das Wasser bewegt.",
+                "Das heißt Biolumineszenz: Licht entsteht durch chemische Reaktionen in Lebewesen.",
+            ])
     elif scene_count == 3 and kind == "mirror_condensation":
         if language == "de":
             narration = [
@@ -400,13 +441,14 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
         "narration": sentence, "speaker": "A", "search_query": "",
         "image_prompt": "", "main_character": "", "object": ("volcano" if kind == "volcanic_island" else
                     "hurricane" if kind == "hurricane_eye" else
-                    "wave" if kind == "ocean_waves" else
+                    "wave" if kind in ("ocean_waves", "ocean_glow_bioluminescence") else
                     "mirror" if kind == "mirror_condensation" else
                     "lightning" if kind == "lightning_thunder_delay" else "aurora"),
         "action": "ambient", "location": "", "time": "",
         "visual_search_query": ("volcano erupting" if kind == "volcanic_island" else
                                    "hurricane satellite clouds" if kind == "hurricane_eye" else
                                    "ocean waves" if kind == "ocean_waves" else
+                                   "bioluminescent ocean waves" if kind == "ocean_glow_bioluminescence" else
                                    "foggy bathroom mirror" if kind == "mirror_condensation" else
                                    "lightning storm" if kind == "lightning_thunder_delay" else
                                    "aurora borealis"),
