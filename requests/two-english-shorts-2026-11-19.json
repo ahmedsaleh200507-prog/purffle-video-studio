@@ -1,0 +1,48 @@
+{
+  "request_date": "2026-11-19",
+  "state": "blocked_reference_voice_not_ready",
+  "reason": "Approved English reference voice cannot yet synthesize new aligned speech on GitHub; no replacement Joe, Edge, or other narrator allowed.",
+  "reference_sha256": "6cc53c46241503f7c6a813ecf98f726eec38bfae33177d624b4ac9190fc41146",
+  "reference_asset": "private_user_approved_10s_reference_WAV_not_in_public_git",
+  "reference_asset_public": false,
+  "output_format": {
+    "width": 720,
+    "height": 1280,
+    "fps": 30,
+    "subtitles": "aligned_to_actual_approved_voice",
+    "stock_footage": "verified_real_moving_subject_footage"
+  },
+  "videos": [
+    {
+      "slot": 1,
+      "language": "en",
+      "topic": "Why Do We See Lightning Before Hearing Thunder?",
+      "required_narrator": "approved_10s_reference_man",
+      "output_mp4_verified": false,
+      "source_urls": [
+        "https://www.nesdis.noaa.gov/about/k-12-education/severe-weather/what-causes-lightning-and-thunder",
+        "https://www.nssl.noaa.gov/education/svrwx101/lightning/"
+      ]
+    },
+    {
+      "slot": 2,
+      "language": "en",
+      "topic": "Why Do the Northern Lights Glow?",
+      "required_narrator": "approved_10s_reference_man",
+      "output_mp4_verified": false,
+      "source_urls": [
+        "https://www.spaceweather.gov/phenomena/aurora",
+        "https://science.nasa.gov/sun/auroras/"
+      ]
+    }
+  ],
+  "release_requirements": [
+    "secure_private_reference_delivery",
+    "demonstrated_correct_speaker_not_piper_joe",
+    "true_word_timing_for_generated_voice",
+    "verified_stock_footage",
+    "validated_H264_AAC_MP4",
+    "no_voice_fallback"
+  ],
+  "production_workflow_triggered": false
+}
