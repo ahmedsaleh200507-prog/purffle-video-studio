@@ -65,14 +65,12 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
             raise RuntimeError('Local voice alignment/license report missing')
         proof = json.loads(voice_report.read_text(encoding='utf-8'))
         provenance = proof.get('provenance', {})
-        approved = {
-            'en_US-ljspeech-high': 'Public-Domain',
-            'en_US-joe-medium': 'CC0',
-            'de_DE-thorsten-medium': 'CC0-1.0',
-        }
+        approved = {'de_DE-thorsten-medium': 'CC0-1.0'}
         model = voice.partition(':')[2]
         from local_voice import provenance as expected_provenance
-        lang = 'en' if model in ('en_US-ljspeech-high', 'en_US-joe-medium') else 'de'
+        if language != 'de':
+            raise RuntimeError('All generic English Piper voices have been removed')
+        lang = 'de'
         expected = expected_provenance(lang)
         if (model not in approved or proof.get('state') != 'ready' or proof.get('engine') != 'piper'
                 or proof.get('voice') != model or proof.get('timing') != 'aligned'
