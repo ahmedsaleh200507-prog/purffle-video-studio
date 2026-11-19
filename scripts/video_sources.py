@@ -55,6 +55,7 @@ class LicenseValidator:
     STOCK = {
         "PIXABAY": "https://pixabay.com/service/license-summary/",
         "PEXELS": "https://www.pexels.com/license/",
+        "COVERR": "https://coverr.co/license",
         "NASA-MEDIA": NASA_POLICY,
     }
 
@@ -111,11 +112,13 @@ class JsonClient:
 
     def get(self, url, params=None, headers=None):
         headers = {**HEADERS, **(headers or {})}
+        # Coverr returns signed JWT video links; never persist these in caches.
+        sensitive_ephemeral = urlparse(url).hostname == "api.coverr.co"
         identity = json.dumps([url, params or {}, headers], sort_keys=True)
         cache = self.cache_dir / (hashlib.sha256(identity.encode()).hexdigest() + ".json")
         with self._lock:
             try:
-                if cache.exists() and time.time() - cache.stat().st_mtime < self.ttl:
+                if not sensitive_ephemeral and cache.exists() and time.time() - cache.stat().st_mtime < self.ttl:
                     return json.loads(cache.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 pass
@@ -167,11 +170,30 @@ class JsonClient:
             except (requests.RequestException, ValueError, OSError):
                 # Never return request URLs or response bodies: they may contain keys.
                 raise ProviderError("network_or_json_error", "API request or JSON parsing failed") from None
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            temp = cache.with_suffix(".tmp")
-            temp.write_text(json.dumps(data), encoding="utf-8")
-            temp.replace(cache)
+            if not sensitive_ephemeral:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                temp = cache.with_suffix(".tmp")
+                temp.write_text(json.dumps(data), encoding="utf-8")
+                temp.replace(cache)
             return data
+
+    def patch(self, url, *, headers=None):
+        """Report a Coverr clip download via official API, no exposed tokens."""
+        if urlparse(url).hostname != "api.coverr.co" or not secure_url(url):
+            raise ProviderError("unsafe_endpoint", "Expected official Coverr HTTPS API")
+        try:
+            response = self.session.patch(
+                url, headers={**HEADERS, **(headers or {})},
+                timeout=(8, 15), allow_redirects=False)
+            with response:
+                if response.status_code != 204:
+                    raise ProviderError(f"http_{response.status_code}",
+                                        "Coverr download tracking rejected")
+        except ProviderError:
+            raise
+        except requests.RequestException:
+            raise ProviderError("network_error", "Coverr download tracking unavailable") from None
+        return True
 
     @staticmethod
     def _save_cooldown(path, headers):
@@ -217,8 +239,9 @@ PROVIDERS = [
     VideoProvider("archive-video"), VideoProvider("europeana-video", "EUROPEANA_API_KEY"),
     # No external API or website parsing. Offline allowlist of official CC0 MP4 URLs.
     VideoProvider("freenaturestock-video"),
-    VideoProvider("coverr-video", "COVERR_API_KEY",
-                  "policy_blocked: free production API permission not verified"),
+    # Coverr Nov 4 2026: free commercial API use requires attribution and
+    # tracking. We reject premium, sponsored, AI-generated stock media.
+    VideoProvider("coverr-video", "COVERR_API_KEY"),
 ]
 
 
@@ -232,6 +255,7 @@ class ProviderRegistry:
         self.enabled = [p.name for p in PROVIDERS if not p.unavailable_reason()]
         self.events = []
         self._circuit = set()
+        self._coverr_requests = 0
         self._event_lock = threading.Lock()
 
     def health(self):
@@ -292,7 +316,7 @@ class ProviderRegistry:
     @staticmethod
     def license(lid, url, creator, page):
         return {"id": lid, "url": url, "creator": clean(creator), "source_page": page,
-                "attribution_required": lid.startswith("CC-BY-"),
+                "attribution_required": lid.startswith("CC-BY-") or lid == "COVERR",
                 "attribution": " | ".join([clean(creator), lid, url, page,
                     "Trimmed and cropped to vertical; original audio removed"]),
                 "changes": "Trimmed and cropped to vertical; original audio removed"}
