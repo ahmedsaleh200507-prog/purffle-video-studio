@@ -533,6 +533,10 @@ class SceneMatcher:
         wildlife = {"dolphin", "whale", "shark", "turtle", "bird", "eagle",
                     "penguin", "elephant", "lion", "tiger", "bear", "wolf",
                     "fox", "deer", "fish", "octopus", "seal", "jellyfish"}
+        # Match wildlife nouns after the SAME stemming used by provider metadata.
+        # 'turtle' -> 'turtl' and 'whale' -> 'whal'; unnormalised names
+        # silently rejected genuine HD wildlife footage at metadata preflight.
+        wildlife = set().union(*(_terms(word) for word in wildlife))
         wildlife_core = object_terms & wildlife
         if (no_character and wildlife_core and wildlife_core.issubset(have)
                 and score >= .20):
