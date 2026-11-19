@@ -132,6 +132,13 @@ def check_real_word_timing(text: str, path: Path, *, asr_loader=None,
     got = [t for w in recognized for t in _tokens(w.word)]
     # Conservatively reject missed, inserted or altered spoken words.
     if not expected or expected != got or len(expected) != len(recognized):
+        # Source text and decoded speech stay PRIVATE. Only numeric counts
+        # help distinguish missing speech from a near-miss ASR transcription.
+        shared = SequenceMatcher(None, expected, got, autojunk=False).get_matching_blocks()
+        matching = sum(block.size for block in shared)
+        print(f"[VOICE SAFE ASR] expected_words={len(expected)} "
+              f"decoded_words={len(got)} matching_words={matching} "
+              f"timed_words={len(recognized)}", flush=True)
         raise RuntimeError(
             "reference_voice_failed: spoken English does not exactly match "
             "requested narration; no estimated caption timing")
