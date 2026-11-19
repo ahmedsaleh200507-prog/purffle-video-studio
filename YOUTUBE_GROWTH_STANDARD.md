@@ -2,16 +2,26 @@
 
 This is the permanent production contract for the existing "Purffle V2 - 1 to 10 Videos" workflow. Optimize original, trustworthy educational Shorts for real audience interest and sustainable earning potential. **Never guarantee views, revenue or YPP approval.**
 
-## Mandatory four-phase story (approximately 30 seconds)
+## Mandatory topic-adaptive four-phase Shorts — NOT fixed to 30 seconds
 
-| Phase | Target | Editorial requirement |
-|---|---:|---|
-| HOOK | 0–2s | First verified real shot is immediately compelling; strong truthful first spoken phrase; no title card or generic intro |
-| CURIOSITY | 2–8s | Give a meaningful early fact that invites deeper understanding; don't delay all substance |
-| DEVELOPMENT | 8–22s | New topic-specific evidence, relevant real footage and a different useful detail in each scene |
-| PAYOFF | 22–30s | Clear original scientific answer and satisfying visual finish; no generic subscribe/comment CTA |
+The producer estimates an **editorial target** from the topic, real verified
+footage and available facts. A simple subject can naturally finish in roughly
+15–25 seconds; an explanation with more useful facts may use 30–45 seconds or
+longer when supported by verified scenes. The actual MP4 duration is determined
+by real narration, never a mandatory target.
 
-This is a storytelling framework, not exactly four camera clips or guaranteed four timecoded cuts. Adapt to the final duration, without looping, padding or inventing facts.
+| Phase | Relative goal | Editorial requirement |
+|---|---|---|
+| HOOK | **First 1–2 seconds, always** | Immediately show the strongest verified real action with a short, truthful, concrete spoken line. NO giant title or idle intro |
+| CURIOSITY | Immediately after hook | Give a meaningful early fact and reason to continue, never artificial suspense |
+| DEVELOPMENT | Main body, as long as necessary | Every verified shot adds genuinely new explanatory value; no generic filler or repeated facts |
+| PAYOFF | Last part of each video | Answer the question clearly and finish with related original explanation, no CTA or fake cliffhanger |
+
+The old 0–2 / 2–8 / 8–22 / 22–30 example is **only a reference for a
+30-second video**, not a deadline. The phases adjust to the real final length.
+This is a story structure, not precisely four camera clips or cuts. Never loop
+or stretch footage and narration to fill time. **Quality of the first seconds
+is prioritized over quantity of video minutes or number of uploads.**
 
 ## Nonnegotiable technical standards
 
@@ -37,9 +47,9 @@ Sources:
 ## Implementation map
 
 - scripts/opening_impact.py: screen the first real seconds and rank verified candidate footage.
-- scripts/retention_storyboard.py: write/audit the four-phase narrative before voice.
+- scripts/retention_storyboard.py: determine adaptive duration and write/audit the four-phase narrative before voice.
 - scripts/media_first.py: select and preserve actual verified footage and advance unique facts.
-- scripts/studio_runtime.py: original science/voice/captions and 30-second editorial prompt.
+- scripts/studio_runtime.py: original science/voice/captions with topic-adaptive editorial prompt.
 - scripts/render_job.py: script review, independent science screen, finished MP4 checks.
 - scripts/batch.py: save retention-report.json in each video artifact.
 - tests/test_four_phase_short.py: enforce the production contract.
