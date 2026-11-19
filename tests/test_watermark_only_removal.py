@@ -6,8 +6,6 @@ and the progress indicator intact. The large title/rules must stay absent.
 import ast
 from pathlib import Path
 
-from purffle_shorts.config import Settings
-
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = (
     "videos.yml",
@@ -18,13 +16,21 @@ WORKFLOWS = (
 
 
 def test_watermark_and_opening_title_disabled_without_touching_word_captions():
-    settings = Settings(channel_name="PurffleStudios",
-                        watermark="none", hook_overlay=False,
-                        caption_emphasis=True, progress_bar=True)
-    assert settings.watermark_text == ""
-    assert settings.hook_overlay is False
-    assert settings.caption_emphasis is True
-    assert settings.progress_bar is True
+    # Fast-smoke installs no upstream purffle_shorts; check production settings
+    # directly rather than importing uninstalled upstream dependencies.
+    renderer = ROOT / "scripts" / "render_job.py"
+    text = renderer.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    override_names = {
+        keyword.arg: keyword.value.value
+        for node in ast.walk(tree) if isinstance(node, ast.Call)
+        for keyword in node.keywords if isinstance(keyword.value, ast.Constant)
+    }
+    assert override_names["watermark"] == "none"
+    assert override_names["hook_overlay"] is False
+    assert override_names["caption_emoji"] is False
+    assert "caption_style='none'" not in text
+    assert "progress_bar=False" not in text
 
 
 def test_renderer_explicitly_disables_watermark_and_all_upper_title_elements():
