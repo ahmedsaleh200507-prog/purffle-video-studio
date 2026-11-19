@@ -91,6 +91,16 @@ def use_evidence(bundle):
 
 
 def _search_text(topic: str) -> str:
+    # Use the relevant mechanism as a retrieval term for recurring questions.
+    # These words are search queries only, not facts asserted in narration.
+    subject = words(topic)
+    if {"steel", "ship"} <= subject and "float" in subject:
+        return "ship buoyancy displacement"
+    if "shark" in subject and ("swim" in subject or "swimming" in subject):
+        return "shark ram ventilation breathing"
+    if "waterfall" in subject and any(x in topic.casefold()
+                                      for x in ("freez", "frozen", "ice")):
+        return "waterfall frozen ice"
     # Keep the actual key terms, not invented scientific hypotheses.
     terms = [w for w in re.findall(r"[\wäöüß]+", str(topic).casefold())
              if len(w) > 2 and w not in _STOP]
@@ -196,6 +206,10 @@ def evidence_prompt(bundle: Evidence) -> str:
         "supported by this text. DO NOT invent an anecdote, person, study, "
         "historical case, measurement, causal explanation, quote, or conclusion.",
         "Do not present source descriptions as direct video observations.",
+        "OUTPUT REQUIREMENT: Narrate without digits, numerical measurements, "
+        "precise heights, distances, speeds, dates, percentages or other quantities. "
+        "Use qualitative wording even when a reference has exact figures. "
+        "Every factual assertion must be supported by the provided excerpts.",
         "If uncertain, give a simpler statement directly supported by the excerpts.",
     ]
     for source in bundle.sources:
