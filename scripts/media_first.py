@@ -150,6 +150,70 @@ def _grounded_candidates(topic, llm=None):
     return curated
 
 
+def _lava_glow_score(path) -> float:
+    """Cheap real-frame color cue for putting genuinely glowing lava first.
+
+    Metadata and CLIP are still the eligibility gates; red/orange pixels
+    only rank clips that have ALREADY passed those independent checks.
+    Fail closed for scoring (keep existing order) if frame read fails.
+    """
+    import io
+    import shutil
+    import subprocess
+    from PIL import Image
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg or not path:
+        return 0.0
+    values = []
+    for time_seconds in (0.6, 2.4):
+        try:
+            proc = subprocess.run(
+                [ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error",
+                 "-ss", str(time_seconds), "-i", str(path),
+                 "-vf", "scale=160:-2", "-frames:v", "1",
+                 "-f", "image2pipe", "-vcodec", "mjpeg", "-"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                timeout=6, check=False)
+            if proc.returncode or not proc.stdout:
+                continue
+            with Image.open(io.BytesIO(proc.stdout)) as frame:
+                pixels = list(frame.convert("RGB").resize((128, 72)).getdata())
+            hot = sum(1 for r, g, b in pixels
+                      if r > 165 and g < 155 and b < 115
+                      and r > 1.28 * g and r > 1.65 * b)
+            values.append(hot / len(pixels))
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            continue
+    return max(values, default=0.0)
+
+
+def prioritize_lava_opening(topic, items, plans, scene_reports, *,
+                            glow_score=None) -> bool:
+    """Put the most visually striking verified lava shot at video start.
+
+    Only changes order of already-verified, licensed, unique video clips.
+    Every associated scene plan/report moves with its clip to preserve sync.
+    Never change narration, invent footage, or reorder unrelated topics.
+    """
+    from topic_footage import is_lava_ocean_topic
+    if not is_lava_ocean_topic(topic) or len(items) < 2:
+        return False
+    if not (len(items) == len(plans) == len(scene_reports)):
+        raise ValueError("opening_footage_sync_error: mismatched verified video palette")
+    scorer = glow_score or _lava_glow_score
+    scores = [max(0.0, float(scorer(getattr(item, "path", None))))
+              for item in items]
+    index = max(range(len(scores)), key=lambda i: scores[i])
+    if index == 0 or scores[index] < 0.008:
+        return False
+    for sequence in (items, plans, scene_reports):
+        sequence.insert(0, sequence.pop(index))
+    print(f"[OPENING FOOTAGE] promoted verified lava scene {index+1} "
+          "to opening position", flush=True)
+    return True
+
+
 def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
                              min_scenes=3, max_scenes=4, clip_seconds=10.0):
     """Download, probe, and visually verify each potential shot BEFORE TTS.
@@ -210,6 +274,7 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
         plans.append(plan)
         attempts.append({"query": query, "status": "selected",
                          "source": item.source, "id": item.id})
+    prioritize_lava_opening(topic, items, plans, selected_rows)
     # Re-number successful selections because rejected candidates occupied
     # transient scene indexes. Never mistake skipped attempts for final scenes.
     for index, row in enumerate(selected_rows, 1):
