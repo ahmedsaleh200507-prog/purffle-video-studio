@@ -39,8 +39,9 @@ def test_approved_aurora_scripts_open_with_dance_and_explain_it(
     output = ground_verified_documentary({}, TOPIC, language, scene_count=scene_count)
     assert len(output["scenes"]) == scene_count
     joined = " ".join(x["narration"] for x in output["scenes"]).casefold()
-    assert "glow" not in output["title"][language].casefold()
-    assert "dance" in output["title"]["en"].casefold()
+    assert "glow" not in output["title"].casefold()
+    assert ("dance" in output["title"].casefold() if language == "en"
+            else "tanzen" in output["title"].casefold())
     assert ("magnetic" in joined and ("sway" in joined or "twist" in joined)
             if language == "en" else ("magnet" in joined and
                ("tanzen" in joined or "bewegen" in joined)))
