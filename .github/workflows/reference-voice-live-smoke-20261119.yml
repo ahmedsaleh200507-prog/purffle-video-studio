@@ -39,6 +39,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install 'torch==2.6.0+cpu' 'torchaudio==2.6.0+cpu' --index-url https://download.pytorch.org/whl/cpu
           python -m pip install 'faster-whisper==1.2.1' 'resemblyzer==0.1.4'
+          # Smoke shares upstream Word/Speech types; install the exact production
+          # upstream without pulling its competing Transformers/TTS dependencies.
+          python -m pip install --no-deps 'purffle-shorts @ git+https://github.com/Chamanrajragu/purffle-shorts.git@514fd2547227b98d951dfc1489fc8c7ce72f1b68'
+          python -c "from purffle_shorts.timing import Word; from purffle_shorts.tts import Speech; print('[UPSTREAM] pinned voice speech/timing types ready')"
           python -m venv --system-site-packages .venv-reference
           .venv-reference/bin/python -m pip install --upgrade pip
           .venv-reference/bin/python -m pip install 'chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217'
