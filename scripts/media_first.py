@@ -16,7 +16,8 @@ import re
 import time
 
 from topic_footage import (deterministic_stock_shots, related_to_topic,
-                           subject_terms, words)
+                           subject_terms, words, is_lava_ocean_topic,
+                           lava_subject_in_metadata)
 
 _CURRENT = ContextVar("purffle_media_first", default=None)
 
@@ -87,6 +88,12 @@ def _grounded_candidates(topic, llm=None):
     # licensed, moving clips can ever enter the validated palette.
     # New, unrecognised subjects get one inexpensive visual vocabulary query
     # to the existing free Groq LLM; narration is NOT requested at this point.
+    if is_lava_ocean_topic(topic):
+        # The #77 regression: LLM/generic ocean fallbacks contained no lava.
+        # Keep the search concrete and require actual lava/volcano tags.
+        # If genuine footage cannot be verified, reject before TTS.
+        return [p for p in curated
+                if lava_subject_in_metadata(p["visual_search_query"])]
     if llm is None:
         return curated
     schema = {
