@@ -25,6 +25,24 @@ def compact_hook_lines(text: str, language: str = "en") -> list[str]:
     if not text:
         return []
     simple = re.sub(r"[!?]+$", "", text).strip()
+    # Filmable, truthful curiosity hooks. These describe the actual visual
+    # subject without adding dramatic numerical claims or fake discoveries.
+    # Never replace spoken narration or suppress the final scientific answer.
+    low = simple.casefold()
+    tokens = set(re.findall(r"[a-zäöüß]+", low))
+    if {"lava", "ocean"} <= tokens or {"lava", "sea"} <= tokens:
+        if tokens & {"hit", "hits", "touch", "touches", "meets", "meet", "enter", "enters"}:
+            return ["LAVA MEETS OCEAN", "WHAT HAPPENS?"]
+    if tokens & {"lighthouse", "lighthouses"} and tokens & {"wave", "waves"}:
+        return ["MONSTER WAVES", "HOW DOES IT SURVIVE?"]
+    if tokens & {"tornado", "waterspout"} and tokens & {"water", "sea", "ocean"}:
+        return ["A TORNADO", "ON WATER?"]
+    if tokens & {"iceberg", "icebergs"} and tokens & {"underwater", "under", "hidden", "beneath"}:
+        return ["ICEBERG MYSTERY", "WHAT'S UNDERWATER?"]
+    if tokens & {"waterfall", "waterfalls"} and tokens & {"freeze", "freezes", "frozen", "ice"}:
+        return ["A FROZEN", "WATERFALL?"]
+    if tokens & {"ocean", "sea"} and tokens & {"glow", "glows", "glowing"} and tokens & {"blue", "night"}:
+        return ["THE OCEAN", "CAN GLOW BLUE?"]
     match = re.fullmatch(
         r"why do we see\s+(.+?)\s+before\s+(?:we\s+)?hear(?:ing)?\s+(.+)",
         simple, flags=re.I)
