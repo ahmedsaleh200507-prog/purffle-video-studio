@@ -10,7 +10,7 @@ permissions:
   contents: read
 jobs:
   verify-approved-english-voice:
-    if: github.event.head_commit.message == 'Verify approved English reference speech in GitHub Actions'
+    if: startsWith(github.event.head_commit.message, 'Verify approved English reference speech in GitHub Actions')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
