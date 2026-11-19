@@ -504,6 +504,29 @@ class SceneMatcher:
                 and object_terms.issubset(contextual_core)
                 and contextual_core.issubset(have) and score >= .15):
             return score
+        # User-requested bathroom condensation B-roll: providers typically
+        # label an actually visible mirror ("mirror", "reflection") or a
+        # running shower, but never the synthetic action word "ambient".
+        # Keep this exceptionally narrow: no character, deliberately ambient,
+        # exact source object noun present, and a recognizable bathroom-mirror
+        # or shower stock query. This is ONLY a metadata preflight; actual
+        # downloaded frames still need local CLIP, motion, resolution, length,
+        # duplicate and license validation. Never mistake a meteor shower,
+        # concert or generic scenery for footage of a bathroom shower.
+        domestic_objects = {"mirror", "shower"}
+        domestic_object = object_terms & domestic_objects
+        domestic_query = bool(query_terms & _terms("mirror bathroom shower"))
+        if (no_character and action_terms == {"ambient"}
+                and object_terms and object_terms.issubset(domestic_objects)
+                and domestic_object.issubset(have)
+                and domestic_query and score >= .25):
+            if "shower" in domestic_object:
+                bath_context = _terms("bathroom bath bathing water showerhead steam bathtub wet")
+                non_bath = _terms("meteor cosmic astronomy stars sky space golden")
+                if not (have & bath_context - _terms("shower")) or have & non_bath:
+                    raise ValidationError(
+                        "Bathroom shower metadata lacks domestic water context")
+            return score
         # Wildlife stock is usually tagged by species rather than behavior.
         # For documentary B-roll without a named character, a matching animal
         # subject is enough for preflight. CLIP still verifies downloaded frames.
