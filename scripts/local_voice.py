@@ -1,6 +1,6 @@
-"""Free local DE/EN neural speech with native, measured phoneme word timings.
+"""Free local German neural speech with native, measured phoneme word timings.
 
-Only the two audited public-domain/CC0 Piper voices below may be loaded. Tokens
+Only the audited German CC0 Piper voice may be loaded. Tokens
 are phonemized individually, then synthesized together, so original caption
 words (including expanded numbers) retain exact phoneme-ID ranges. Timing comes
 from the model's native sample counts; unsupported alignment fails explicitly.
@@ -22,16 +22,9 @@ import wave
 
 REVISION = 'e9ab671f2a0e50a701b34361136ba3e6a3a9eb0c'
 REPOSITORY = 'rhasspy/piper-voices'
+# All generic English Piper voices (Joe and LJSpeech) were removed at the
+# user's request. Only the private reference pipeline may narrate English.
 VOICES = {
-    'en': {
-        'model': 'en_US-ljspeech-high', 'folder': 'en/en_US/ljspeech/high',
-        'license': {'id': 'Public-Domain', 'source': 'https://keithito.com/LJ-Speech-Dataset/'},
-        'files': {
-            '.onnx': ('5d4f08ba6a2a48c44592eed3ce56bf85e9de3dd4e20df90541ae68a8310c029a', 114199011),
-            '.onnx.json': ('7e1f4634af596d83cca997fb7a931ba80b70f8a316a2655ee69c55365e0ace14', 4970),
-            'MODEL_CARD': ('289f7421072d689a3d91f6c632f486af46f9b8b04417536104a4ea667b8a394b', 513),
-        },
-    },
     'de': {
         'model': 'de_DE-thorsten-medium', 'folder': 'de/de_DE/thorsten/medium',
         'license': {'id': 'CC0-1.0', 'source': 'https://github.com/thorstenMueller/Thorsten-Voice'},
@@ -41,30 +34,16 @@ VOICES = {
             'MODEL_CARD': ('c638118fb06eb07d59e60270097c250cf2de81a037320a8a6306fec652ad13b0', 427),
         },
     },
-    # Commercially usable CC0 English MALE voice. Unlike the old female
-    # LJSpeech voice, this narrator remains fixed for all new Shorts.
-    # Official pinned retraining from the CC0 rdh base, not the historical
-    # lessac-derived (potentially non-commercial) Joe checkpoint.
-    # https://huggingface.co/rhasspy/piper-voices/commit/cf910fb59f1d79ab3b625a63993a108751c6c25d
-    'en_male': {
-        'model': 'en_US-joe-medium',
-        'folder': 'en/en_US/joe/medium',
-        'revision': '0ca208afc2a2ee102b1e961e72e0a7e4907be3d0',
-        'license': {'id': 'CC0', 'source': 'https://github.com/OHF-Voice/voice-datasets'},
-        'files': {
-            '.onnx': ('abf4b998e34045cbd00eaf050de2de620f81ded6eb8b85a24b022a1c2b3f08d2', 63221984),
-        },
-        'verify_text_files': True,
-    },
+
 }
 
 
 def _voice_key(language):
     # Selection is per job, never per sentence. A failed locked male voice
     # must fail visibly, not silently switch to a different/female narrator.
-    if language == 'en' and os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1':
-        return 'en_male'
-    return language
+    if language != 'de':
+        raise RuntimeError('Generic English Piper voices have been removed; approved reference required')
+    return 'de'
 
 
 def provenance(language):
