@@ -1,0 +1,54 @@
+# One-off real private reference speaker test; NEVER upload audio or secret.
+name: Approved English narrator | private live check
+run-name: "Approved English reference | Secret, clone, speaker and caption validation | #${{ github.run_number }}"
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/reference-voice-live-smoke-20261119.yml'
+permissions:
+  contents: read
+jobs:
+  verify-approved-english-voice:
+    if: github.event.head_commit.message == 'Verify approved English reference speech in GitHub Actions'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: ${{ github.workspace }}/scripts:${{ github.workspace }}
+      PURFFLE_NARRATOR_LOCK: '1'
+      HF_HOME: ${{ github.workspace }}/.cache/huggingface
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      TOKENIZERS_PARALLELISM: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate installed private approved voice secret before downloads
+        env:
+          PURFFLE_REFERENCE_OPUS_B64: ${{ secrets.PURFFLE_REFERENCE_OPUS_B64 }}
+        run: python scripts/english_reference_policy.py --topic 'en|Why Do the Northern Lights Glow?'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install true Nano-compatible model and independent verification tools
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
+          python -m pip install --upgrade pip
+          python -m pip install 'torch==2.6.0+cpu' 'torchaudio==2.6.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install 'faster-whisper==1.2.1' 'resemblyzer==0.1.4'
+          python -m venv --system-site-packages .venv-reference
+          .venv-reference/bin/python -m pip install --upgrade pip
+          .venv-reference/bin/python -m pip install 'chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217'
+          .venv-reference/bin/python -c "from chatterbox.tts_turbo import ChatterboxTurboTTS; import inspect; assert 'nano' in inspect.signature(ChatterboxTurboTTS.from_pretrained).parameters, 'Installed model lacks Nano support'; print('[MODEL] Nano-capable class verified')"
+      - name: Generate real speech and independently verify speaker, word timing and reference
+        env:
+          PURFFLE_REFERENCE_OPUS_B64: ${{ secrets.PURFFLE_REFERENCE_OPUS_B64 }}
+          PURFFLE_REFERENCE_PYTHON: ${{ github.workspace }}/.venv-reference/bin/python
+        run: python scripts/reference_voice_smoke.py
+      - name: Confirm no private audio uploaded
+        if: always()
+        run: |
+          echo '[SECURITY] No reference audio or generated samples are uploaded to GitHub artifacts.'
