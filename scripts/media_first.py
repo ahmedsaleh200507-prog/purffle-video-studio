@@ -345,6 +345,8 @@ def footage_prompt(palette) -> str:
         "Use reliable general scientific mechanisms instead. "
         "The image illustrates the subject; it is not a recording of the exact event.",
     ]
+    from retention_storyboard import storyboard_writer_brief
+    lines.append(storyboard_writer_brief(len(palette.plans)))
     for index, (plan, clip) in enumerate(zip(palette.plans, palette.items), 1):
         duration = float(getattr(clip, "duration", 12) or 12)
         max_words = max(10, min(21, int((duration - 1.5) * 2.0)))
