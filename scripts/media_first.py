@@ -274,7 +274,10 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
         plans.append(plan)
         attempts.append({"query": query, "status": "selected",
                          "source": item.source, "id": item.id})
-    prioritize_lava_opening(topic, items, plans, selected_rows)
+    # Rank the ACTUAL first 1.2 seconds across all accepted real clips.
+    # Fail before TTS if no vivid, moving, topic-relevant opening exists.
+    from opening_impact import prioritize_opening
+    opening_review = prioritize_opening(topic, items, plans, selected_rows)
     # Re-number successful selections because rejected candidates occupied
     # transient scene indexes. Never mistake skipped attempts for final scenes.
     for index, row in enumerate(selected_rows, 1):
@@ -285,6 +288,7 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
     visuals.report["state"] = "footage_ready" if len(items) >= min_scenes else "failed"
     visuals.report["strategy"] = "v3_media_first_verified_before_script_and_voice"
     visuals.report["preflight_attempts"] = attempts
+    visuals.report["opening_review"] = opening_review
     if len(items) < min_scenes:
         visuals.report["error"] = (
             f"media_preflight_insufficient_footage: verified {len(items)} "
@@ -297,6 +301,7 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
     save_path.write_text(json.dumps({
         "strategy": "v3_media_first_verified_before_script_and_voice",
         "topic": topic, "required": min_scenes, "verified": len(items),
+        "opening_review": opening_review,
         "selected": [
             {"index": i+1, "query": p["visual_search_query"],
              "object": p["object"], "source": m.source, "id": m.id,
