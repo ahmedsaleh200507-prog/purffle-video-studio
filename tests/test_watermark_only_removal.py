@@ -1,7 +1,7 @@
-"""Only the default PurffleStudios watermark is disabled.
+"""Hide BOTH upper hook title and PurffleStudios watermark in all future videos.
 
-Keep the existing hook title, synchronized word-highlight captions,
-progress indicator and every non-watermark visual intact.
+Keep spoken narration, synchronized word-highlight captions, topic footage,
+and the progress indicator intact. The large title/rules must stay absent.
 """
 import ast
 from pathlib import Path
@@ -17,17 +17,17 @@ WORKFLOWS = (
 )
 
 
-def test_watermark_none_hides_channel_name_without_affecting_hook_or_captions():
+def test_watermark_and_opening_title_disabled_without_touching_word_captions():
     settings = Settings(channel_name="PurffleStudios",
-                        watermark="none", hook_overlay=True,
+                        watermark="none", hook_overlay=False,
                         caption_emphasis=True, progress_bar=True)
     assert settings.watermark_text == ""
-    assert settings.hook_overlay is True
+    assert settings.hook_overlay is False
     assert settings.caption_emphasis is True
     assert settings.progress_bar is True
 
 
-def test_renderer_explicitly_disables_only_watermark():
+def test_renderer_explicitly_disables_watermark_and_all_upper_title_elements():
     renderer = ROOT / "scripts" / "render_job.py"
     tree = ast.parse(renderer.read_text(encoding="utf-8"))
     values = [
@@ -40,10 +40,10 @@ def test_renderer_explicitly_disables_only_watermark():
     text = renderer.read_text(encoding="utf-8")
     assert "caption_emoji=False" in text  # Existing caption configuration untouched.
     assert "captions.srt" in text  # Captions are still a required output.
-    assert "hook_overlay=False" not in text  # The hook title must not be removed.
+    assert "hook_overlay=False" in text  # No oversized upper heading or decoration.
 
 
-def test_every_production_workflow_keeps_word_captions_and_hides_only_brand_text():
+def test_every_production_workflow_keeps_word_captions_and_hides_brand_text():
     for filename in WORKFLOWS:
         workflow = (ROOT / ".github" / "workflows" / filename).read_text(encoding="utf-8")
         assert "      WATERMARK: none" in workflow, filename
