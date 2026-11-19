@@ -99,7 +99,8 @@ def test_xvector_only_marked_as_lower_fidelity(tmp_path):
 def test_never_changes_production_speaker_or_synchronization():
     repo = Path(__file__).parents[1]
     voice = (repo / "scripts" / "local_voice.py").read_text()
-    assert "'en_US-joe-medium'" in voice and "'de_DE-thorsten-medium'" in voice
+    assert "'en_US-joe-medium'" not in voice and "'en_US-ljspeech-high'" not in voice
+    assert "'de_DE-thorsten-medium'" in voice
     runtime = (repo / "scripts" / "studio_runtime.py").read_text()
     assert "reference_voice_audition" not in runtime
     assert "reference_voice_audition" not in (repo / ".github" / "workflows" / "videos.yml").read_text()
