@@ -128,7 +128,7 @@ def main():
                     resolution=tuple(int(v) for v in os.environ.get('RESOLUTION', '720x1280').lower().split('x')), fps=30, max_shot_seconds=0, transition='none',
                     background_video='', music_volume=0, sound_effects=False,
                     caption_emoji=False, color_grade='none', ken_burns=False,
-                    end_cta='',
+                    end_cta='', watermark='none',  # Hide ONLY the default PurffleStudios watermark.
                     upload=False, also_languages=[], localize_metadata=[], notify_webhook='',
                     workers=1, crf=18, preset='medium', target_seconds=25)
         stage = 'production'
