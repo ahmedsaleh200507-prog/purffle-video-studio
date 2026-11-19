@@ -155,7 +155,7 @@ def test_production_82_rescues_repeated_words_by_verifying_exact_short_clauses(m
                               segments=[first, second])
     assert seeds == [190526, 220917, 314159, 190526, 190526, 190526]
     assert checks[:3] == [first] * 3
-    assert checks[3:5] == ["Solid steel sinks.", "But this giant steel ship stays afloat."]
+    assert checks[3:5] == ["A solid block of steel sinks in water.", "But this enormous cargo ship still floats."]
     assert checks[-1] == second
     assert [w.text for w in speech.words] == voice._tokens(first + " " + second)
     assert speech.provenance["voice"] == voice.REFERENCE_VOICE_ID
