@@ -61,7 +61,7 @@ def accent_words(lines: list[str]) -> set[str]:
     ignore = {
         "WHY", "WHAT", "WHEN", "WHERE", "HOW", "DO", "DOES", "DID", "ARE",
         "IS", "A", "AN", "THE", "WE", "YOU", "YOUR", "OUR", "IT", "CAN",
-        "BEFORE", "AFTER", "AND", "OF", "IN", "FOR", "TO",
+        "BEFORE", "AFTER", "FIRST", "LATER", "AND", "OF", "IN", "FOR", "TO",
         "WIE", "WARUM", "WIESO", "WAS", "DER", "DIE", "DAS", "EIN", "EINE",
         "IST", "SIND", "DEN", "DEM", "UND",
     }
