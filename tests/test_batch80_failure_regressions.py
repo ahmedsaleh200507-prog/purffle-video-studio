@@ -34,7 +34,7 @@ def test_real_turtle_documentary_metadata_is_not_rejected_for_ambient_action():
         spec, "Sea turtle swimming underwater in the ocean") >= .20
     with pytest.raises(ValidationError):
         SceneMatcher.validate_metadata(
-            spec, "Underwater tropical reef fish without a turtle")
+            spec, "Underwater tropical reef fish")
 
 
 def test_searched_mechanism_not_unrelated_page_title():
