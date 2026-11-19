@@ -180,3 +180,50 @@ def test_voice_rescue_never_alters_words_or_accepts_unverified_chunks(monkeypatc
     with pytest.raises(RuntimeError, match="all approved-reference narration attempts failed"):
         voice.synthesize(first, tmp_path, SimpleNamespace(language="en"))
     assert not (tmp_path / "voice-reference.wav").exists()
+
+
+def test_production_83_real_audio_can_pass_second_exact_asr_without_voice_change(monkeypatch, tmp_path):
+    """Whisper base may mishear speech; second independent recognizer must be exact."""
+    seeds = []
+    _prepare(monkeypatch, seeds)
+    sentence = "This giant ship is made of steel. Yet it floats on water."
+    calls = []
+    def recognized(text, path, *, model_name="base.en"):
+        calls.append(model_name)
+        assert path.is_file()
+        if model_name == "base.en":
+            raise RuntimeError("reference_voice_failed: spoken English does not exactly match requested narration")
+        assert model_name == "small.en"
+        return [(w, i*.12, i*.12+.09) for i,w in enumerate(voice._tokens(text))]
+    monkeypatch.setattr(voice,"check_real_word_timing",recognized)
+    speech = voice.synthesize(sentence,tmp_path,SimpleNamespace(language="en"))
+    assert calls == ["base.en","base.en","base.en","small.en"]
+    assert seeds == [190526,220917,314159]
+    assert speech.provenance["voice"] == voice.REFERENCE_VOICE_ID
+    assert speech.provenance["speaker_similarity_cosine"] == 0.9
+    assert speech.provenance["synthesis_attempts"] == 3
+    assert [w.text for w in speech.words] == voice._tokens(sentence)
+
+
+def test_production_83_both_asr_models_fail_closed(monkeypatch, tmp_path):
+    seeds = []
+    _prepare(monkeypatch, seeds)
+    calls = []
+    def refused(text,path,*,model_name="base.en"):
+        calls.append(model_name)
+        raise RuntimeError("reference_voice_failed: spoken English does not exactly match requested narration")
+    monkeypatch.setattr(voice,"check_real_word_timing",refused)
+    with pytest.raises(RuntimeError,match="all approved-reference narration attempts failed"):
+        voice.synthesize("Steel ships are made of metal.",tmp_path,
+                         SimpleNamespace(language="en"))
+    assert calls.count("small.en") == 1
+    assert not (tmp_path/"voice-reference.wav").exists()
+
+
+def test_secondary_asr_is_not_script_pushing_or_forced_alignment():
+    from pathlib import Path
+    code=(Path(__file__).resolve().parents[1]/"scripts"/"approved_reference_voice.py").read_text()
+    assert "model_name=\"small.en\"" in code
+    assert 'condition_on_previous_text=False' in code
+    assert "initial_prompt=" not in code
+    assert "word_timestamps=True" in code
