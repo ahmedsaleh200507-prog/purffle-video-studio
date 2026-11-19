@@ -350,7 +350,7 @@ class ProviderRegistry:
             page = str(row.get("source_page", ""))
             u, p = urlparse(video), urlparse(page)
             if (u.scheme != "https" or u.hostname != "cdn.freenaturestock.com"
-                    or not re.fullmatch(r"/videos/freenaturestock-[a-z0-9-]+\\.mp4", u.path)
+                    or not re.fullmatch(r"/videos/freenaturestock-[a-z0-9-]+\.mp4", u.path)
                     or u.query or u.fragment or u.username or u.password
                     or p.scheme != "https" or p.hostname != "freenaturestock.com"
                     or not re.fullmatch(r"/video/[a-z0-9-]+/", p.path)
@@ -376,8 +376,6 @@ class ProviderRegistry:
                 results.append((match, item))
         results.sort(key=lambda pair: (-pair[0], -min(pair[1].width, pair[1].height),
                                         pair[1].id))
-        for rank, (_, item) in enumerate(results):
-            item.rank = rank
         return [item for _, item in results]
 
     def _pixabay(self, query):
