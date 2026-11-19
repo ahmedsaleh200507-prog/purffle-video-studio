@@ -130,7 +130,7 @@ def main():
                     caption_emoji=False, color_grade='none', ken_burns=False,
                     end_cta='', watermark='none', hook_overlay=False,  # Keep title area blank in every Short; preserve word captions.
                     upload=False, also_languages=[], localize_metadata=[], notify_webhook='',
-                    workers=1, crf=18, preset='medium', target_seconds=25)
+                    workers=1, crf=18, preset='medium', target_seconds=30)
         stage = 'production'
         studio = Studio(s)
         if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1':
@@ -159,10 +159,19 @@ def main():
                     validate_unsourced_quantities(
                         screenplay, os.environ['VIDEO_TOPIC'])
                     validate_narration_timing(palette, screenplay, s.language)
+                    stage = 'retention_review'
+                    from retention_storyboard import audit_storyboard
+                    storyboard_audit = audit_storyboard(
+                        os.environ['VIDEO_TOPIC'], screenplay, s.language)
                     stage = 'science_review'
                     screen_narration(
                         screenplay, evidence, studio.llm,
                         path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
+                    from retention_storyboard import save_storyboard_report
+                    save_storyboard_report(
+                        os.environ.get('RETENTION_REPORT',
+                                       str(target.with_name('retention-report.json'))),
+                        storyboard_audit)
                     break
                 except RuntimeError as script_error:
                     if attempt:
@@ -188,11 +197,21 @@ def main():
         voice_report = Path(os.environ['VOICE_REPORT'])
         stage = 'output_validation'
         info, footage = validate_result(video, metadata, folder / 'captions.srt', Path(os.environ['FOOTAGE_REPORT']), voice_report)
+        if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1':
+            from retention_storyboard import save_storyboard_report
+            save_storyboard_report(
+                os.environ.get('RETENTION_REPORT',
+                               str(target.with_name('retention-report.json'))),
+                storyboard_audit,
+                duration_seconds=info['duration'])
         result.update(status='ok', stage='complete', mp4=str(video), output_probe=info,
                       footage_report=os.environ['FOOTAGE_REPORT'],
                       metadata=str(folder / 'metadata.json'), captions=str(folder / 'captions.srt'),
                       voice=metadata['voice'], caption_timing=metadata['timing'],
                       voice_report=str(voice_report),
+                      retention_report=os.environ.get(
+                          'RETENTION_REPORT', str(target.with_name('retention-report.json')))
+                          if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1' else None,
                       science_report=os.environ.get('SCIENCE_REPORT', 'science-report.json'),
                       science_screening=evidence.method if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1' else 'legacy_unreviewed',
                       test_result='validated_output', sources=sorted({x['source'] for x in footage['scenes']}))
