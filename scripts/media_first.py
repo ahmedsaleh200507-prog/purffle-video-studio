@@ -326,9 +326,9 @@ def footage_prompt(palette) -> str:
         "topic; do not invent specific facts just to fit a picture.",
         f"Write EXACTLY {len(palette.plans)} scenes in this order. "
         "Each scene corresponds to the indicated real footage. "
-        "Do NOT request new shots or more scenes. Write 12-19 spoken words "
-        "per scene as an initial guideline; use fewer words for simple facts, "
-        "and always fit the real unlooped clip and natural pacing.",
+        "Do NOT request new shots or more scenes. Write as few spoken words "
+        "as needed to tell THIS true story naturally, without padding or forced "
+        "30-second runtime. Every scene must fit its own verified unlooped clip.",
         "RETENTION PACING: The first scene must begin directly with the real, "
         "specific visual subject — never a greeting, channel intro, generic "
         "question repeated from the title or 'Did you know?'. Start with an "
