@@ -38,6 +38,10 @@ _OFFICIAL = {
         "https://oceanservice.noaa.gov/education/tutorial_currents/03coastal1.html",
         "https://www.ndbc.noaa.gov/education/pacwave.shtml",
     ),
+    "lava_ocean_entry": (
+        "https://www.usgs.gov/observatories/hvo/science/lava-entering-ocean",
+        "https://www.usgs.gov/news/volcano-watch-what-happens-when-lava-flows-sea",
+    ),
     "ocean_glow_bioluminescence": (
         "https://oceanexplorer.noaa.gov/ocean-fact/bioluminescence/",
         "https://ocean.si.edu/ocean-life/six-ways-see-ocean-ocean-bioluminescence",
@@ -239,7 +243,7 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         from fact_checked_topics import (
             verified_documentary_kind, ground_verified_documentary)
         kind = verified_documentary_kind(bundle.topic)
-        if kind in ("ocean_waves", "ocean_glow_bioluminescence"):
+        if kind in ("ocean_waves", "ocean_glow_bioluminescence", "lava_ocean_entry"):
             scenes = getattr(script, "scenes", [])
             spoken = [str(x.narration) for x in scenes]
             approved_variants = [
