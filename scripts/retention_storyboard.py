@@ -1,4 +1,4 @@
-"""Purffle's default 30-second, four-phase editorial standard.
+"""Purffle's topic-adaptive four-phase storytelling standard.
 
 The structure is based on the *story*, not four artificially equal video clips.
 For 3-4 verified camera shots, the first clip contains hook + curiosity;
@@ -47,54 +47,78 @@ def _words(text: str) -> list[str]:
     return re.findall(r"[^\W_]+(?:['’][^\W_]+)?", str(text).casefold(), flags=re.UNICODE)
 
 
-def editorial_phase_windows(seconds: float = STANDARD_SECONDS) -> list[dict]:
-    """Scale the example 30-second plan when actual audio has a different length.
+def choose_duration_seconds(topic: str, scene_count: int, *, fact_count: int = 0) -> int:
+    """Choose an editorial LENGTH TARGET from topic and grounded material.
 
-    These are *editorial targets*, not a claim the real MP4's speech was
-    separately timestamped or that viewers watched those seconds.
+    It is not a speech hard-stop. Actual duration is determined by real
+    narration, and no filler or looping is ever permitted to meet the target.
+    """
+    if not 2 <= scene_count <= 6:
+        raise ValueError("Full Shorts duration needs 2–6 verified real scenes")
+    terms = _words(topic)
+    complexity = min(6, len(terms) // 3)
+    evidence_depth = min(8, max(0, fact_count - 2) * 2)
+    # More available verified scenes and more evidence permit a longer story.
+    # Short single-mechanism topics should naturally get a shorter plan.
+    return min(55, max(16, round(scene_count * 6.25 + complexity + evidence_depth)))
+
+
+def editorial_phase_windows(seconds: float = STANDARD_SECONDS) -> list[dict]:
+    """Scale storytelling BEATS, keeping the crucial first-second hook short.
+
+    There are no fixed cuts: the MP4 may last 18, 25, 38, 45 seconds, etc.
+    A viewer's behavior is measured only in YouTube Studio, not by this plan.
     """
     seconds = float(seconds)
     if not math.isfinite(seconds) or seconds <= 0:
         raise ValueError("Video duration must be positive and finite")
+    hook_end = min(2.0, seconds * .2)
+    curiosity_end = max(hook_end, seconds * 8 / 30)
+    development_end = max(curiosity_end, seconds * 22 / 30)
+    edges = (0, hook_end, curiosity_end, development_end, seconds)
     return [
-        {"name": name, "start_seconds": round(seconds * begin / 30, 2),
-         "end_seconds": round(seconds * end / 30, 2), "goal": purpose}
-        for name, begin, end, purpose in PHASES
+        {"name": name, "start_seconds": round(edges[i], 2),
+         "end_seconds": round(edges[i+1], 2), "goal": purpose}
+        for i, (name, _begin, _end, purpose) in enumerate(PHASES)
     ]
 
 
-def storyboard_writer_brief(scene_count: int) -> str:
+def storyboard_writer_brief(scene_count: int, planned_seconds: int | None = None) -> str:
     if not 1 <= scene_count <= 6:
         raise ValueError("Retentive Shorts require 1 to 6 real scenes")
+    proposed = planned_seconds if planned_seconds is not None else (
+        choose_duration_seconds("educational documentary", scene_count)
+        if scene_count >= 2 else 12)
+    beats = editorial_phase_windows(proposed)
     return (
-        "MANDATORY FOUR-PHASE 30-SECOND SHORTS STORY STRUCTURE: "
-        "0–2s HOOK — within the very first spoken words, show the most vivid "
-        "actually VERIFIED real camera footage and describe an interesting "
-        "concrete, truthful observation. NO huge title overlay, no generic "
-        "greeting and no full question repeated from the YouTube title. "
-        "2–8s CURIOSITY — add a first meaningful scientific fact immediately "
-        "and establish why the outcome is surprising; do not delay the "
-        "entire answer until the end. "
-        "8–22s DEVELOPMENT — reveal different mechanisms, contrasts or "
-        "consequences supported by science and the actual shots; every "
-        "scene adds new, specific information. "
-        "22–30s PAYOFF — clearly answer the video's original question "
-        "and finish with a relevant real visual, NOT a subscribe/comment CTA. "
-        f"You have {scene_count} verified shots, not necessarily four shots. "
-        "In a rare 1-shot preview, carry all four phases in the one clip. "
-        "In a 3-shot version, scene one contains hook+curiosity, scene two "
-        "develops, scene three answers. In a 4-shot version, the first "
-        "shot still carries the first 0–8s and the others progress and pay off. "
-        "The 30 seconds are editorial guides, not fixed audio timestamps. "
-        "Do not pad the script or loop short footage simply to reach 30s. "
-        "Write a UNIQUE source-grounded explanation of this specific topic; "
-        "avoid interchangeable generic lines and mass-produced shock-bait. "
-        "Every scientific and causal claim must pass the existing source "
-        "review, and the visuals must not misrepresent real events."
+        "MANDATORY FLEXIBLE FOUR-PHASE SHORTS STORY STRUCTURE. "
+        "The topic and validated facts determine the length: NO mandatory "
+        "30-second runtime, and no filler to match a target. "
+        f"Planned narrative length approx {proposed} seconds, adjustable "
+        "if the true explanation needs fewer words. "
+        "0–2s HOOK — FIRST 1–2 SECONDS ARE MOST IMPORTANT: Start with the "
+        "strongest ACTUALLY VERIFIED real moving footage and a SHORT, vivid, "
+        "specific true spoken opening. No title card, no silence, no greeting, "
+        "no repeated full video title, no unrelated shot. "
+        f"CURIOSITY — by around {beats[1]['end_seconds']}s give the "
+        "first meaningful fact without delaying the answer. "
+        f"DEVELOPMENT — until around {beats[2]['end_seconds']}s, "
+        "advance with fresh science and genuinely relevant shots. "
+        "PAYOFF — in the remaining final segment, answer clearly and "
+        "finish on a meaningful image, with no CTA or fake cliffhanger. "
+        f"You have {scene_count} verified shots, not necessarily four beats "
+        "mapped one-to-one onto four shots. "
+        "A 1-shot preview has all four beats in one shot. "
+        "With three shots, hook and curiosity share the first shot; "
+        "later shots advance and resolve the question. "
+        "Do not loop footage or stretch narration to a specified length. "
+        "Write a UNIQUE source-grounded explanation for THIS topic, "
+        "avoid interchangeable or repetitive mass-produced shock-bait, "
+        "and retain the independent facts and footage review."
     )
 
 
-def audit_storyboard(topic: str, screenplay, language="en", *, scenes=None) -> dict:
+def audit_storyboard(topic: str, screenplay, language="en", *, scenes=None, planned_seconds=None) -> dict:
     """Reject obviously weak templated intros and spam *before* narrator TTS.
 
     This simple deterministic editorial check complements, but never replaces,
@@ -127,9 +151,11 @@ def audit_storyboard(topic: str, screenplay, language="en", *, scenes=None) -> d
         raise RuntimeError("retention_storyboard_invalid: no substantive final answer")
     return {
         "state": "editorial_screen_passed",
-        "version": "shorts_four_phase_v1",
-        "template_target_seconds": STANDARD_SECONDS,
-        "phases": editorial_phase_windows(),
+        "version": "shorts_four_phase_adaptive_v2",
+        "duration_policy": "topic_and_verified_footage_adaptive_not_fixed",
+        "planned_duration_seconds": planned_seconds,
+        "example_reference_seconds": STANDARD_SECONDS,
+        "phases": editorial_phase_windows(planned_seconds or STANDARD_SECONDS),
         "scene_count": len(texts),
         "language": str(language)[:2],
         "first_spoken_words": " ".join(_words(texts[0])[:7]),
