@@ -250,6 +250,16 @@ def footage_prompt(palette) -> str:
         "Each scene corresponds to the indicated real footage. "
         "Do NOT request new shots or more scenes. Write 12-19 spoken words "
         "per scene; concise lines ensure the audio fits each unlooped clip.",
+        "RETENTION PACING: The first scene must begin directly with the real, "
+        "specific visual subject — never a greeting, channel intro, generic "
+        "question repeated from the title or 'Did you know?'. Start with an "
+        "accurate observation, then build curiosity naturally. The second "
+        "scene must deliver a substantive new fact, not empty suspense. "
+        "Each middle scene progresses the explanation with fresh information. "
+        "The last scene clearly answers the topic and closes with a relevant "
+        "fact, not 'like/comment/subscribe'. The facts must match the official "
+        "sources or independently screened references; do not invent drama "
+        "or state that illustrative footage is proof of an event.",
         "Every scene MUST remain scientifically truthful, without fake places, "
         "experiments, witnesses, exact measurements or dramatic invented facts. "
         "No precise quantities, numerical records or scientific measurements "
