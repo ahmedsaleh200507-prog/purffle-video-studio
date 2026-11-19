@@ -17,7 +17,7 @@ from media_validation import SceneMatcher, SceneSpec, ValidationError
     ("wiping foggy mirror", "mirror",
      "A close up of a mirror with condensation"),
     ("hot shower bathroom", "shower",
-     "Water running from showerhead in a bathroom"),
+     "Shower water running from showerhead in a bathroom"),
     ("water running shower", "shower",
      "Bathroom shower with flowing water"),
 ])
