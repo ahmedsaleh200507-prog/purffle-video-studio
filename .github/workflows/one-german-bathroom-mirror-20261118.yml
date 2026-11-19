@@ -44,6 +44,7 @@ jobs:
       KEN_BURNS: 'false'
       COLOR_GRADE: none
       SOUND_EFFECTS: 'false'
+      WATERMARK: none  # Remove only PurffleStudios; retain topic hook and word captions
       CAPTION_EMOJI: 'false'
       MUSIC_VOLUME: '0'
       OUTPUT_DIR: output_videos
