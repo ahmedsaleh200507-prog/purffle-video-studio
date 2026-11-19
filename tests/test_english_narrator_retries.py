@@ -85,3 +85,45 @@ def test_rejects_all_inaccurate_attempts_without_accepting_mismatch(monkeypatch,
                          tmp_path, SimpleNamespace(language="en"))
     assert seeds == [190526, 220917, 314159]
     assert not (tmp_path / "voice-reference.wav").exists()
+
+
+def test_verified_short_scenes_are_joined_without_estimated_caption_times(monkeypatch, tmp_path):
+    seeds = []
+    _prepare(monkeypatch, seeds)
+    parts = [
+        "Glowing lava pours into the ocean and creates huge clouds of steam.",
+        "Water evaporates rapidly while the glowing volcanic rock begins to cool.",
+    ]
+    def verify(text, path):
+        # Simulate strict real-ASR word verification on EACH generated audio.
+        assert text in parts
+        assert path.is_file()
+        return [(w, i * .12, i * .12 + .09)
+                for i, w in enumerate(text.rstrip(".").split())]
+    monkeypatch.setattr(voice, "check_real_word_timing", verify)
+    speech = voice.synthesize(
+        " ".join(parts), tmp_path, SimpleNamespace(language="en"),
+        segments=parts)
+    assert seeds == [190526, 190526]
+    assert speech.provenance["verified_scene_segments"] == 2
+    assert speech.provenance["synthesis_attempts"] == 2
+    assert speech.provenance["speaker_similarity_cosine"] == .9
+    assert len(speech.words) == sum(len(p.split()) for p in parts)
+    assert speech.words[len(parts[0].split())].start >= 2.14
+    assert abs(speech.duration - 4.14) < .03
+    assert speech.audio.is_file()
+
+
+def test_invalid_scene_split_never_silently_changes_spoken_text(monkeypatch, tmp_path):
+    seeds = []
+    _prepare(monkeypatch, seeds)
+    monkeypatch.setattr(voice, "check_real_word_timing", lambda text, _wav: [
+        (w, i * .25, i * .25 + .2)
+        for i, w in enumerate(text.rstrip(".").split())
+    ])
+    spoken = "Lightning and thunder happen together."
+    speech = voice.synthesize(
+        spoken, tmp_path, SimpleNamespace(language="en"),
+        segments=["This is not the actual requested narration."])
+    assert speech.provenance["verified_scene_segments"] == 1
+    assert seeds == [190526]
