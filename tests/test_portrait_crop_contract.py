@@ -104,7 +104,7 @@ def test_successful_hurricane_scene_report_is_accepted_at_final_gate(tmp_path, m
     captions.write_text("1\n00:00:00,000 --> 00:00:03,000\nHurricane eye\n")
     with patch("media_validation.QualityValidator.validate",
                return_value={"width": 720, "height": 1280, "duration": 33, "has_audio": True}):
-        _, validated = validate_result(clip, {"voice": "edge:Andrew", "timing": "native"},
+        _, validated = validate_result(clip, {"language": "de", "voice": "edge:de", "timing": "native"},
                                        captions, report)
     assert len(validated["scenes"]) == 5
     assert sum(x["quality"]["portrait_crop_scale"] > 1 for x in validated["scenes"]) == 2
