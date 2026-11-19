@@ -29,6 +29,10 @@ _OFFICIAL = {
         "https://www.nesdis.noaa.gov/about/k-12-education/severe-weather/what-causes-lightning-and-thunder",
         "https://www.nssl.noaa.gov/education/svrwx101/lightning/",
     ),
+    "northern_lights_dance": (
+        "https://www.spaceweather.gov/phenomena/aurora",
+        "https://science.nasa.gov/sun/auroras/",
+    ),
     "northern_lights_glow": (
         "https://www.spaceweather.gov/phenomena/aurora",
         "https://science.nasa.gov/sun/auroras/",
@@ -243,7 +247,7 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         from fact_checked_topics import (
             verified_documentary_kind, ground_verified_documentary)
         kind = verified_documentary_kind(bundle.topic)
-        if kind in ("ocean_waves", "ocean_glow_bioluminescence", "lava_ocean_entry"):
+        if kind in ("ocean_waves", "ocean_glow_bioluminescence", "lava_ocean_entry", "northern_lights_dance"):
             scenes = getattr(script, "scenes", [])
             spoken = [str(x.narration) for x in scenes]
             approved_variants = [
