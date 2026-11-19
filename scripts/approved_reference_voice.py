@@ -7,6 +7,7 @@ aborts the English Short without falling back to another narrator.
 from __future__ import annotations
 
 from difflib import SequenceMatcher
+from functools import lru_cache
 import hashlib
 import json
 import math
@@ -105,15 +106,25 @@ def _safe_split_for_exact_audio(text: str) -> list[str]:
     return pieces
 
 
-def check_real_word_timing(text: str, path: Path, *, asr_loader=None):
-    """Decode the actual generated WAV and match words/times from real ASR."""
-    if asr_loader is None:
-        from faster_whisper import WhisperModel
-        model = WhisperModel("base.en", device="cpu", compute_type="int8",
-                             download_root=os.getenv("PURFFLE_WHISPER_CACHE",
-                                                     ".cache/whisper"))
-    else:
-        model = asr_loader()
+@lru_cache(maxsize=2)
+def _verified_asr_model(model_name: str):
+    """Reuse CPU recognizers. Neither receives the script as an ASR prompt."""
+    if model_name not in {"base.en", "small.en"}:
+        raise ValueError("Unsupported independent English ASR checker")
+    from faster_whisper import WhisperModel
+    return WhisperModel(model_name, device="cpu", compute_type="int8",
+                        download_root=os.getenv("PURFFLE_WHISPER_CACHE",
+                                                ".cache/whisper"))
+
+
+def check_real_word_timing(text: str, path: Path, *, asr_loader=None,
+                           model_name="base.en"):
+    """Accept only exact recognized words from actual generated WAV.
+
+    A stronger separate recognizer may rescue false negative transcription,
+    but NEVER uses forced alignment or the expected text as an ASR prompt.
+    """
+    model = asr_loader() if asr_loader is not None else _verified_asr_model(model_name)
     segments, _info = model.transcribe(
         str(path), language="en", beam_size=5, word_timestamps=True,
         vad_filter=False, condition_on_previous_text=False)
@@ -232,7 +243,24 @@ def synthesize(text, out, settings, *, segments=None):
                          timeout=300, stage="nano-reference-worker")
                     length = _wav_duration(output)
                     score = voice_similarity(reference, output)
-                    timed_words = check_real_word_timing(sentence, output)
+                    try:
+                        timed_words = check_real_word_timing(sentence, output)
+                    except RuntimeError as asr_error:
+                        if (attempt != len(seeds)
+                                or "does not exactly match" not in str(asr_error)):
+                            raise
+                        # The base Whisper recognizer can mishear a perfectly
+                        # valid Nano voice, especially short sibilant phrases.
+                        # Only the FINAL full-WAV attempt gets a second,
+                        # independent CPU ASR model. It must still recognize
+                        # EVERY original word and supply REAL word timestamps.
+                        try:
+                            timed_words = check_real_word_timing(
+                                sentence, output, model_name="small.en")
+                        except Exception:
+                            raise asr_error from None
+                        print("[VOICE ASR] exact transcript confirmed by "
+                              "independent small.en recognizer", flush=True)
                     return length, score, timed_words
                 except (RuntimeError, wave.Error) as exc:
                     output.unlink(missing_ok=True)
