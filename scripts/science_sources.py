@@ -33,6 +33,11 @@ _OFFICIAL = {
         "https://www.spaceweather.gov/phenomena/aurora",
         "https://science.nasa.gov/sun/auroras/",
     ),
+    "ocean_waves": (
+        "https://oceanexplorer.noaa.gov/ocean-fact/waves/",
+        "https://oceanservice.noaa.gov/education/tutorial_currents/03coastal1.html",
+        "https://www.ndbc.noaa.gov/education/pacwave.shtml",
+    ),
     "mirror_condensation": (
         "https://www.nesdis.noaa.gov/about/k-12-education/atmosphere/what-humidity",
         "https://scied.ucar.edu/learning-zone/how-weather-works/humidity",
@@ -223,6 +228,28 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
     """
     report = Path(path or os.getenv("SCIENCE_REPORT", "science-report.json"))
     if bundle.method == "curated_editor_reviewed":
+        # Curated mode is reserved for exact, fixed sentences tied to official
+        # source dossiers. A caller must never smuggle an arbitrary Groq
+        # narration past the independent model/source review gate.
+        from fact_checked_topics import (
+            verified_documentary_kind, ground_verified_documentary)
+        kind = verified_documentary_kind(bundle.topic)
+        if kind == "ocean_waves":
+            scenes = getattr(script, "scenes", [])
+            spoken = [str(x.narration) for x in scenes]
+            approved_variants = [
+                [x["narration"] for x in ground_verified_documentary(
+                    {}, bundle.topic, language, scene_count=len(scenes))["scenes"]]
+                for language in ("en", "de")
+            ]
+            if spoken not in approved_variants or not (
+                    len(bundle.sources) >= 2 and
+                    all(s["url"].startswith("https://") and
+                        s.get("tier") == "editor_reviewed_official_dossier"
+                        for s in bundle.sources)):
+                _report(report, bundle, "failed",
+                        error="ocean wave narration differs from source-backed dossier")
+                raise RuntimeError("science_claim_unverified: unknown ocean wave claims")
         _report(report, bundle, "curated_editor_reviewed")
         return
     scenes = getattr(script, "scenes", [])

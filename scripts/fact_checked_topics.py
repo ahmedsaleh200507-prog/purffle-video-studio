@@ -187,6 +187,33 @@ _DOCUMENTARY_FACTS = {
         },
         "tags": ["northern lights", "aurora borealis", "oxygen", "nitrogen", "space weather"],
     },
+    "ocean_waves": {
+        # Source-constrained educational explanation, not LLM fact guessing.
+        # NOAA Ocean Exploration: https://oceanexplorer.noaa.gov/ocean-fact/waves/
+        # NOAA National Ocean Service: https://oceanservice.noaa.gov/education/tutorial_currents/03coastal1.html
+        # NOAA NDBC: https://www.ndbc.noaa.gov/education/pacwave.shtml
+        "en": [
+            "Most ocean surface waves begin when wind blows across the water.",
+            "The moving wind transfers energy to the surface, turning small ripples into growing waves.",
+            "Their size depends on wind speed, how long it blows, and the distance it travels over water.",
+            "As waves reach shallow water, they become steeper and can break along the shore.",
+        ],
+        "de": [
+            "Die meisten Meereswellen entstehen, wenn Wind über die Wasseroberfläche weht.",
+            "Der Wind überträgt Energie auf das Wasser. Aus kleinen Wellen werden größere Wellen.",
+            "Ihre Größe hängt von Windstärke, Dauer und der Strecke über dem Wasser ab.",
+            "In flachem Wasser werden Wellen steiler und können an der Küste brechen.",
+        ],
+        "title": {
+            "en": "Why Do Ocean Waves Form?",
+            "de": "Warum entstehen Meereswellen?",
+        },
+        "description": {
+            "en": "Wind transfers energy to ocean water. Wind speed, duration and distance affect wave size, while shallow water causes breaking waves.",
+            "de": "Wind überträgt Energie auf das Meer. Stärke, Dauer und Strecke beeinflussen die Wellenhöhe; in flachem Wasser brechen Wellen.",
+        },
+        "tags": ["ocean waves", "wind", "surf", "wave formation", "ocean science"],
+    },
     "mirror_condensation": {
         "en": [
             "Hot shower water evaporates and makes bathroom air humid.",
@@ -264,6 +291,15 @@ def verified_documentary_kind(topic: str) -> str | None:
          and ({"glow", "shine", "colors", "colour", "why"} & tokens))
         or ("aurora" in tokens and ({"glow", "shine", "colors", "colour"} & tokens))):
         return "northern_lights_glow"
+    # Match the ordinary wind-driven wave explainer only. Do not replace
+    # tsunami, tides, swell-specific, rogue-wave or earthquake explanations.
+    if (tokens & {"wave", "waves", "wellen", "meereswellen"}
+        and tokens & {"ocean", "sea", "meereswellen", "meer"}
+        and tokens & {"form", "formed", "create", "created", "cause", "causes",
+                      "why", "how", "entstehen", "entsteht", "warum", "wie"}
+        and not (tokens & {"tsunami", "tsunamis", "tidal", "tides",
+                           "rogue", "earthquake", "erdbeben", "swell"})):
+        return "ocean_waves"
     if (("badezimmerspiegel" in raw or
          ("spiegel" in raw and ("bad" in tokens or "dusche" in raw)))
         and ("beschl" in raw or "dampf" in raw or "kondens" in raw)):
@@ -317,6 +353,17 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
                 "Elektronen folgen dem Erdmagnetfeld und stoßen mit Sauerstoff und Stickstoff zusammen.",
                 "Dabei entsteht farbiges Licht, das als Polarlicht über den Nachthimmel zieht.",
             ])
+    elif scene_count == 3 and kind == "ocean_waves":
+        narration = (
+            [
+                "Most ocean surface waves form when wind transfers energy to the water.",
+                "Wave height depends on wind speed, duration, and distance over open water.",
+                "Near shore, shallow water makes waves steeper until they break.",
+            ] if language == "en" else [
+                "Die meisten Meereswellen entstehen, wenn Wind Energie auf das Wasser überträgt.",
+                "Die Wellenhöhe hängt von Windstärke, Dauer und der Strecke über Wasser ab.",
+                "In Küstennähe werden Wellen durch flaches Wasser steiler und brechen.",
+            ])
     elif scene_count == 3 and kind == "mirror_condensation":
         if language == "de":
             narration = [
@@ -353,11 +400,13 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
         "narration": sentence, "speaker": "A", "search_query": "",
         "image_prompt": "", "main_character": "", "object": ("volcano" if kind == "volcanic_island" else
                     "hurricane" if kind == "hurricane_eye" else
+                    "wave" if kind == "ocean_waves" else
                     "mirror" if kind == "mirror_condensation" else
                     "lightning" if kind == "lightning_thunder_delay" else "aurora"),
         "action": "ambient", "location": "", "time": "",
         "visual_search_query": ("volcano erupting" if kind == "volcanic_island" else
                                    "hurricane satellite clouds" if kind == "hurricane_eye" else
+                                   "ocean waves" if kind == "ocean_waves" else
                                    "foggy bathroom mirror" if kind == "mirror_condensation" else
                                    "lightning storm" if kind == "lightning_thunder_delay" else
                                    "aurora borealis"),
