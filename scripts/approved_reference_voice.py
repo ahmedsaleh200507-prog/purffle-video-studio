@@ -24,14 +24,36 @@ from english_reference_policy import (
 )
 
 
-def _run(command: list[str], *, timeout: int) -> None:
+_WORKER_STAGES = {
+    "worker-start", "dependencies-loaded", "model-loaded",
+    "generated-waveform", "saved-waveform",
+}
+
+
+def _run(command: list[str], *, timeout: int, stage: str = "private-worker") -> None:
+    """Never expose private speech, file paths, model stderr or tokens.
+
+    Stable stage names reveal a failing dependency/model step without putting
+    secrets or approved reference audio into public CI logs.
+    """
     try:
-        subprocess.run(command, stdout=subprocess.DEVNULL, check=True,
-                       timeout=timeout, stderr=subprocess.PIPE)
-    except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
-        # Model text, private file paths and full subprocess output never appear
-        # in public GitHub Actions logs or result ZIPs.
-        raise RuntimeError("reference_voice_failed: private audio decode/model/validation failed") from None
+        result = subprocess.run(command, stdout=subprocess.PIPE, check=False,
+                                timeout=timeout, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            return
+        lines = result.stdout.decode("utf-8", errors="replace").splitlines()
+        progress = [line.removeprefix("[VOICE SAFE STAGE] ")
+                    for line in lines if line.startswith("[VOICE SAFE STAGE] ")]
+        reached = next((name for name in reversed(progress)
+                        if name in _WORKER_STAGES), "not-started")
+        print(f"[VOICE SAFE DIAGNOSTIC] stage={stage} last_completed={reached} "
+              f"worker_exit={result.returncode}", flush=True)
+    except subprocess.TimeoutExpired:
+        print(f"[VOICE SAFE DIAGNOSTIC] stage={stage} timeout=yes", flush=True)
+    except OSError:
+        print(f"[VOICE SAFE DIAGNOSTIC] stage={stage} launch_failed=yes", flush=True)
+    # Never print subprocess exception, command, stderr, stdout or reference.
+    raise RuntimeError("reference_voice_failed: private audio decode/model/validation failed") from None
 
 
 def prepare_reference(folder: Path) -> Path:
@@ -46,7 +68,7 @@ def prepare_reference(folder: Path) -> Path:
     opus.chmod(0o600)
     _run(["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
           "-i", str(opus), "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
-          str(wav)], timeout=25)
+          str(wav)], timeout=25, stage="opus-decode")
     wav.chmod(0o600)
     with wave.open(str(wav), "rb") as f:
         if (f.getframerate() != 16000 or f.getnchannels() != 1 or
@@ -153,7 +175,7 @@ def synthesize(text, out, settings):
             raise RuntimeError("reference_voice_not_ready: isolated CPU reference model is not installed")
         _run([str(model_python), str(Path(__file__).with_name("reference_voice_worker.py")),
               "--reference", str(reference), "--text-file", str(text_file),
-              "--wav", str(target)], timeout=900)
+              "--wav", str(target)], timeout=900, stage="nano-reference-worker")
         duration = _wav_duration(target)
         similarity = voice_similarity(reference, target)
         timed = check_real_word_timing(text, target)
