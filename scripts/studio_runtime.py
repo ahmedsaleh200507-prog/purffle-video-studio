@@ -440,6 +440,15 @@ class StrictVisuals:
                         topic, " ".join((
                             str(item.id), str(item.text),
                             str(license_info.get("source_page", "")))))
+                    # #77: "What happens when lava hits the ocean?" must
+                    # never use plain ocean/surfer clips as if they showed
+                    # molten lava. Check independent provider title/tags/page
+                    # BEFORE costly download or accepting CLIP similarity.
+                    from topic_footage import is_lava_ocean_topic, lava_subject_in_metadata
+                    if is_lava_ocean_topic(topic) and not lava_subject_in_metadata(
+                            " ".join((str(item.text),
+                                      str(license_info.get("source_page", ""))))):
+                        raise ValueError("offtopic_lava_ocean: source has no lava/volcano context")
                     if hasattr(self.matcher, "validate_metadata"):
                         score = self.matcher.validate_metadata(spec, item.text)
                     elif hasattr(self.matcher, "metadata_score"):
