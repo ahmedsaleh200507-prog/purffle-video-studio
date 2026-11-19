@@ -104,7 +104,7 @@ def test_reject_no_answer_and_cta():
         audit_storyboard("Why does the sea glow blue?", script(
             "Certain plankton glow when water moves around their bodies.",
             "Bioluminescence comes from a chemical reaction inside tiny marine organisms.",
-            "It is amazing indeed."))
+            "It is very amazing indeed today."))
 
 
 def test_copying_topic_word_for_word_is_not_a_real_hook():
