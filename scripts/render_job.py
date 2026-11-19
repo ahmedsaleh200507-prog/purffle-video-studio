@@ -161,7 +161,7 @@ def main():
             logging.info('Adaptive Shorts target: %d seconds from %d verified scenes and %d evidence sources',
                          planned_seconds, len(palette.items), fact_count)
             stage = 'grounded_script'
-            for attempt in range(2):
+            for attempt in range(3):
                 with use_palette(palette), use_evidence(evidence):
                     screenplay, pick, writer = studio.draft(
                         os.environ['VIDEO_TOPIC'], style='facts')
@@ -186,7 +186,7 @@ def main():
                         storyboard_audit)
                     break
                 except RuntimeError as script_error:
-                    if attempt:
+                    if attempt >= 2:
                         raise
                     logging.warning(
                         'V3 factuality, source or timing preflight rejected draft (%s); '
