@@ -164,6 +164,34 @@ _DOCUMENTARY_FACTS = {
         },
         "tags": ["lightning", "thunder", "sound", "storms", "science"],
     },
+    "northern_lights_dance": {
+        # NOAA SWPC explains auroral arcs twist and sway:
+        # https://www.spaceweather.gov/phenomena/aurora
+        # NASA describes how solar-wind particle flows and magnetic fields
+        # continually reshape Earth's shimmering auroral displays:
+        # https://science.nasa.gov/sun/auroras/
+        "en": [
+            "The night sky seems to dance. But those shifting lights aren't clouds.",
+            "Charged particles flow along Earth's magnetic field into the upper atmosphere.",
+            "Changes in magnetic activity and particle flows make glowing bands twist and sway.",
+            "Oxygen and nitrogen release the light, creating curtains that keep changing shape.",
+        ],
+        "de": [
+            "Der Nachthimmel scheint zu tanzen. Doch diese Lichter sind keine Wolken.",
+            "Geladene Teilchen folgen dem Erdmagnetfeld bis hoch in die Atmosphäre.",
+            "Verändert sich die magnetische Aktivität, bewegen und verdrehen sich die leuchtenden Bänder.",
+            "Sauerstoff und Stickstoff geben Licht ab. So verändern die leuchtenden Schleier ihre Form.",
+        ],
+        "title": {
+            "en": "Why Do Northern Lights Dance Across the Sky?",
+            "de": "Warum tanzen Nordlichter am Himmel?",
+        },
+        "description": {
+            "en": "Auroral curtains twist and sway as Earth's magnetic activity and energetic particle flows change, according to NOAA and NASA.",
+            "de": "Magnetische Aktivität und Teilchenströme lassen die leuchtenden Schleier der Polarlichter ihre Form ändern.",
+        },
+        "tags": ["northern lights", "aurora dance", "magnetic field", "solar wind", "space weather"],
+    },
     "northern_lights_glow": {
         "en": [
             "Northern lights are colorful displays high in Earth's atmosphere.",
@@ -337,6 +365,12 @@ def verified_documentary_kind(topic: str) -> str | None:
     if ("lightning" in tokens and "thunder" in tokens
             and ({"before", "hearing", "hear", "see", "first"} & tokens)):
         return "lightning_thunder_delay"
+    if ((("northern" in tokens and ("lights" in tokens or "light" in tokens))
+         or "aurora" in tokens or "auroras" in tokens
+         or "nordlichter" in tokens or "polarlichter" in tokens)
+         and tokens & {"dance", "dances", "dancing", "moving", "move", "waves",
+                       "twists", "sway", "sways", "tanzen", "tanzt", "bewegen"}):
+        return "northern_lights_dance"
     if (("northern" in tokens and ("lights" in tokens or "light" in tokens)
          and ({"glow", "shine", "colors", "colour", "why"} & tokens))
         or ("aurora" in tokens and ({"glow", "shine", "colors", "colour"} & tokens))):
@@ -402,6 +436,17 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
                 "Blitz und Donner entstehen bei einem Gewitter praktisch gleichzeitig.",
                 "Licht ist schneller als Schall. Deshalb sehen wir den Blitz zuerst.",
                 "Den Donner hören wir später. Eine längere Pause bedeutet meist einen weiter entfernten Blitz.",
+            ])
+    elif scene_count == 3 and kind == "northern_lights_dance":
+        narration = (
+            [
+                "The night sky seems to dance, but these shifting lights aren't clouds.",
+                "Charged particles follow Earth's magnetic field and excite gases high in the atmosphere.",
+                "As magnetic activity and particle flows change, glowing curtains twist and sway across the sky.",
+            ] if language == "en" else [
+                "Der Nachthimmel scheint zu tanzen. Doch diese Lichter sind keine Wolken.",
+                "Geladene Teilchen folgen dem Erdmagnetfeld und bringen Gase hoch in der Atmosphäre zum Leuchten.",
+                "Veränderungen im Magnetfeld und in Teilchenströmen lassen die leuchtenden Schleier tanzen.",
             ])
     elif scene_count == 3 and kind == "northern_lights_glow":
         narration = (
