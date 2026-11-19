@@ -56,8 +56,9 @@ def test_brief_guides_all_verifiable_three_and_four_scene_shorts():
         assert "NO huge title overlay" in words
         assert "UNIQUE source-grounded explanation" in words
         assert f"{scenes} verified shots" in words
+    assert "1 verified shots" in storyboard_writer_brief(1)
     with pytest.raises(ValueError):
-        storyboard_writer_brief(1)
+        storyboard_writer_brief(0)
 
 
 @pytest.mark.parametrize("story,topic", [
