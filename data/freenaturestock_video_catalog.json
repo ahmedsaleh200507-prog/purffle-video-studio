@@ -1,0 +1,119 @@
+{
+  "source": "Free Nature Stock",
+  "license_id": "CC0-1.0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "site_license": "https://freenaturestock.com/license/",
+  "site_terms": "https://freenaturestock.com/terms/",
+  "policy": "No live crawling, HTML scraping, RSS harvesting, API reverse engineering, bulk discovery or dynamic webpage requests. Entries below were manually selected from publicly displayed official Free Video Download links, and only explicit CDN video URLs can be requested.",
+  "updated": "2026-11-19",
+  "clips": [
+    {
+      "id": "rugged-ocean-coast",
+      "title": "Rugged Ocean Coast and Waves",
+      "source_page": "https://freenaturestock.com/video/rugged-ocean-coast-and-waves/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-rugged-ocean-coast.mp4",
+      "width": 3840,
+      "height": 2160,
+      "duration": 15
+    },
+    {
+      "id": "clouds-sun-time-lapse",
+      "title": "Clouds and Sun Time-lapse",
+      "source_page": "https://freenaturestock.com/video/clouds-and-sun-time-lapse/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-rotating-clouds-sun.mp4",
+      "width": 4096,
+      "height": 2304,
+      "duration": 28
+    },
+    {
+      "id": "rolling-mist-clouds",
+      "title": "Rolling Mist Clouds",
+      "source_page": "https://freenaturestock.com/video/rolling-mist-clouds/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-rolling-mist-clouds.mp4",
+      "width": 4096,
+      "height": 2304,
+      "duration": 14
+    },
+    {
+      "id": "milky-way-through-clouds",
+      "title": "Milky Way Through the Clouds",
+      "source_page": "https://freenaturestock.com/video/milky-way-through-the-clouds/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-milky-way-through-clouds.mp4",
+      "width": 4096,
+      "height": 2304,
+      "duration": 16
+    },
+    {
+      "id": "swift-moving-clouds",
+      "title": "Swift Moving Clouds",
+      "source_page": "https://freenaturestock.com/video/swift-moving-clouds/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-swift-moving-clouds.mp4",
+      "width": 4096,
+      "height": 2304,
+      "duration": 15
+    },
+    {
+      "id": "autumn-leaves-in-river-water",
+      "title": "Autumn Leaves in River Water",
+      "source_page": "https://freenaturestock.com/video/autumn-leaves-in-river-water/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-autumn-leaves-in-river-water.mp4",
+      "width": 3840,
+      "height": 2160,
+      "duration": 31
+    },
+    {
+      "id": "campfire-embers",
+      "title": "Campfire Embers",
+      "source_page": "https://freenaturestock.com/video/campfire-embers/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-campfire-embers.mp4",
+      "width": 1920,
+      "height": 1080,
+      "duration": 25
+    },
+    {
+      "id": "tall-pine-tree-forest",
+      "title": "Tall Pine Tree Forest",
+      "source_page": "https://freenaturestock.com/video/tall-pine-tree-forest/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-tall-pine-tree-forest.mp4",
+      "width": 3840,
+      "height": 2160,
+      "duration": 49
+    },
+    {
+      "id": "rocky-river-shoreline",
+      "title": "Rocky River Shoreline",
+      "source_page": "https://freenaturestock.com/video/rocky-river-shoreline/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-rocky-river-shoreline.mp4",
+      "width": 1920,
+      "height": 1080,
+      "duration": 37
+    },
+    {
+      "id": "golden-maple-tree-breeze",
+      "title": "Golden Maple Tree in the Breeze",
+      "source_page": "https://freenaturestock.com/video/golden-maple-tree-in-the-breeze/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-golden-maple-tree-breeze.mp4",
+      "width": 3840,
+      "height": 2160,
+      "duration": 34
+    },
+    {
+      "id": "flying-toward-the-milky-way",
+      "title": "Flying Toward the Milky Way",
+      "source_page": "https://freenaturestock.com/video/flying-toward-the-milky-way/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-flying-toward-the-milky-way.mp4",
+      "width": 3840,
+      "height": 2160,
+      "duration": 30
+    },
+    {
+      "id": "starry-night-rising",
+      "title": "Starry Night Rising",
+      "source_page": "https://freenaturestock.com/video/starry-night-rising/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-starry-night-rising.mp4",
+      "width": 4096,
+      "height": 2304,
+      "duration": 29
+    }
+  ]
+}
