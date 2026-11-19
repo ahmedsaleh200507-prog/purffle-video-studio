@@ -215,6 +215,8 @@ PROVIDERS = [
     VideoProvider("pexels", "PEXELS_API_KEY"),
     VideoProvider("wikimedia-video"), VideoProvider("nasa-video"),
     VideoProvider("archive-video"), VideoProvider("europeana-video", "EUROPEANA_API_KEY"),
+    # No external API or website parsing. Offline allowlist of official CC0 MP4 URLs.
+    VideoProvider("freenaturestock-video"),
     VideoProvider("coverr-video", "COVERR_API_KEY",
                   "policy_blocked: free production API permission not verified"),
 ]
@@ -306,6 +308,75 @@ class ProviderRegistry:
             w, h = int(f.get("width") or 0), int(f.get("height") or 0)
             return (min(w, h) >= 1080, min(w, h), w * h)
         return max(files, key=score)
+
+    def _freenaturestock(self, query):
+        """Search a finite manually verified CC0 video manifest, not the website.
+
+        Site terms prohibit spidering/crawling/scraping. This adapter never
+        requests HTML, feeds, search endpoints or sitemaps. It offers *only*
+        official static MP4 download links already in our reviewed manifest.
+        The shared VideoDownloader still performs HTTPS/SSRF, size, FFprobe,
+        native 720p crop, motion, license, duplicate and local CLIP checks.
+        """
+        manifest_path = (Path(__file__).resolve().parent.parent /
+                         "data" / "freenaturestock_video_catalog.json")
+        try:
+            catalog = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ProviderError("catalog_invalid", "Curated nature-video manifest missing or malformed") from exc
+        if (catalog.get("license_id") != "CC0-1.0" or
+                catalog.get("license_url") != "https://creativecommons.org/publicdomain/zero/1.0/" or
+                not isinstance(catalog.get("clips"), list)):
+            raise ProviderError("catalog_invalid", "Unapproved stock license or missing clip manifest")
+        stop = {"the", "and", "with", "from", "for", "into", "over",
+                "under", "video", "videos", "footage", "nature", "stock",
+                "close", "up", "camera", "cinematic", "ambient"}
+        def tokens(text):
+            words = re.findall(r"[a-z0-9]+", str(text).casefold())
+            return {w[:-1] if w.endswith("s") and len(w) > 4
+                    else w for w in words if len(w) >= 3 and w not in stop}
+        requested = tokens(query)
+        if not requested:
+            return []
+        results = []
+        for row in catalog["clips"][:120]:
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title", ""))
+            match = len(requested & tokens(title))
+            if not match:
+                continue  # no random scenery to fill a science scene
+            video = str(row.get("video_url", ""))
+            page = str(row.get("source_page", ""))
+            u, p = urlparse(video), urlparse(page)
+            if (u.scheme != "https" or u.hostname != "cdn.freenaturestock.com"
+                    or not re.fullmatch(r"/videos/freenaturestock-[a-z0-9-]+\.mp4", u.path)
+                    or u.query or u.fragment or u.username or u.password
+                    or p.scheme != "https" or p.hostname != "freenaturestock.com"
+                    or not re.fullmatch(r"/video/[a-z0-9-]+/", p.path)
+                    or p.query or p.fragment or not title or len(title) > 140):
+                continue
+            try:
+                width, height = int(row["width"]), int(row["height"])
+                duration = float(row["duration"])
+            except (TypeError, KeyError, ValueError):
+                continue
+            if min(width, height) < 720 or not 3 <= duration <= 300:
+                continue
+            license_info = self.license(
+                "CC0-1.0", "https://creativecommons.org/publicdomain/zero/1.0/",
+                "Free Nature Stock", page)
+            item = self._item(
+                "freenaturestock-video", row.get("id", title),
+                video, query, 0, title, license_info,
+                width, height, duration)
+            if item is not None:
+                item.extra["catalog_mode"] = "manually_verified_official_downloads_no_crawl"
+                item.extra["catalog_match_terms"] = match
+                results.append((match, item))
+        results.sort(key=lambda pair: (-pair[0], -min(pair[1].width, pair[1].height),
+                                        pair[1].id))
+        return [item for _, item in results]
 
     def _pixabay(self, query):
         data = self.client.get("https://pixabay.com/api/videos/", params={

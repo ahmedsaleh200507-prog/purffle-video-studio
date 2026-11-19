@@ -91,7 +91,7 @@ jobs:
       LLM_MODEL: openai/gpt-oss-20b
       SCRIPT_REVIEW: 'off'
       SEO_KEYWORDS: 'false'
-      VISUAL_SOURCES: pixabay,pexels,coverr-video,europeana-video,wikimedia-video,nasa-video,archive-video
+      VISUAL_SOURCES: freenaturestock-video,pixabay,pexels,coverr-video,europeana-video,wikimedia-video,nasa-video,archive-video
       # English strictly requires user-approved private reference voice; no Joe fallback.
       # German remains pinned de_DE-thorsten-medium; no female fallback.
       PURFFLE_NARRATOR_LOCK: '1'
