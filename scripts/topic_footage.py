@@ -167,6 +167,16 @@ def deterministic_stock_shots(topic: str):
             ("aurora", "aurora over mountains"),
             ("aurora", "green northern lights"),
         ]
+    elif "lightning" in t and "thunder" in t:
+        # Filmable lightning, not random generic storm scenery or an
+        # impossible visual representation of the speed of sound.
+        choices = [
+            ("lightning", "lightning storm"),
+            ("lightning", "lightning strikes night sky"),
+            ("lightning", "lightning flashes thunderstorm"),
+            ("lightning", "lightning clouds night"),
+            ("lightning", "thunderstorm lightning"),
+        ]
     elif "black" in t and "sand" in t:
         choices = [
             ("sand", "black sand beach"),
