@@ -141,6 +141,31 @@ def ground_lightning_explainer(data: dict, topic: str, language: str,
 # https://www.noaa.gov/jetstream/tropical/tropical-cyclone-introduction/tropical-cyclone-structure
 # https://www.aoml.noaa.gov/hrd/tcfaq/A11.html?print=yes
 _DOCUMENTARY_FACTS = {
+    "steel_ship_buoyancy": {
+        # University Physics / OpenStax, Archimedes' principle:
+        # https://openstax.org/books/university-physics-volume-1/pages/14-4-archimedes-principle-and-buoyancy
+        # University of Hawai'i, Transportation and Ship Design:
+        # https://manoa.hawaii.edu/exploringourfluidearth/physical/navigation-and-transportation/transportation-and-ship-design
+        "en": [
+            "Solid steel sinks. But this giant steel ship stays afloat.",
+            "Its wide hollow hull holds air and displaces a large volume of water.",
+            "That displaced water pushes upward with a buoyant force equal to the water's weight.",
+            "The ship floats when buoyancy balances its weight. Extra cargo makes it sit deeper.",
+        ],
+        "de": [
+            "Ein massiver Stahlblock sinkt. Doch dieses riesige Stahlschiff schwimmt.",
+            "Sein großer hohler Rumpf enthält Luft und verdrängt viel Wasser.",
+            "Das verdrängte Wasser erzeugt eine Auftriebskraft, die dem Gewicht des verdrängten Wassers entspricht.",
+            "Das Schiff schwimmt, wenn Auftrieb und Gewicht gleich groß sind. Mit Ladung liegt es tiefer.",
+        ],
+        "title": {"en": "Why Do Steel Ships Float?",
+                  "de": "Warum schwimmen Schiffe aus Stahl?"},
+        "description": {
+            "en": "Solid steel sinks, but a hollow ship displaces enough water for buoyancy to balance its weight. Learn why cargo pushes ships deeper.",
+            "de": "Ein hohles Stahlschiff verdrängt genug Wasser, damit der Auftrieb sein Gewicht trägt. Ladung lässt es tiefer liegen.",
+        },
+        "tags": ["buoyancy", "steel ships", "displacement", "Archimedes", "physics"],
+    },
     "lightning_thunder_delay": {
         "en": [
             "Lightning flashes and thunder happen together during a storm.",
@@ -362,6 +387,13 @@ def verified_documentary_kind(topic: str) -> str | None:
     tokens = set(text.split())
     # Recognize only the ordinary bathroom-mirror explanation, not unrelated
     # uses of a mirror or unrelated fog/weather topics.
+    if (tokens & {"steel", "stahl", "stahlschiffe", "stahlschiff"}
+        and tokens & {"ship", "ships", "schiff", "schiffe", "stahlschiffe", "stahlschiff"}
+        and tokens & {"float", "floats", "floating", "swim", "swims",
+                      "schwimmt", "schwimmen", "schwimmt", "schwimmend"}
+        and not tokens & {"submarine", "submarines", "u-boot", "u-boats",
+                          "sink", "sinking", "capsize", "sinken", "kentern"}):
+        return "steel_ship_buoyancy"
     if ("lightning" in tokens and "thunder" in tokens
             and ({"before", "hearing", "hear", "see", "first"} & tokens)):
         return "lightning_thunder_delay"
@@ -426,7 +458,18 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
     info = _DOCUMENTARY_FACTS[kind]
     language = "de" if str(language).startswith("de") else "en"
     narration = list(info[language])
-    if scene_count == 3 and kind == "lightning_thunder_delay":
+    if scene_count == 3 and kind == "steel_ship_buoyancy":
+        narration = (
+            [
+                "Solid steel sinks. But this giant steel ship floats.",
+                "Its broad hollow hull contains air and pushes a large volume of water aside.",
+                "That displaced water pushes upward. When buoyancy balances the ship's weight, it floats, even with cargo.",
+            ] if language == "en" else [
+                "Ein massiver Stahlblock sinkt. Doch dieses riesige Stahlschiff schwimmt.",
+                "Sein breiter hohler Rumpf enthält Luft und verdrängt dadurch viel Wasser.",
+                "Das Wasser drückt das Schiff nach oben. Wenn der Auftrieb sein Gewicht ausgleicht, bleibt es über Wasser.",
+            ])
+    elif scene_count == 3 and kind == "lightning_thunder_delay":
         narration = (
             [
                 "Lightning and thunder happen together in a storm.",
@@ -527,6 +570,7 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
     scenes = [{
         "narration": sentence, "speaker": "A", "search_query": "",
         "image_prompt": "", "main_character": "", "object": ("volcano" if kind in ("volcanic_island", "lava_ocean_entry") else
+                    "ship" if kind == "steel_ship_buoyancy" else
                     "hurricane" if kind == "hurricane_eye" else
                     "wave" if kind in ("ocean_waves", "ocean_glow_bioluminescence") else
                     "mirror" if kind == "mirror_condensation" else
@@ -534,6 +578,7 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
         "action": "ambient", "location": "", "time": "",
         "visual_search_query": ("lava entering ocean steam" if kind == "lava_ocean_entry" else
                                    "volcano erupting" if kind == "volcanic_island" else
+                                   "cargo ship floating ocean" if kind == "steel_ship_buoyancy" else
                                    "hurricane satellite clouds" if kind == "hurricane_eye" else
                                    "ocean waves" if kind == "ocean_waves" else
                                    "bioluminescent ocean waves" if kind == "ocean_glow_bioluminescence" else
