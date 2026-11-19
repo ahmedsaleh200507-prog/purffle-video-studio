@@ -214,6 +214,32 @@ _DOCUMENTARY_FACTS = {
         },
         "tags": ["ocean waves", "wind", "surf", "wave formation", "ocean science"],
     },
+    "lava_ocean_entry": {
+        # US Geological Survey, Hawaiian Volcano Observatory:
+        # https://www.usgs.gov/observatories/hvo/science/lava-entering-ocean
+        # https://www.usgs.gov/news/volcano-watch-what-happens-when-lava-flows-sea
+        "en": [
+            "Glowing lava pours into the ocean, and huge clouds of steam rise above the coast.",
+            "The hot lava boils seawater while cooling and breaking into fragments of rock.",
+            "The steam plume can carry acidic gases and tiny particles of volcanic glass.",
+            "And unstable new lava deltas can collapse, sometimes triggering dangerous steam explosions along the coast.",
+        ],
+        "de": [
+            "Glühende Lava fließt ins Meer. Über der Küste steigen große Dampfwolken auf.",
+            "Die heiße Lava erhitzt Meerwasser und zerbricht beim Abkühlen in Gesteinsstücke.",
+            "Die Dampfwolken können saure Gase und winzige Partikel aus vulkanischem Glas enthalten.",
+            "Neu entstandene Lavaküsten können einstürzen und dabei gefährliche Dampfexplosionen auslösen.",
+        ],
+        "title": {
+            "en": "What Happens When Lava Hits the Ocean?",
+            "de": "Was passiert, wenn Lava ins Meer fließt?",
+        },
+        "description": {
+            "en": "USGS explains how lava entering the ocean creates steam, rock fragments and hazardous plumes; unstable lava deltas may collapse.",
+            "de": "Lava im Meer erzeugt Dampf, Gesteinssplitter und gefährliche Schwaden; instabile Lavaküsten können einstürzen.",
+        },
+        "tags": ["lava", "ocean", "volcano", "steam", "geology", "USGS"],
+    },
     "ocean_glow_bioluminescence": {
         # NOAA Ocean Exploration and Smithsonian Ocean educational sources:
         # https://oceanexplorer.noaa.gov/ocean-fact/bioluminescence/
@@ -324,6 +350,11 @@ def verified_documentary_kind(topic: str) -> str | None:
         and not (tokens & {"tsunami", "tsunamis", "tidal", "tides",
                            "rogue", "earthquake", "erdbeben", "swell"})):
         return "ocean_waves"
+    if (tokens & {"lava", "lavastrom"}
+        and tokens & {"ocean", "sea", "seawater", "meer", "meerwasser"}
+        and tokens & {"hits", "hit", "meets", "meet", "enter", "enters",
+                      "touch", "touches", "flows", "flow", "fließt", "passiert"}):
+        return "lava_ocean_entry"
     if (tokens & {"ocean", "sea", "meer", "meereswellen"}
         and tokens & {"glow", "glows", "glowing", "shine", "shines", "shining",
                       "leuchtet", "leuchten", "bioluminescence", "biolumineszenz"}
@@ -394,6 +425,17 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
                 "Die Wellenhöhe hängt von Windstärke, Dauer und der Strecke über Wasser ab.",
                 "In Küstennähe werden Wellen durch flaches Wasser steiler und brechen.",
             ])
+    elif scene_count == 3 and kind == "lava_ocean_entry":
+        narration = (
+            [
+                "Glowing lava enters the ocean and turns seawater into billowing clouds of steam.",
+                "The lava cools and shatters into rock fragments while acidic gases may rise with the plume.",
+                "Sometimes unstable new coastal land collapses, triggering dangerous steam explosions at the ocean entry.",
+            ] if language == "en" else [
+                "Glühende Lava fließt ins Meer und lässt große Dampfwolken aufsteigen.",
+                "Beim Abkühlen zerbricht Lava in Gesteinsstücke. Die Wolken können saure Gase enthalten.",
+                "Manchmal stürzt frisch entstandene Lavaküste ein und löst gefährliche Dampfexplosionen aus.",
+            ])
     elif scene_count == 3 and kind == "ocean_glow_bioluminescence":
         narration = (
             [
@@ -439,13 +481,14 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
             ]
     scenes = [{
         "narration": sentence, "speaker": "A", "search_query": "",
-        "image_prompt": "", "main_character": "", "object": ("volcano" if kind == "volcanic_island" else
+        "image_prompt": "", "main_character": "", "object": ("volcano" if kind in ("volcanic_island", "lava_ocean_entry") else
                     "hurricane" if kind == "hurricane_eye" else
                     "wave" if kind in ("ocean_waves", "ocean_glow_bioluminescence") else
                     "mirror" if kind == "mirror_condensation" else
                     "lightning" if kind == "lightning_thunder_delay" else "aurora"),
         "action": "ambient", "location": "", "time": "",
-        "visual_search_query": ("volcano erupting" if kind == "volcanic_island" else
+        "visual_search_query": ("lava entering ocean steam" if kind == "lava_ocean_entry" else
+                                   "volcano erupting" if kind == "volcanic_island" else
                                    "hurricane satellite clouds" if kind == "hurricane_eye" else
                                    "ocean waves" if kind == "ocean_waves" else
                                    "bioluminescent ocean waves" if kind == "ocean_glow_bioluminescence" else
