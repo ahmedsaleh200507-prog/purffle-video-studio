@@ -29,6 +29,8 @@ ALIASES = {
                   "eyewall", "ocean", "sea", "winds"},
     "wave": {"wave", "waves", "ocean", "sea", "surf"},
     "glacier": {"glacier", "glaciers", "ice", "iceberg"},
+    "iceberg": {"iceberg", "icebergs", "ice", "glacier", "calving"},
+    "meteor": {"meteor", "meteors", "meteorite", "fireball", "shooting", "star"},
     "volcano": {"volcano", "volcanoes", "volcanic", "lava", "eruption"},
     "waterfall": {"waterfall", "waterfalls", "cascade", "falls"},
     "dolphin": {"dolphin", "dolphins", "porpoise"},
@@ -58,7 +60,7 @@ ALIASES = {
 FILMABLE_SUBJECTS = frozenset("""
     cat dog bee ant butterfly bird horse elephant lion tiger penguin turtle
     shark whale octopus frog fish coral snail flower sunflower mushroom
-    tornado tsunami earthquake geyser rainbow sunset sunrise
+    tornado tsunami earthquake geyser rainbow sunset sunrise iceberg meteor
     train tram bus airplane aircraft helicopter rocket spacecraft ship boat
     bicycle motorcycle car factory robot computer laptop smartphone
     telescope microscope bridge building dam castle pyramid monument
@@ -207,6 +209,32 @@ def deterministic_stock_shots(topic: str):
             ("lightning", "lightning flashes thunderstorm"),
             ("lightning", "lightning clouds night"),
             ("lightning", "thunderstorm lightning"),
+        ]
+    elif "iceberg" in t:
+        choices = [
+            ("iceberg", "iceberg floating ocean"),
+            ("iceberg", "iceberg drifting sea"),
+            ("glacier", "glacier ice calving"),
+            ("iceberg", "iceberg sea aerial"),
+            ("iceberg", "iceberg breaking ice"),
+        ]
+    elif "meteor" in t or "meteorite" in t:
+        # Actual meteors only: not CGI or unrelated generic night skies.
+        choices = [
+            ("meteor", "meteor night sky"),
+            ("meteor", "meteor fireball night"),
+            ("meteor", "meteor shower night"),
+            ("meteor", "meteor entering atmosphere"),
+            ("meteor", "shooting star meteor"),
+        ]
+    elif "turtle" in t:
+        # Real sea-turtle footage is illustrative, not evidence of sleeping.
+        choices = [
+            ("turtle", "sea turtle underwater"),
+            ("turtle", "sea turtle swimming"),
+            ("turtle", "turtle underwater ocean"),
+            ("turtle", "sea turtle close up"),
+            ("turtle", "marine turtle diving"),
         ]
     elif "black" in t and "sand" in t:
         choices = [
