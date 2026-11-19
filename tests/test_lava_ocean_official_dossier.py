@@ -95,3 +95,42 @@ def test_narrator_error_outweighs_secondary_provider_quota():
         "reference_voice_failed: only approved private English narrator can be used",
         "Coverr free API per-job budget reached; http_429 provider") == (
             "approved_english_voice_validation")
+
+
+
+def test_first_scene_uses_visually_strong_verified_lava_clip():
+    from media_first import prioritize_lava_opening
+    # Simulate visually reviewed scene #4 glowing, while clip #1 is palms.
+    clips = [SimpleNamespace(path=f"shot-{n}") for n in range(4)]
+    plans = [f"plan-{n}" for n in range(4)]
+    reports = [{"id": n} for n in range(4)]
+    scores = {"shot-0": 0.0, "shot-1": 0.0,
+              "shot-2": 0.002, "shot-3": 0.075}
+    result = prioritize_lava_opening(
+        TOPIC, clips, plans, reports, glow_score=lambda path: scores[path])
+    assert result is True
+    assert clips[0].path == "shot-3"
+    assert plans[0] == "plan-3"
+    assert reports[0]["id"] == 3
+    assert [v.path for v in clips[1:]] == ["shot-0", "shot-1", "shot-2"]
+
+
+def test_opening_impact_never_reorders_unrelated_videos():
+    from media_first import prioritize_lava_opening
+    clips = [SimpleNamespace(path="normal"), SimpleNamespace(path="bright")]
+    plans = ["first", "second"]
+    reports = [{"index": 1}, {"index": 2}]
+    assert prioritize_lava_opening(
+        "Why Do Ocean Waves Form?", clips, plans, reports,
+        glow_score=lambda path: 1 if path == "bright" else 0) is False
+    assert [v.path for v in clips] == ["normal", "bright"]
+
+
+def test_weak_lava_frames_preserve_existing_clip_order():
+    from media_first import prioritize_lava_opening
+    clips = [SimpleNamespace(path="a"), SimpleNamespace(path="b")]
+    plans, reports = ["a", "b"], [{"i": 1}, {"i": 2}]
+    assert prioritize_lava_opening(
+        TOPIC, clips, plans, reports,
+        glow_score=lambda path: .004 if path == "b" else .003) is False
+    assert [c.path for c in clips] == ["a", "b"]
