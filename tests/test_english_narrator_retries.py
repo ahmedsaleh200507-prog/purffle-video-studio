@@ -138,7 +138,7 @@ def test_production_82_rescues_repeated_words_by_verifying_exact_short_clauses(m
     """
     seeds = []
     _prepare(monkeypatch, seeds)
-    first = "Solid steel sinks. But this giant steel ship stays afloat."
+    first = "A solid block of steel sinks in water. But this enormous cargo ship still floats."
     second = "Its wide hollow hull holds air and displaces water."
     checks = []
     def verify(text, path):
@@ -168,11 +168,10 @@ def test_production_82_rescues_repeated_words_by_verifying_exact_short_clauses(m
 def test_voice_rescue_never_alters_words_or_accepts_unverified_chunks(monkeypatch, tmp_path):
     seeds = []
     _prepare(monkeypatch, seeds)
-    first = "Solid steel sinks. But this giant steel ship stays afloat."
+    first = "A solid block of steel sinks in water. But this enormous cargo ship still floats."
     assert voice._safe_split_for_exact_audio(first) == [
-        "Solid steel sinks.", "But this giant steel ship stays afloat."]
-    assert voice._safe_split_for_exact_audio("Steel sinks. Ships float.") == [
-        "Steel sinks.", "Ships float."]
+        "A solid block of steel sinks in water.", "But this enormous cargo ship still floats."]
+    assert voice._safe_split_for_exact_audio("Steel sinks. Ships float.") == []
     assert voice._safe_split_for_exact_audio("Steel sinks quickly.") == []
     monkeypatch.setattr(voice, "check_real_word_timing",
                         lambda *_: (_ for _ in ()).throw(
