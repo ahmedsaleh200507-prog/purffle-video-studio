@@ -1,3 +1,4 @@
+# Metadata preflight fix (#21) confirmed on main; second one-video attempt on 2026-11-19.
 # One-off GERMAN bathroom mirror production requested in chat on 2026-11-18.
 # This workflow is intentionally triggered ONLY by adding/modifying this exact
 # file on main. It does not add a push trigger to the ten-video workflow.
