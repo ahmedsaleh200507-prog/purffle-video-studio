@@ -25,7 +25,8 @@ from english_reference_policy import (
 
 
 _WORKER_STAGES = {
-    "worker-start", "dependencies-loaded", "model-loaded",
+    "worker-start", "text-validated", "numpy-loaded", "soundfile-loaded",
+    "torch-loaded", "dependencies-loaded", "model-loaded",
     "generated-waveform", "saved-waveform",
 }
 
