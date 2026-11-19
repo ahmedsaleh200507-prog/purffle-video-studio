@@ -65,3 +65,33 @@ def test_no_arbitrary_llm_lava_claims_accepted(tmp_path):
     with pytest.raises(RuntimeError, match="science_claim_unverified"):
         screen_narration(claim, discover_evidence(TOPIC, "en"), None, path=path)
     assert json.loads(path.read_text())["state"] == "failed"
+
+
+def test_strict_lava_footage_does_not_accept_generic_ocean_or_surfers():
+    from topic_footage import (
+        deterministic_stock_shots, is_lava_ocean_topic,
+        lava_subject_in_metadata)
+    from media_first import _grounded_candidates
+
+    assert is_lava_ocean_topic(TOPIC)
+    assert not is_lava_ocean_topic("Why Does the Ocean Glow Blue?")
+    assert not is_lava_ocean_topic("How Do Volcanoes Create Islands?")
+    proposed = deterministic_stock_shots(TOPIC)
+    assert len(proposed) >= 4
+    assert proposed[0]["visual_search_query"] == "lava flowing into ocean"
+    assert all(lava_subject_in_metadata(p["visual_search_query"]) for p in proposed)
+    assert all(lava_subject_in_metadata(p["visual_search_query"]) for p in
+               _grounded_candidates(TOPIC, llm=None))
+    assert lava_subject_in_metadata("Kilauea volcanic lava pours into seawater")
+    assert lava_subject_in_metadata("Lava ocean entry with steam")
+    assert not lava_subject_in_metadata("Rugged ocean waves coastline")
+    assert not lava_subject_in_metadata("Man swimming near ocean ridge")
+    assert not lava_subject_in_metadata("Lava lamp glowing on a desk")
+
+
+def test_narrator_error_outweighs_secondary_provider_quota():
+    from batch import classify_failure
+    assert classify_failure(
+        "reference_voice_failed: only approved private English narrator can be used",
+        "Coverr free API per-job budget reached; http_429 provider") == (
+            "approved_english_voice_validation")
