@@ -871,7 +871,8 @@ def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_
         try:
             speech = with_voice_deadline(
                 lambda: approved_synthesize(
-                    screenplay.narration, Path(work) / "approved-reference-voice", settings),
+                    screenplay.narration, Path(work) / "approved-reference-voice", settings,
+                    segments=[scene.narration for scene in getattr(screenplay, "scenes", [])]),
                 timeout_seconds=900, stage="Approved private reference narrator")
             _validate_free_speech(speech, "reference", "en")
             report["attempts"].append({
