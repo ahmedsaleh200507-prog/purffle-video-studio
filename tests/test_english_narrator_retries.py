@@ -127,3 +127,56 @@ def test_invalid_scene_split_never_silently_changes_spoken_text(monkeypatch, tmp
         segments=["This is not the actual requested narration."])
     assert speech.provenance["verified_scene_segments"] == 1
     assert seeds == [190526]
+
+
+def test_production_82_rescues_repeated_words_by_verifying_exact_short_clauses(monkeypatch, tmp_path):
+    """#82: real Nano produced sound but all three long-utterance ASR checks failed.
+
+    Retry the ORIGINAL words as smaller phrases with the SAME private
+    reference, verify their actual WAV/ASR independently, and stitch measured
+    word times. No text changes, forced alignment guesses or other speaker.
+    """
+    seeds = []
+    _prepare(monkeypatch, seeds)
+    first = "Solid steel sinks. But this giant steel ship stays afloat."
+    second = "Its wide hollow hull holds air and displaces water."
+    checks = []
+    def verify(text, path):
+        checks.append(text)
+        assert Path(path).is_file()
+        if text == first:
+            raise RuntimeError("reference_voice_failed: spoken English does not exactly match requested narration")
+        return [(token, i * .12, i * .12 + .09)
+                for i, token in enumerate(voice._tokens(text))]
+    monkeypatch.setattr(voice, "check_real_word_timing", verify)
+
+    speech = voice.synthesize(first + " " + second, tmp_path,
+                              SimpleNamespace(language="en"),
+                              segments=[first, second])
+    assert seeds == [190526, 220917, 314159, 190526, 190526, 190526]
+    assert checks[:3] == [first] * 3
+    assert checks[3:5] == ["Solid steel sinks.", "But this giant steel ship stays afloat."]
+    assert checks[-1] == second
+    assert [w.text for w in speech.words] == voice._tokens(first + " " + second)
+    assert speech.provenance["voice"] == voice.REFERENCE_VOICE_ID
+    assert speech.provenance["speaker_similarity_cosine"] == .9
+    assert speech.provenance["verified_scene_segments"] == 2
+    assert speech.provenance["synthesis_attempts"] == 6
+    assert speech.audio.is_file()
+
+
+def test_voice_rescue_never_alters_words_or_accepts_unverified_chunks(monkeypatch, tmp_path):
+    seeds = []
+    _prepare(monkeypatch, seeds)
+    first = "Solid steel sinks. But this giant steel ship stays afloat."
+    assert voice._safe_split_for_exact_audio(first) == [
+        "Solid steel sinks.", "But this giant steel ship stays afloat."]
+    assert voice._safe_split_for_exact_audio("Steel sinks. Ships float.") == [
+        "Steel sinks.", "Ships float."]
+    assert voice._safe_split_for_exact_audio("Steel sinks quickly.") == []
+    monkeypatch.setattr(voice, "check_real_word_timing",
+                        lambda *_: (_ for _ in ()).throw(
+                            RuntimeError("reference_voice_failed: spoken English does not exactly match requested narration")))
+    with pytest.raises(RuntimeError, match="all approved-reference narration attempts failed"):
+        voice.synthesize(first, tmp_path, SimpleNamespace(language="en"))
+    assert not (tmp_path / "voice-reference.wav").exists()
