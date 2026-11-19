@@ -32,7 +32,7 @@ def test_output_requires_exact_size(output):
     video, captions, report = output
     with patch('media_validation.QualityValidator.validate', return_value=probe(1080, 1920)):
         with pytest.raises(RuntimeError, match='Output resolution mismatch'):
-            validate_result(video, {'voice': 'edge:test', 'timing': 'native'}, captions, report)
+            validate_result(video, {'language': 'de', 'voice': 'edge:test', 'timing': 'native'}, captions, report)
 
 
 def test_output_requires_actual_audio_stream(output):
@@ -42,13 +42,13 @@ def test_output_requires_actual_audio_stream(output):
     with patch('media_validation.QualityValidator.validate', return_value=no_audio), \
             patch('subprocess.run', return_value=SimpleNamespace(stdout='{"streams":[{"codec_type":"video"}]}')):
         with pytest.raises(RuntimeError, match='no narration audio'):
-            validate_result(video, {'voice': 'edge:test', 'timing': 'native'}, captions, report)
+            validate_result(video, {'language': 'de', 'voice': 'edge:test', 'timing': 'native'}, captions, report)
 
 
 @pytest.mark.parametrize('metadata', [
-    {'voice': 'silent:test', 'timing': 'native'},
-    {'voice': 'edge:test', 'timing': 'estimated'},
-    {'voice': 'edge:test', 'timing': 'anchored'},
+    {'language': 'de', 'voice': 'silent:test', 'timing': 'native'},
+    {'language': 'de', 'voice': 'edge:test', 'timing': 'estimated'},
+    {'language': 'de', 'voice': 'edge:test', 'timing': 'anchored'},
 ])
 def test_output_rejects_unverified_narration(output, metadata):
     video, captions, report = output
@@ -59,7 +59,7 @@ def test_output_rejects_unverified_narration(output, metadata):
 
 def test_output_rejects_missing_captions_or_unverified_scenes(output):
     video, captions, report = output
-    metadata = {'voice': 'edge:test', 'timing': 'native'}
+    metadata = {'language': 'de', 'voice': 'edge:test', 'timing': 'native'}
     with patch('media_validation.QualityValidator.validate', return_value=probe()):
         report.write_text(json.dumps({'scenes': [{'status': 'failed'}]}))
         with pytest.raises(RuntimeError, match='Not every scene'):
@@ -72,7 +72,7 @@ def test_output_rejects_missing_captions_or_unverified_scenes(output):
 def test_accepts_complete_validated_output(output):
     video, captions, report = output
     with patch('media_validation.QualityValidator.validate', return_value=probe()):
-        info, provenance = validate_result(video, {'voice': 'edge:test', 'timing': 'native'}, captions, report)
+        info, provenance = validate_result(video, {'language': 'de', 'voice': 'edge:test', 'timing': 'native'}, captions, report)
     assert info['width'] == 720
     assert provenance['scenes'][0]['status'] == 'selected'
 
@@ -80,10 +80,10 @@ def test_accepts_complete_validated_output(output):
 def test_local_voice_requires_pinned_licensed_native_alignment(output, tmp_path):
     from local_voice import provenance
     video, captions, report = output
-    meta = {'voice': 'piper:en_US-ljspeech-high', 'timing': 'aligned'}
+    meta = {'language': 'de', 'voice': 'piper:de_DE-thorsten-medium', 'timing': 'aligned'}
     voice_report = tmp_path / 'voice-report.json'
-    voice_data = {'state': 'ready', 'engine': 'piper', 'voice': 'en_US-ljspeech-high',
-                  'timing': 'aligned', 'provenance': provenance('en')}
+    voice_data = {'state': 'ready', 'engine': 'piper', 'voice': 'de_DE-thorsten-medium',
+                  'timing': 'aligned', 'provenance': provenance('de')}
     with patch('media_validation.QualityValidator.validate', return_value=probe()):
         with pytest.raises(RuntimeError, match='report missing'):
             validate_result(video, meta, captions, report, voice_report)
