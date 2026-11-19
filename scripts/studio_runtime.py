@@ -1011,6 +1011,27 @@ Choose search-friendly English subject/action descriptions commonly used as
 stock-video titles and tags. Prefer diverse visually relevant footage over
 unfindable literal representations of abstract scientific concepts.
 HYBRID STOCK-FIRST: First outline the essential truthful facts of the topic, then choose only common, directly filmable stock shots for every scene, then write narration that explains those facts while the shots support them.
+AUDIENCE RETENTION STORYBOARD — for accurate educational Shorts:
+- SCENE 1 (first ~2 seconds of speech): Start with the strongest REAL, visually
+  filmable observation from the requested topic, in a vivid concise sentence.
+  Do not start with "Hello", "Welcome", "Did you know", "In this video",
+  "Today we will learn", a channel introduction, or an unrelated setup.
+  Make a specific curiosity gap without fabricating danger, records or discoveries.
+- SCENE 2: Deliver a first meaningful answer or fact IMMEDIATELY. Never
+  artificially withhold all explanation until the end.
+- MIDDLE SCENES: Each scene must add a DIFFERENT fact, consequence, contrast
+  or mechanism that advances the explanation. Do not rephrase the hook over
+  several shots, repeat generic suspense, or pad with rhetorical questions.
+- FINAL SCENE: Give the clear factual payoff and a satisfying visual conclusion
+  directly tied to the subject. No like/subscribe/comment CTA and no invented cliffhanger.
+- Use natural spoken English or German with short sentences. Let scenes shift
+  with the VERIFIED moving footage; never say an unrelated clip depicts
+  an event that is not actually shown. Captions will follow exactly spoken words.
+- Do not put the entire title in spoken narration; the on-screen hook already
+  conveys the question. Prefer specific nouns and active verbs; keep each
+  narration line within the verified shot's time limit.
+- This is an editorial pacing guideline, NOT permission to exaggerate or
+  override any of the independent source, license, safety or accuracy checks.
 FACTUAL CLAIMS FOR PUBLIC EDUCATIONAL VIDEOS: Never invent a named person,
 street, town, research study, measurement, number, date, record, count,
 eyewitness event, or experiment to make a generic science topic dramatic.
