@@ -45,6 +45,14 @@ def parse_topic(raw: str):
         )
         lang, topic = ('de' if len(german_markers) >= 3 or
                        any(ch in raw for ch in 'äöüßÄÖÜ') else 'en'), raw
+    # Production #85: all ten ideas were accidentally pasted into video_1,
+    # so the renderer searched for a nonsensical combined topic. Fail early
+    # instead of wasting providers, model downloads and voice setup.
+    import re
+    if (re.search(r'(?i)(?:^|\\s)(?:en|de)\\s*\\|', topic)
+            or len([line for line in topic.splitlines() if line.strip()]) > 1):
+        raise ValueError('Each video_N field must contain EXACTLY ONE topic; '
+                         'put the next en| or de| topic in the next video field')
     if not topic or len(topic) > 2000:
         raise ValueError('Topic must contain 1–2000 characters')
     return lang, topic
