@@ -440,6 +440,12 @@ class StrictVisuals:
                         topic, " ".join((
                             str(item.id), str(item.text),
                             str(license_info.get("source_page", "")))))
+                    from topic_footage import contradicts_floating_ship
+                    if contradicts_floating_ship(
+                            topic, " ".join((str(item.text),
+                                         str(license_info.get("source_page", ""))))):
+                        raise ValueError("offtopic_floating_ship: stock is a wreck, "
+                                         "beached or abandoned vessel, not afloat")
                     # #77: "What happens when lava hits the ocean?" must
                     # never use plain ocean/surfer clips as if they showed
                     # molten lava. Check independent provider title/tags/page
