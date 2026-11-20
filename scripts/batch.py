@@ -49,7 +49,7 @@ def parse_topic(raw: str):
     # so the renderer searched for a nonsensical combined topic. Fail early
     # instead of wasting providers, model downloads and voice setup.
     import re
-    if (re.search(r'(?i)(?:^|\\s)(?:en|de)\\s*\\|', topic)
+    if (re.search(r'(?i)(?:^|\s)(?:en|de)\s*\|', topic)
             or len([line for line in topic.splitlines() if line.strip()]) > 1):
         raise ValueError('Each video_N field must contain EXACTLY ONE topic; '
                          'put the next en| or de| topic in the next video field')
