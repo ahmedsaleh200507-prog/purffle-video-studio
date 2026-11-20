@@ -455,6 +455,13 @@ class StrictVisuals:
                             " ".join((str(item.text),
                                       str(license_info.get("source_page", ""))))):
                         raise ValueError("offtopic_lava_ocean: source has no lava/volcano context")
+                    from topic_footage import (is_glowing_ocean_topic,
+                                               bioluminescence_visible_in_metadata)
+                    if is_glowing_ocean_topic(topic) and not bioluminescence_visible_in_metadata(
+                            " ".join((str(item.text),
+                                      str(license_info.get("source_page", ""))))):
+                        raise ValueError("offtopic_bioluminescence: provider metadata "
+                                         "does not establish glowing marine organisms")
                     if hasattr(self.matcher, "validate_metadata"):
                         score = self.matcher.validate_metadata(spec, item.text)
                     elif hasattr(self.matcher, "metadata_score"):
