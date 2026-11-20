@@ -119,6 +119,8 @@ def test_no_semantically_related_hook_fails_before_voice_production():
     "Why Can a Waterfall Freeze?",
     "Why Do Some Sharks Have to Keep Swimming?",
     "What Happens When a Meteor Enters Earth's Atmosphere?",
+    "Why Does the Ocean Glow Blue at Night?",
+    "Why Do Northern Lights Dance Across the Sky?",
 ])
 def test_more_tangible_shorts_have_visible_first_frame_anchor(topic):
     assert opening_subject_prompts(topic) is not None
