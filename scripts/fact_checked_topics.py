@@ -141,6 +141,179 @@ def ground_lightning_explainer(data: dict, topic: str, language: str,
 # https://www.noaa.gov/jetstream/tropical/tropical-cyclone-introduction/tropical-cyclone-structure
 # https://www.aoml.noaa.gov/hrd/tcfaq/A11.html?print=yes
 _DOCUMENTARY_FACTS = {
+    "volcano_eruption": {
+        "en": [
+            "A volcano can suddenly blast hot ash and gas high into the sky.",
+            "Deep underground, molten rock called magma contains dissolved gases under pressure.",
+            "As magma rises, surrounding pressure drops and gas bubbles expand.",
+            "When gases escape violently, they can fragment magma and drive an explosive eruption."
+        ],
+        "de": [
+            "Ein Vulkan kann plötzlich heiße Asche und Gase hoch in den Himmel schleudern.",
+            "Tief unter der Erde enthält geschmolzenes Gestein, das Magma, gelöste Gase.",
+            "Wenn Magma aufsteigt, sinkt der Druck und Gasblasen dehnen sich aus.",
+            "Entweichen die Gase heftig, können sie Magma zerreißen und explosive Ausbrüche auslösen."
+        ],
+        "title": {
+            "en": "What Makes a Volcano Suddenly Erupt?",
+            "de": "Warum bricht ein Vulkan plötzlich aus?"
+        },
+        "description": {
+            "en": "USGS explains how gas expansion in rising magma can drive violent volcanic eruptions.",
+            "de": "Der sinkende Druck beim Aufstieg von Magma lässt Gase expandieren und kann Vulkanausbrüche antreiben."
+        },
+        "tags": [
+            "volcano",
+            "magma",
+            "eruption",
+            "volcanic gas",
+            "USGS"
+        ]
+    },
+    "iceberg_breakup": {
+        "en": [
+            "A huge iceberg can suddenly crack apart into several drifting pieces.",
+            "Fractures grow when stresses and ocean waves bend the floating ice.",
+            "Warmer water can also melt ice and worsen existing weak spots.",
+            "When cracks spread far enough, chunks break off and drift away."
+        ],
+        "de": [
+            "Ein riesiger Eisberg kann plötzlich in mehrere treibende Teile zerbrechen.",
+            "Risse wachsen, wenn Spannungen und Meereswellen das schwimmende Eis biegen.",
+            "Wärmeres Wasser kann Eis schmelzen lassen und Schwachstellen verstärken.",
+            "Breiten sich Risse weit genug aus, brechen Stücke ab und treiben davon."
+        ],
+        "title": {
+            "en": "Why Do Icebergs Suddenly Break Apart?",
+            "de": "Warum zerbrechen Eisberge plötzlich?"
+        },
+        "description": {
+            "en": "NSIDC explains how cracks, waves, and ocean conditions contribute to iceberg breakup and calving.",
+            "de": "Risse, Wellen und Meerwasser beeinflussen das Zerbrechen von Eisbergen."
+        },
+        "tags": [
+            "iceberg",
+            "calving",
+            "ice fractures",
+            "polar ocean",
+            "NSIDC"
+        ]
+    },
+    "whale_breaching": {
+        "en": [
+            "A humpback whale bursts out of the sea and lands with a huge splash.",
+            "This powerful leap above the surface is known as breaching.",
+            "Researchers suspect that the loud splash may help whales communicate over distances.",
+            "But scientists are still studying why whales breach in different situations."
+        ],
+        "de": [
+            "Ein Buckelwal springt aus dem Meer und landet mit einem gewaltigen Platschen.",
+            "Dieser mächtige Sprung über die Wasseroberfläche heißt Breaching.",
+            "Forschende vermuten, dass das laute Platschen Walen bei der Kommunikation helfen kann.",
+            "Warum Wale in unterschiedlichen Situationen springen, wird jedoch weiter erforscht."
+        ],
+        "title": {
+            "en": "Why Do Whales Jump Out of the Ocean?",
+            "de": "Warum springen Wale aus dem Meer?"
+        },
+        "description": {
+            "en": "Breaching creates a loud splash; researchers suspect communication is one possible reason, but not the only established explanation.",
+            "de": "Der Sprung eines Wals erzeugt laute Geräusche. Forschende vermuten Kommunikation als mögliche Ursache."
+        },
+        "tags": [
+            "humpback whale",
+            "breaching",
+            "whale behavior",
+            "marine biology"
+        ]
+    },
+    "shark_ventilation": {
+        "en": [
+            "Some sharks must keep swimming to breathe, but not all sharks do.",
+            "Swimming forces oxygen-rich seawater across their gills.",
+            "Sharks that rely on this flow cannot simply stop moving for long.",
+            "Other species, like nurse sharks, can pump water over their gills while resting."
+        ],
+        "de": [
+            "Manche Haie müssen zum Atmen weiterschwimmen, aber längst nicht alle.",
+            "Beim Schwimmen strömt sauerstoffreiches Meerwasser über ihre Kiemen.",
+            "Haie, die diesen Wasserstrom brauchen, können nicht einfach lange stillstehen.",
+            "Andere Arten, etwa Ammenhaie, pumpen auch in Ruhe Wasser über ihre Kiemen."
+        ],
+        "title": {
+            "en": "Why Do Some Sharks Have to Keep Swimming?",
+            "de": "Warum müssen manche Haie immer weiterschwimmen?"
+        },
+        "description": {
+            "en": "Some sharks depend on swimming to move oxygenated water past their gills; other species can pump water while resting.",
+            "de": "Manche Haie müssen Wasser beim Schwimmen über ihre Kiemen leiten, andere können es aktiv pumpen."
+        },
+        "tags": [
+            "shark",
+            "gills",
+            "ram ventilation",
+            "buccal pumping",
+            "marine biology"
+        ]
+    },
+    "sea_turtle_rest": {
+        "en": [
+            "Sea turtles breathe air, but they can rest and sleep underwater.",
+            "When active, they must come to the surface for breaths quite often.",
+            "While resting, they can stay submerged much longer than when swimming actively.",
+            "Eventually, they still need to rise to the surface to breathe."
+        ],
+        "de": [
+            "Meeresschildkröten atmen Luft, können aber unter Wasser ruhen und schlafen.",
+            "Wenn sie aktiv sind, müssen sie öfter an die Oberfläche zum Atmen.",
+            "In Ruhe können sie viel länger unter Wasser bleiben als beim aktiven Schwimmen.",
+            "Schließlich müssen auch sie wieder auftauchen, um Luft zu holen."
+        ],
+        "title": {
+            "en": "Why Do Sea Turtles Sleep Underwater?",
+            "de": "Wie schlafen Meeresschildkröten unter Wasser?"
+        },
+        "description": {
+            "en": "NOAA explains that sea turtles breathe air but can rest underwater for extended periods before surfacing.",
+            "de": "Meeresschildkröten atmen Luft und können beim Ruhen lange unter Wasser bleiben."
+        },
+        "tags": [
+            "sea turtle",
+            "underwater rest",
+            "breathing",
+            "NOAA",
+            "marine reptiles"
+        ]
+    },
+    "waterfall_freezing": {
+        "en": [
+            "In bitter cold, a waterfall may look frozen while water still runs.",
+            "Fine spray and dripping water freeze against surfaces, building up ice.",
+            "As the ice grows, liquid water can keep flowing through protected channels.",
+            "The outside looks solid, but running water may remain inside or beneath it."
+        ],
+        "de": [
+            "Bei großer Kälte sieht ein Wasserfall manchmal gefroren aus, obwohl Wasser weiterfließt.",
+            "Feine Gischt und tropfendes Wasser gefrieren an Oberflächen und bilden Eis.",
+            "Während das Eis wächst, kann flüssiges Wasser durch geschützte Kanäle weiterfließen.",
+            "Außen wirkt alles fest, doch innen oder darunter kann Wasser strömen."
+        ],
+        "title": {
+            "en": "Why Can a Waterfall Freeze Without Stopping?",
+            "de": "Warum kann ein Wasserfall vereisen und weiterfließen?"
+        },
+        "description": {
+            "en": "Studies of waterfall ice explain how frozen surfaces can surround channels of flowing liquid water.",
+            "de": "Eis kann die Oberfläche eines Wasserfalls bedecken, während das Wasser im Inneren weiterfließt."
+        },
+        "tags": [
+            "waterfall",
+            "ice",
+            "freezing",
+            "frazil ice",
+            "winter physics"
+        ]
+    },
     "steel_ship_buoyancy": {
         # University Physics / OpenStax, Archimedes' principle:
         # https://openstax.org/books/university-physics-volume-1/pages/14-4-archimedes-principle-and-buoyancy
@@ -394,6 +567,33 @@ def verified_documentary_kind(topic: str) -> str | None:
         and not tokens & {"submarine", "submarines", "u-boot", "u-boats",
                           "sink", "sinking", "capsize", "sinken", "kentern"}):
         return "steel_ship_buoyancy"
+    # These narrow source-reviewed explainers are keyed to the 2026-11-20
+    # production #85 batch. Unrelated volcanoes, whale diets, other ice
+    # questions and all other science still require independent review.
+    if (tokens & {"volcano", "volcanoes"} and
+            tokens & {"erupt", "erupts", "eruption"} and
+            tokens & {"suddenly", "sudden"} and
+            not tokens & {"island", "ocean", "underwater"}):
+        return "volcano_eruption"
+    if (tokens & {"iceberg", "icebergs"} and
+            tokens & {"break", "breaking", "apart", "split", "calving"}):
+        return "iceberg_breakup"
+    if (tokens & {"whale", "whales"} and
+            tokens & {"jump", "jumps", "breach", "breaching", "leap", "leaping"}
+            and not tokens & {"ship", "collision", "attack"}):
+        return "whale_breaching"
+    if (tokens & {"shark", "sharks"} and
+            tokens & {"swim", "swimming"} and
+            tokens & {"keep", "have", "must", "constantly"}):
+        return "shark_ventilation"
+    if (tokens & {"turtle", "turtles"} and
+            tokens & {"sleep", "rest", "sleeping"} and
+            tokens & {"underwater", "water"}):
+        return "sea_turtle_rest"
+    if (tokens & {"waterfall", "waterfalls"} and
+            tokens & {"freeze", "freezes", "frozen", "freezing"} and
+            tokens & {"without", "stopping", "still", "stop"}):
+        return "waterfall_freezing"
     if ("lightning" in tokens and "thunder" in tokens
             and ({"before", "hearing", "hear", "see", "first"} & tokens)):
         return "lightning_thunder_delay"
@@ -569,8 +769,13 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
             ]
     scenes = [{
         "narration": sentence, "speaker": "A", "search_query": "",
-        "image_prompt": "", "main_character": "", "object": ("volcano" if kind in ("volcanic_island", "lava_ocean_entry") else
+        "image_prompt": "", "main_character": "", "object": ("volcano" if kind in ("volcanic_island", "lava_ocean_entry", "volcano_eruption") else
                     "ship" if kind == "steel_ship_buoyancy" else
+                    "iceberg" if kind == "iceberg_breakup" else
+                    "whale" if kind == "whale_breaching" else
+                    "shark" if kind == "shark_ventilation" else
+                    "turtle" if kind == "sea_turtle_rest" else
+                    "waterfall" if kind == "waterfall_freezing" else
                     "hurricane" if kind == "hurricane_eye" else
                     "wave" if kind in ("ocean_waves", "ocean_glow_bioluminescence") else
                     "mirror" if kind == "mirror_condensation" else
@@ -579,6 +784,12 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
         "visual_search_query": ("lava entering ocean steam" if kind == "lava_ocean_entry" else
                                    "volcano erupting" if kind == "volcanic_island" else
                                    "cargo ship floating ocean" if kind == "steel_ship_buoyancy" else
+                                   "volcano erupting lava" if kind == "volcano_eruption" else
+                                   "iceberg breaking ocean" if kind == "iceberg_breakup" else
+                                   "humpback whale breaching ocean" if kind == "whale_breaching" else
+                                   "shark swimming underwater" if kind == "shark_ventilation" else
+                                   "sea turtle swimming underwater" if kind == "sea_turtle_rest" else
+                                   "partially frozen waterfall water flowing" if kind == "waterfall_freezing" else
                                    "hurricane satellite clouds" if kind == "hurricane_eye" else
                                    "ocean waves" if kind == "ocean_waves" else
                                    "bioluminescent ocean waves" if kind == "ocean_glow_bioluminescence" else
