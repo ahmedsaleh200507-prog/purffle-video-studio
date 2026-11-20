@@ -109,3 +109,11 @@ def test_bad_ai_response_is_not_accepted(monkeypatch):
     title = make_short_title("Why Does the Ocean Glow at Night?", "en")
     assert "Ocean" in title
     assert "Unrelated" not in title
+
+
+def test_steel_ship_title_is_enticing_but_does_not_deny_gravity(monkeypatch):
+    monkeypatch.setenv("PURFFLE_SHORTS_TITLE_AI", "1")
+    assert make_short_title("Why Do Steel Ships Float?", "en") == (
+        "Why Don't Massive Steel Ships Sink? 🚢")
+    assert "gravity" not in make_short_title(
+        "Why Do Steel Ships Float?", "en").lower()
