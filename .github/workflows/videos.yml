@@ -49,7 +49,8 @@ permissions:
 # No workflow-wide concurrency lock. With a constant group GitHub allows only
 # ONE pending run and silently cancels older pending runs (#63/#64 when #65
 # was triggered). The ten video matrix jobs are already throttled below to
-# max-parallel: 2 per run. Do not add a constant top-level concurrency group.
+# max-parallel: 1 per run to prevent multiple jobs jointly exhausting the
+# same Groq free-tier tokens-per-minute budget. Do not add a global lock.
 jobs:
   create-videos:
     name: create-videos | Video ${{ matrix.slot }} of 10
@@ -57,7 +58,7 @@ jobs:
     timeout-minutes: 65
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
         include:
           - slot: 1
@@ -141,6 +142,17 @@ jobs:
             echo "render=false" >> "$GITHUB_OUTPUT"
             echo "Video slot ${{ matrix.slot }} is blank; skipping setup and render."
           fi
+      - name: Reject combined topics before costly setup
+        if: steps.selected.outputs.render == 'true'
+        env:
+          SLOT_TOPIC: ${{ inputs[matrix.input] }}
+        run: |
+          python - <<'PY'
+          import os
+          from scripts.batch import parse_topic
+          language, topic = parse_topic(os.environ["SLOT_TOPIC"])
+          print(f"[TOPIC VALIDATED] one {language} topic, {len(topic)} characters")
+          PY
       - name: Enforce approved English voice before installing video tools
         if: steps.selected.outputs.render == 'true'
         env:
