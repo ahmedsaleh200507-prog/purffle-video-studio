@@ -552,6 +552,81 @@ _DOCUMENTARY_FACTS = {
 }
 
 
+_THREE_SCENE_SOURCE_REVIEWED = {
+    "volcano_eruption": {
+        "en": [
+            "A volcano can suddenly blast ash and gas high into the sky.",
+            "Rising magma contains dissolved gases that expand as pressure decreases.",
+            "When gases escape violently, they can break magma apart and drive explosive eruptions."
+        ],
+        "de": [
+            "Ein Vulkan kann plötzlich Asche und Gase in den Himmel schleudern.",
+            "Aufsteigendes Magma enthält gelöste Gase, die sich bei sinkendem Druck ausdehnen.",
+            "Entweichen diese Gase heftig, können sie Magma zerteilen und explosive Ausbrüche antreiben."
+        ]
+    },
+    "iceberg_breakup": {
+        "en": [
+            "Enormous icebergs can suddenly break into drifting pieces.",
+            "Ocean waves and stresses bend the ice, causing existing cracks to grow.",
+            "Melting can deepen weak spots until large chunks finally break away."
+        ],
+        "de": [
+            "Riesige Eisberge können plötzlich in treibende Teile zerbrechen.",
+            "Meereswellen und Spannungen biegen das Eis, sodass vorhandene Risse wachsen.",
+            "Schmelzen verstärkt Schwachstellen, bis schließlich große Stücke abbrechen."
+        ]
+    },
+    "whale_breaching": {
+        "en": [
+            "Humpback whales sometimes leap high out of the ocean.",
+            "This is called breaching, and the landing creates a huge splash.",
+            "Researchers suspect communication is one possible reason, but the causes are not fully understood."
+        ],
+        "de": [
+            "Buckelwale springen manchmal hoch aus dem Meer.",
+            "Diese Sprünge heißen Breaching und erzeugen beim Auftreffen laute Geräusche.",
+            "Forschende vermuten Kommunikation als einen möglichen Grund, doch die Ursachen sind nicht vollständig geklärt."
+        ]
+    },
+    "shark_ventilation": {
+        "en": [
+            "Some sharks must swim to breathe, but this is not true for all sharks.",
+            "Moving water flows across the gills of sharks that rely on swimming for ventilation.",
+            "Other species, including nurse sharks, pump water over their gills while resting."
+        ],
+        "de": [
+            "Manche Haie müssen zum Atmen schwimmen, aber nicht alle.",
+            "Beim Schwimmen strömt Wasser über die Kiemen der Arten, die diese Strömung brauchen.",
+            "Andere Arten, etwa Ammenhaie, pumpen auch in Ruhe Wasser über ihre Kiemen."
+        ]
+    },
+    "sea_turtle_rest": {
+        "en": [
+            "Sea turtles breathe air, yet they can rest and sleep underwater.",
+            "When actively swimming, they must surface to breathe more often than at rest.",
+            "Resting turtles can stay submerged much longer, but eventually they must breathe again."
+        ],
+        "de": [
+            "Meeresschildkröten atmen Luft, können aber unter Wasser ruhen und schlafen.",
+            "Beim aktiven Schwimmen müssen sie häufiger zum Atmen auftauchen als in Ruhe.",
+            "Ruhende Schildkröten bleiben länger unter Wasser, müssen aber schließlich wieder Luft holen."
+        ]
+    },
+    "waterfall_freezing": {
+        "en": [
+            "A winter waterfall may look frozen even while water keeps flowing.",
+            "Freezing spray and drops build layers of ice across exposed surfaces.",
+            "The ice can shelter channels where liquid water continues to flow inside."
+        ],
+        "de": [
+            "Ein Wasserfall kann gefroren aussehen, obwohl das Wasser weiterfließt.",
+            "Gefrierende Gischt und Tropfen bilden Eisschichten auf kalten Oberflächen.",
+            "Unter dem Eis können geschützte Kanäle bleiben, in denen flüssiges Wasser weiterströmt."
+        ]
+    }
+}
+
 def verified_documentary_kind(topic: str) -> str | None:
     """Recognize exact broad explainers; other topics preserve Groq output."""
     raw = str(topic or "").casefold()
@@ -658,7 +733,9 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
     info = _DOCUMENTARY_FACTS[kind]
     language = "de" if str(language).startswith("de") else "en"
     narration = list(info[language])
-    if scene_count == 3 and kind == "steel_ship_buoyancy":
+    if scene_count == 3 and kind in _THREE_SCENE_SOURCE_REVIEWED:
+        narration = list(_THREE_SCENE_SOURCE_REVIEWED[kind][language])
+    elif scene_count == 3 and kind == "steel_ship_buoyancy":
         narration = (
             [
                 "A solid block of steel sinks in water. But this enormous cargo ship still floats.",
