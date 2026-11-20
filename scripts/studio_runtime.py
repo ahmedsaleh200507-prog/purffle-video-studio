@@ -517,6 +517,26 @@ class StrictVisuals:
                             f"to {required_width}x{required_height}"
                         )
                     match = self.matcher.match(path, spec, metadata=item.text, duration=need)
+                    # #84: A generic 'ship outdoors' CLIP score let a mostly
+                    # empty sea scene through. Compare the actual first 1.2 s
+                    # of the *vertical crop* with subject-vs-empty-scenery,
+                    # for every scene, BEFORE it is committed to the renderer.
+                    # This complements (not replaces) existing licenses,
+                    # clip-level CLIP, motion, source provenance and dedup.
+                    from topic_footage import opening_subject_prompts
+                    subject_specification = opening_subject_prompts(topic)
+                    if subject_specification and isinstance(self.matcher, SceneMatcher):
+                        from opening_impact import _first_frames, _semantic_subject_screen
+                        focus = float(match.get("crop_focus_x", .5))
+                        cropped_frames = _first_frames(path, focus=focus)
+                        subject_result = _semantic_subject_screen(
+                            cropped_frames, subject_specification,
+                            scorer=self.matcher._similarities)
+                        if not subject_result["verified"]:
+                            raise ValueError(
+                                "visual_subject_not_grounded: vertical scene "
+                                "shows scenery rather than the main topic subject")
+                        match["subject_screen"] = subject_result
                     item.path = path
                     item.width, item.height = int(quality["width"]), int(quality["height"])
                     item.duration = float(quality["duration"])
