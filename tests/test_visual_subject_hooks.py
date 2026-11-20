@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from topic_footage import (
+    is_glowing_ocean_topic, bioluminescence_visible_in_metadata,
     contradicts_floating_ship, deterministic_stock_shots,
     is_steel_ship_floating_topic, opening_subject_prompts,
 )
@@ -154,3 +155,23 @@ def test_every_production_clip_is_gated_after_license_quality_and_clip_match():
     assert source.index("match = self.matcher.match(") < source.index(
         "subject_result = _semantic_subject_screen(") < source.index(
         "self._remember(item, url_key, digest)")
+
+
+def test_production_85_blue_ocean_requires_bioluminescence_not_empty_sea():
+    topic = "Why Does the Ocean Glow Blue at Night?"
+    assert is_glowing_ocean_topic(topic)
+    assert not is_glowing_ocean_topic("Why Is the Ocean Blue During the Day?")
+    assert not bioluminescence_visible_in_metadata(
+        "underwater sea blue ocean waves horizon sky")
+    assert bioluminescence_visible_in_metadata(
+        "bioluminescent glowing plankton moving sea at night")
+    plans = _grounded_candidates(topic)
+    assert plans
+    assert all(bioluminescence_visible_in_metadata(
+        x["visual_search_query"]) for x in plans)
+    assert not any("underwater sea" in x["visual_search_query"]
+                   for x in plans)
+    from pathlib import Path
+    runtime = (Path(__file__).resolve().parents[1] /
+               "scripts" / "studio_runtime.py").read_text()
+    assert "offtopic_bioluminescence" in runtime
