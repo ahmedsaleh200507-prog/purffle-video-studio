@@ -192,8 +192,8 @@ def contradicts_floating_ship(topic: str, candidate_description: str) -> bool:
         return False
     text = str(candidate_description or "").casefold().replace("-", " ").replace("_", " ")
     return bool(re.search(
-        r"\\b(abandoned|beached|shipwreck|shipwrecked|wrecked|wreckage|"
-        r"dry\\s*dock|grounded vessel|stranded ship)\\b", text))
+        r"\b(abandoned|beached|shipwreck|shipwrecked|wrecked|wreckage|"
+        r"dry\s*dock|grounded vessel|stranded ship)\b", text))
 
 
 def opening_subject_prompts(topic: str):
