@@ -127,11 +127,16 @@ def _semantic_subject_screen(frames, specification, *, scorer=None):
     }
 
 
-def _measure_opening(path, focus, specification):
+def _measure_opening(path, focus, specification, *, preverified_subject=None):
     frames = _first_frames(path, focus=focus)
     result = _evaluate_frames([f.resize((96, 170)) for f in frames])
     if specification is not None and result.get("verified"):
-        result["subject_screen"] = _semantic_subject_screen(frames, specification)
+        # The candidate-level gate already ran on these same original opening
+        # seconds and crop focus. Reuse its trusted source result to avoid
+        # an unnecessary second CLIP inference for every accepted shot.
+        result["subject_screen"] = (
+            dict(preverified_subject) if preverified_subject is not None else
+            _semantic_subject_screen(frames, specification))
     return result
 
 
@@ -169,7 +174,9 @@ def prioritize_opening(topic, items, plans, reports, *, analyzer=None,
         if not math.isfinite(focus) or not 0 <= focus <= 1:
             raise RuntimeError("opening_quality_unverified: invalid scene crop focus")
         measurements = dict(analyze(path) if analyzer is not None else
-                            _measure_opening(path, focus, specification))
+                            _measure_opening(
+                                path, focus, specification,
+                                preverified_subject=report.get("match", {}).get("subject_screen")))
         # Offline doubles with an injected pixel analyzer avoid a live CLIP
         # dependency; a separate injected semantic analyzer tests this branch.
         if semantic_analyzer is not None and specification is not None:
