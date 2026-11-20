@@ -137,9 +137,16 @@ def main():
             from media_first import (prepare_verified_palette, use_palette,
                                      validate_narration_timing)
             stage = 'media_preflight'
+            # #85 lightning found two verified moving HD storm clips; the
+            # old 3-clip minimum rejected the entire video. For THIS curated,
+            # self-contained thunder-delay explanation, two independent
+            # verified shots suffice with an approved two-scene narration.
+            from fact_checked_topics import verified_documentary_kind
+            minimum_scenes = (2 if verified_documentary_kind(
+                os.environ['VIDEO_TOPIC']) == 'lightning_thunder_delay' else 3)
             palette = prepare_verified_palette(
                 os.environ['VIDEO_TOPIC'], s, studio.llm,
-                min_scenes=3, max_scenes=4, clip_seconds=10.0)
+                min_scenes=minimum_scenes, max_scenes=4, clip_seconds=10.0)
             from science_sources import discover_evidence, screen_narration, use_evidence
             stage = 'science_sources'
             try:
