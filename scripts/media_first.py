@@ -64,8 +64,14 @@ def _grounded_candidates(topic, llm=None):
     seen_seed = set()
     # Preserve existing proven subject ranking for already curated topics;
     # hurricane footage needs actual cyclone-first establishing shots.
-    prioritized = (seeds + curated if "hurricane" in topic.casefold()
-                   else curated + seeds)
+    from topic_footage import is_steel_ship_floating_topic
+    prioritized = (
+        seeds + curated
+        if "hurricane" in topic.casefold()
+        or is_steel_ship_floating_topic(topic)
+        or bool(words(topic) & {"shark", "whale", "volcano", "meteor", "iceberg"})
+        else curated + seeds
+    )
     curated = [plan for plan in prioritized
                if not (plan["visual_search_query"].lower() in seen_seed
                        or seen_seed.add(plan["visual_search_query"].lower()))]
