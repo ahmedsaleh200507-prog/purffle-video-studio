@@ -30,6 +30,23 @@ def compact_hook_lines(text: str, language: str = "en") -> list[str]:
     # Never replace spoken narration or suppress the final scientific answer.
     low = simple.casefold()
     tokens = set(re.findall(r"[a-zäöüß]+", low))
+    from topic_footage import is_steel_ship_floating_topic
+    if is_steel_ship_floating_topic(simple):
+        return ["STEEL SHIP", "WHY DOESN'T IT SINK?"]
+    if tokens & {"whale", "whales"} and tokens & {"jump", "jumping", "leap", "breach"}:
+        return ["GIANT WHALES", "WHY DO THEY JUMP?"]
+    if tokens & {"shark", "sharks"} and tokens & {"swim", "swimming", "moving"}:
+        return ["SOME SHARKS", "MUST KEEP SWIMMING?"]
+    if tokens & {"turtle", "turtles"} and tokens & {"sleep", "sleeping"}:
+        return ["SEA TURTLES", "SLEEP UNDERWATER?"]
+    if tokens & {"iceberg", "icebergs"} and tokens & {"break", "breaking", "apart"}:
+        return ["ICEBERGS", "WHY DO THEY BREAK?"]
+    if tokens & {"meteor", "meteors"} and tokens & {"atmosphere", "enter", "enters"}:
+        return ["A METEOR", "HITS THE ATMOSPHERE?"]
+    if tokens & {"wave", "waves"} and tokens & {"ship", "ships"}:
+        return ["GIANT WAVES", "CAN OVERWHELM SHIPS?"]
+    if tokens & {"volcano", "volcanoes"} and tokens & {"erupt", "erupts", "eruption"}:
+        return ["VOLCANOES ERUPT", "BUT WHY?"]
     if {"lava", "ocean"} <= tokens or {"lava", "sea"} <= tokens:
         if tokens & {"hit", "hits", "touch", "touches", "meets", "meet", "enter", "enters"}:
             return ["LAVA MEETS OCEAN", "WHAT HAPPENS?"]
