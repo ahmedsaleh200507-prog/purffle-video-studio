@@ -293,6 +293,7 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         if kind in (
                 "ocean_waves", "ocean_glow_bioluminescence", "lava_ocean_entry",
                 "northern_lights_dance", "steel_ship_buoyancy",
+                "lightning_thunder_delay",
                 "volcano_eruption", "iceberg_breakup", "whale_breaching",
                 "shark_ventilation", "sea_turtle_rest", "waterfall_freezing"):
             scenes = getattr(script, "scenes", [])
