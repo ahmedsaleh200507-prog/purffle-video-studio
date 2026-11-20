@@ -733,7 +733,16 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
     info = _DOCUMENTARY_FACTS[kind]
     language = "de" if str(language).startswith("de") else "en"
     narration = list(info[language])
-    if scene_count == 3 and kind in _THREE_SCENE_SOURCE_REVIEWED:
+    if scene_count == 2 and kind == "lightning_thunder_delay":
+        narration = (
+            [
+                "Lightning and thunder happen together, but light reaches our eyes much faster.",
+                "Sound moves slower, so thunder arrives later. A longer delay usually means greater distance.",
+            ] if language == "en" else [
+                "Blitz und Donner entstehen gleichzeitig, aber Licht erreicht unsere Augen viel schneller.",
+                "Schall bewegt sich langsamer, deshalb hören wir Donner später. Eine längere Pause bedeutet meist mehr Entfernung.",
+            ])
+    elif scene_count == 3 and kind in _THREE_SCENE_SOURCE_REVIEWED:
         narration = list(_THREE_SCENE_SOURCE_REVIEWED[kind][language])
     elif scene_count == 3 and kind == "steel_ship_buoyancy":
         narration = (
