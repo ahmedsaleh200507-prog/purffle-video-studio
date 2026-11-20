@@ -172,6 +172,87 @@ def lava_subject_in_metadata(metadata: str) -> bool:
     return bool(words(text) & {"lava", "volcano", "volcanoes", "volcanic", "eruption", "magma"})
 
 
+def is_steel_ship_floating_topic(topic: str) -> bool:
+    """Narrow scope: a flotation explainer, not shipwrecks or submarines."""
+    terms = words(topic)
+    return (bool(terms & {"steel", "stahl", "stahlschiff"})
+            and bool(terms & {"ship", "schiff", "stahlschiff"})
+            and bool(terms & {"float", "floating", "floats", "schwimmen", "schwimmt"})
+            and not terms & {"submarine", "wreck", "sink", "sinking", "capsize"})
+
+
+def contradicts_floating_ship(topic: str, candidate_description: str) -> bool:
+    """Reject clearly non-floating ships using independent provider metadata.
+
+    Never infer the status of an unlabeled ship from filename alone.
+    This rejects explicit wreck/beached/drydock stock, irrespective of its
+    aesthetic score, for a subject that is about ships *afloat*.
+    """
+    if not is_steel_ship_floating_topic(topic):
+        return False
+    text = str(candidate_description or "").casefold().replace("-", " ").replace("_", " ")
+    return bool(re.search(
+        r"\\b(abandoned|beached|shipwreck|shipwrecked|wrecked|wreckage|"
+        r"dry\\s*dock|grounded vessel|stranded ship)\\b", text))
+
+
+def opening_subject_prompts(topic: str):
+    """Positive/negative captions for a comparative local CLIP opening screen.
+
+    This is a *heuristic* object-prominence screen, not a detector or a
+    promise of audience retention. Only clear filmable subjects are covered.
+    The caller must check the actually rendered 9:16 crop, not full landscape.
+    """
+    t = words(topic)
+    if is_steel_ship_floating_topic(topic):
+        return {
+            "subject": "floating_cargo_ship",
+            "positive": "A large cargo container ship prominently visible on the water, filling the camera frame.",
+            "negatives": (
+                "A wide empty seascape with blue waves, a horizon and cloudy sky.",
+                "An empty port waterfront showing the ocean without a vessel.",
+            ),
+        }
+    categories = [
+        ({"lightning"}, "lightning",
+         "A bright visible bolt of lightning striking in a stormy sky.",
+         "Dark gray storm clouds moving across the sky without a lightning flash."),
+        ({"volcano", "volcanic", "lava"}, "volcano",
+         "A clearly visible volcano eruption, red lava flowing from the crater.",
+         "An ordinary rocky mountain landscape with blue sky."),
+        ({"iceberg"}, "iceberg",
+         "An enormous white iceberg floating clearly visible in dark blue seawater.",
+         "A wide seascape with distant mountains and open water."),
+        ({"meteor", "meteorite"}, "meteor",
+         "A bright meteor fireball with a glowing trail in the night sky.",
+         "A dark starry sky with no visible moving fireball."),
+        ({"turtle"}, "sea_turtle",
+         "A sea turtle clearly visible underwater, swimming near the camera.",
+         "A blue underwater ocean scene with only water and coral reef."),
+        ({"shark"}, "shark",
+         "A large shark prominently visible underwater swimming through blue water.",
+         "An empty underwater blue ocean environment without animals."),
+        ({"whale"}, "whale",
+         "A very large whale visibly breaching the sea surface with a splash.",
+         "An empty ocean surface covered in waves and white sea foam."),
+        ({"waterfall"}, "waterfall",
+         "A tall beautiful waterfall clearly visible with moving water or ice.",
+         "A rocky mountain landscape and forest without waterfalls."),
+        ({"wave"}, "wave",
+         "A huge breaking ocean wave with towering white surf filling the frame.",
+         "Calm flat open sea under a blue sky with a distant horizon."),
+        ({"ship"}, "ship",
+         "A large ship clearly visible sailing on the sea, filling much of the frame.",
+         "A wide open empty sea horizon under a cloudy sky."),
+    ]
+    for triggers, name, positive, negative in categories:
+        if t & triggers:
+            return {
+                "subject": name, "positive": positive, "negatives": (negative,)
+            }
+    return None
+
+
 def deterministic_stock_shots(topic: str):
     """Grounded seed shots prevent a nonsense/empty LLM reply from ending work
     *before searching the providers*. Never assert footage was found here.
@@ -209,6 +290,41 @@ def deterministic_stock_shots(topic: str):
             ("lightning", "lightning flashes thunderstorm"),
             ("lightning", "lightning clouds night"),
             ("lightning", "thunderstorm lightning"),
+        ]
+    elif is_steel_ship_floating_topic(topic):
+        # #84: generic "ship outdoors" ranked a mostly-empty seascape first,
+        # then an abandoned shipwreck. Search for a visible FLOATING vessel.
+        choices = [
+            ("ship", "cargo ship sailing at sea"),
+            ("ship", "container ship floating water"),
+            ("ship", "cargo freighter side view waterline"),
+            ("ship", "container ship moving ocean"),
+            ("ship", "large cargo ship harbor"),
+            ("ship", "ship hull ocean side view"),
+            ("ship", "loaded container ship sailing"),
+        ]
+    elif "whale" in t and (t & {"jump", "leap", "breach", "breaching"}):
+        choices = [
+            ("whale", "whale breaching ocean"),
+            ("whale", "humpback whale jumping"),
+            ("whale", "whale jumping sea"),
+            ("whale", "humpback whale surface"),
+            ("whale", "whale ocean close up"),
+        ]
+    elif "shark" in t:
+        choices = [
+            ("shark", "shark swimming underwater close up"),
+            ("shark", "shark swimming ocean"),
+            ("shark", "shark underwater"),
+            ("shark", "shark close up sea"),
+        ]
+    elif "volcano" in t and not "island" in t:
+        choices = [
+            ("volcano", "volcano erupting lava"),
+            ("lava", "molten lava flow volcano"),
+            ("volcano", "volcano eruption close up"),
+            ("volcano", "volcano smoking crater"),
+            ("volcano", "volcano aerial eruption"),
         ]
     elif "iceberg" in t:
         choices = [
