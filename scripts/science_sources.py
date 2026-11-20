@@ -26,6 +26,30 @@ _STOP = set("what why where when how which who does do is are can a an the to of
             "warum wie was wann wo wer wieso weshalb ist sind die der das den dem "
             "ein eine einer und von zu im mit bei auf als er sie es".split())
 _OFFICIAL = {
+    "volcano_eruption": (
+        "https://www.usgs.gov/faqs/how-do-volcanoes-erupt",
+        "https://www.usgs.gov/programs/VHP/about-volcanoes",
+    ),
+    "iceberg_breakup": (
+        "https://nsidc.org/learn/parts-cryosphere/ice-shelves/science-ice-shelves",
+        "https://nsidc.org/learn/ask-scientist/how-ice-shelf-disintegration-different-calving",
+    ),
+    "whale_breaching": (
+        "https://www.marinemammalcenter.org/news/your-visual-guide-to-whale-breaching-lunge-feeding-and-other-behaviors",
+        "https://www.fisheries.noaa.gov/species/humpback-whale",
+    ),
+    "shark_ventilation": (
+        "https://www.floridamuseum.ufl.edu/discover-fish/sharks/faq/",
+        "https://ocean.si.edu/ocean-life/sharks-rays/sharks",
+    ),
+    "sea_turtle_rest": (
+        "https://www.fisheries.noaa.gov/national/outreach-and-education/fun-facts-about-terrific-sea-turtles",
+        "https://www.fisheries.noaa.gov/feature-story/10-tremendous-turtle-facts",
+    ),
+    "waterfall_freezing": (
+        "https://www.cambridge.org/core/journals/journal-of-glaciology/article/waterfall-ice-formation-structure-and-evolution/40B6A986541E1A24626192F68A5EED2F",
+        "https://www.nps.gov/yose/planyourvisit/frazilice.htm",
+    ),
     "steel_ship_buoyancy": (
         "https://openstax.org/books/university-physics-volume-1/pages/14-4-archimedes-principle-and-buoyancy",
         "https://manoa.hawaii.edu/exploringourfluidearth/physical/navigation-and-transportation/transportation-and-ship-design",
