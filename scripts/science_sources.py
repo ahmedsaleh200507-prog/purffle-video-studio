@@ -290,7 +290,11 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         from fact_checked_topics import (
             verified_documentary_kind, ground_verified_documentary)
         kind = verified_documentary_kind(bundle.topic)
-        if kind in ("ocean_waves", "ocean_glow_bioluminescence", "lava_ocean_entry", "northern_lights_dance", "steel_ship_buoyancy"):
+        if kind in (
+                "ocean_waves", "ocean_glow_bioluminescence", "lava_ocean_entry",
+                "northern_lights_dance", "steel_ship_buoyancy",
+                "volcano_eruption", "iceberg_breakup", "whale_breaching",
+                "shark_ventilation", "sea_turtle_rest", "waterfall_freezing"):
             scenes = getattr(script, "scenes", [])
             spoken = [str(x.narration) for x in scenes]
             approved_variants = [
