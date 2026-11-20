@@ -71,6 +71,12 @@ def make_short_title(topic: str, language: str = "en", existing_title: str = "")
     is bounded and cannot prevent a validated MP4 from being delivered.
     """
     language = "de" if language == "de" else "en"
+    # #84's Groq title said steel ships "defy gravity", which misstates
+    # buoyancy. For this exact source-reviewed explainer keep a precise
+    # curiosity question rather than trusting a sensational LLM paraphrase.
+    from topic_footage import is_steel_ship_floating_topic
+    if language == "en" and is_steel_ship_floating_topic(topic):
+        return "Why Don't Massive Steel Ships Sink? 🚢"
     fallback = _fallback_title(topic, language)
     if os.environ.get("PURFFLE_SHORTS_TITLE_AI", "1") == "0" or not os.environ.get("GROQ_API_KEY"):
         return fallback
