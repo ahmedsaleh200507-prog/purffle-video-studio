@@ -3,6 +3,7 @@
 These dossiers have narrowly whitelisted topics. Every exact EN/DE sentence
 must match the source-reviewed script, not an arbitrary model-generated claim.
 """
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -49,9 +50,9 @@ def test_curated_science_has_sources_and_exact_validated_3_or_4_scene_script(
     validate_narration_timing(palette, script, language)
     audit_storyboard(topic, script, language)
     no_llm = Mock()
-    report = screen_narration(script, evidence, no_llm,
-                              path=tmp_path / f"{kind}-{scene_count}-{language}.json")
-    assert report["state"] == "curated_editor_reviewed"
+    filename = tmp_path / f"{kind}-{scene_count}-{language}.json"
+    screen_narration(script, evidence, no_llm, path=filename)
+    assert json.loads(filename.read_text())["state"] == "curated_editor_reviewed"
     no_llm.complete_json.assert_not_called()
 
 
