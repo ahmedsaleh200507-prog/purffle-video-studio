@@ -94,3 +94,24 @@ def test_workflow_contract():
     combined = next(x for x in collector['steps'] if x.get('uses', '').startswith('actions/upload-artifact'))
     assert 'YOUTUBE_SHORTS_TITLES.txt' in combined['with']['path']
     assert '${{ inputs.' not in str([x.get('run', '') for x in job['steps']])
+
+
+def test_production_85_rejects_ten_topics_in_one_slot_before_media():
+    from batch import parse_topic
+    combined = ("Why Can Giant Waves Overwhelm Ships? "
+                "en|Why Do We See Lightning Before Hearing Thunder? "
+                "en|What Makes a Volcano Suddenly Erupt?")
+    with pytest.raises(ValueError, match="EXACTLY ONE topic"):
+        parse_topic(combined)
+    with pytest.raises(ValueError, match="EXACTLY ONE topic"):
+        parse_topic("en|Why Do Icebergs Break Apart?\\nen|Why Does the Ocean Glow?")
+    assert parse_topic("en|Why Do Icebergs Break Apart?") == (
+        "en", "Why Do Icebergs Break Apart?")
+
+
+def test_production_85_matrix_respects_shared_free_groq_rate_limit():
+    from pathlib import Path
+    workflow = (Path(__file__).resolve().parents[1] /
+                ".github" / "workflows" / "videos.yml").read_text()
+    assert "max-parallel: 1" in workflow
+    assert "Reject combined topics before costly setup" in workflow
