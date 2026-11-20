@@ -314,7 +314,9 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
              "object": p["object"], "source": m.source, "id": m.id,
              "sha256": m.extra.get("sha256"),
              "quality": m.extra.get("quality"),
-             "license": m.extra.get("license")}
+             "license": m.extra.get("license"),
+             "subject_screen": m.extra.get("match", {}).get("subject_screen"),
+             "crop_focus_x": m.extra.get("match", {}).get("crop_focus_x")}
             for i, (p, m) in enumerate(zip(plans, items))],
         "attempts": attempts,
     }, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
@@ -327,6 +329,10 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
 def footage_prompt(palette) -> str:
     """Footage evidence for the scriptwriter (not a claim of event accuracy)."""
     lines = [
+        "FIRST THREE SECONDS: the actual vertical opening shot must show the main "
+        "filmable topic subject, not only the scenery around it. Start the "
+        "spoken hook immediately, with an intriguing, true first 5-7 words. "
+        "Never add a fabricated visual claim or an unsupported numerical shock hook.",
         "MEDIA-FIRST VERIFIED SHOTS. These clips are ALREADY obtained, measured, "
         "licensed and visually screened. The narration must be grounded in the "
         "topic; do not invent specific facts just to fit a picture.",
