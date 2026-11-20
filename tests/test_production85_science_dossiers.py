@@ -80,3 +80,26 @@ def test_false_science_cannot_use_editor_reviewed_route(
     with pytest.raises(RuntimeError, match="science_claim_unverified"):
         screen_narration(script, evidence, Mock(),
                          path=tmp_path / "invalid-science.json")
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+def test_production_85_two_verified_storm_clips_can_accurately_explain_lightning(
+        tmp_path, language):
+    topic = "Why Do We See Lightning Before Hearing Thunder?"
+    evidence = discover_evidence(topic, language)
+    data = ground_verified_documentary({}, topic, language, scene_count=2)
+    assert len(data["scenes"]) == 2
+    script = SimpleNamespace(scenes=[
+        SimpleNamespace(**x) for x in data["scenes"]])
+    palette = VerifiedPalette(topic, [{}, {}], [
+        SimpleNamespace(duration=10), SimpleNamespace(duration=10)],
+        set(), [])
+    validate_narration_timing(palette, script, language)
+    audit_storyboard(topic, script, language)
+    marker = tmp_path / "lightning-approved.json"
+    screen_narration(script, evidence, Mock(), path=marker)
+    assert json.loads(marker.read_text())["state"] == "curated_editor_reviewed"
+    producer = (tmp_path.resolve().parent if False else
+                __import__("pathlib").Path(__file__).resolve().parents[1] /
+                "scripts" / "render_job.py").read_text()
+    assert "minimum_scenes = (2 if verified_documentary_kind(" in producer
