@@ -64,11 +64,12 @@ def _grounded_candidates(topic, llm=None):
     seen_seed = set()
     # Preserve existing proven subject ranking for already curated topics;
     # hurricane footage needs actual cyclone-first establishing shots.
-    from topic_footage import is_steel_ship_floating_topic
+    from topic_footage import is_steel_ship_floating_topic, is_glowing_ocean_topic
     prioritized = (
         seeds + curated
         if "hurricane" in topic.casefold()
         or is_steel_ship_floating_topic(topic)
+        or is_glowing_ocean_topic(topic)
         or bool(words(topic) & {"shark", "whale", "volcano", "meteor", "iceberg"})
         else curated + seeds
     )
@@ -101,6 +102,12 @@ def _grounded_candidates(topic, llm=None):
         # If genuine footage cannot be verified, reject before TTS.
         return [p for p in curated
                 if lava_subject_in_metadata(p["visual_search_query"])]
+    if is_glowing_ocean_topic(topic):
+        # Explicit bioluminescence metadata is mandatory; attractive normal
+        # water footage must not substitute for real visible blue plankton.
+        from topic_footage import bioluminescence_visible_in_metadata
+        return [p for p in curated
+                if bioluminescence_visible_in_metadata(p["visual_search_query"])]
     if llm is None:
         return curated
     schema = {
