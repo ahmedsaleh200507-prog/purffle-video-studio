@@ -524,6 +524,7 @@ class StrictVisuals:
                     # This complements (not replaces) existing licenses,
                     # clip-level CLIP, motion, source provenance and dedup.
                     from topic_footage import opening_subject_prompts
+                    from media_validation import SceneMatcher
                     subject_specification = opening_subject_prompts(topic)
                     if subject_specification and isinstance(self.matcher, SceneMatcher):
                         from opening_impact import _first_frames, _semantic_subject_screen
