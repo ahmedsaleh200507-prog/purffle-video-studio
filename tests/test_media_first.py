@@ -55,15 +55,16 @@ class FakeVisuals:
 def test_preflight_only_returns_truly_verified_distinct_clips(tmp_path, monkeypatch):
     monkeypatch.setenv("MEDIA_FIRST_REPORT", str(tmp_path / "media-first-plan.json"))
     monkeypatch.setenv("MEDIA_FIRST_WORK_DIR", str(tmp_path / "scratch"))
-    visuals = FakeVisuals({"volcano erupting", "volcano landscape", "volcano nature"})
+    visuals = FakeVisuals({"volcano erupting lava", "volcano eruption close up",
+                           "volcano aerial eruption"})
     result = prepare_verified_palette(
         TOPIC, object(), None, visuals=visuals, min_scenes=3, max_scenes=4,
         clip_seconds=10.0)
     assert len(result.items) == 3
     assert list(result.media_map) == [(0, 0), (1, 0), (2, 0)]
-    assert result.plans[0]["visual_search_query"] == "volcano erupting"
-    assert "volcanic lava" in [x["query"] for x in result.attempts
-                               if x["status"] == "rejected"]
+    assert result.plans[0]["visual_search_query"] == "volcano erupting lava"
+    assert "molten lava flow volcano" in [x["query"] for x in result.attempts
+                                            if x["status"] == "rejected"]
     assert visuals.report["state"] == "footage_ready"
     assert len(visuals.report["scenes"]) == 3
     assert [x["index"] for x in visuals.report["scenes"]] == [1, 2, 3]
