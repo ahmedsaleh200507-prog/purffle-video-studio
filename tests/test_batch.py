@@ -104,7 +104,8 @@ def test_production_85_rejects_ten_topics_in_one_slot_before_media():
     with pytest.raises(ValueError, match="EXACTLY ONE topic"):
         parse_topic(combined)
     with pytest.raises(ValueError, match="EXACTLY ONE topic"):
-        parse_topic("en|Why Do Icebergs Break Apart?\\nen|Why Does the Ocean Glow?")
+        parse_topic("en|Why Do Icebergs Break Apart?" + chr(10)
+                    + "en|Why Does the Ocean Glow?")
     assert parse_topic("en|Why Do Icebergs Break Apart?") == (
         "en", "Why Do Icebergs Break Apart?")
 
