@@ -204,6 +204,24 @@ def opening_subject_prompts(topic: str):
     The caller must check the actually rendered 9:16 crop, not full landscape.
     """
     t = words(topic)
+    if t & {"ocean", "sea"} and t & {"glow", "glowing", "blue", "bioluminescence"} and t & {"glow", "glowing", "bioluminescence"}:
+        return {
+            "subject": "blue_bioluminescent_water",
+            "positive": "Real sea waves glowing bright electric blue at night, bioluminescent water shining along the dark shore.",
+            "negatives": (
+                "Ordinary unlit black ocean waves under the night sky.",
+                "Daytime sea waves and reflections from the cloudy sky.",
+            ),
+        }
+    if ("northern" in t and "light" in t) or "aurora" in t:
+        return {
+            "subject": "visible_aurora",
+            "positive": "Bright green colorful aurora borealis curtains clearly moving across the dark night sky.",
+            "negatives": (
+                "Ordinary dark starry night sky without colorful glowing lights.",
+                "A cloudy twilight sky with mountains and no aurora.",
+            ),
+        }
     if is_steel_ship_floating_topic(topic):
         return {
             "subject": "floating_cargo_ship",
