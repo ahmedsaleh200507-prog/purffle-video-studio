@@ -172,6 +172,25 @@ def lava_subject_in_metadata(metadata: str) -> bool:
     return bool(words(text) & {"lava", "volcano", "volcanoes", "volcanic", "eruption", "magma"})
 
 
+def is_glowing_ocean_topic(topic: str) -> bool:
+    """Only ocean/sea bioluminescence, not ordinary waves or reflections."""
+    t = words(topic)
+    return (bool(t & {"ocean", "sea", "meer"}) and
+            bool(t & {"glow", "glowing", "bioluminescence", "leuchtet",
+                       "glows", "leuchten"}) and
+            bool(t & {"blue", "night", "blau", "nachts", "bioluminescence"}))
+
+
+def bioluminescence_visible_in_metadata(metadata: str) -> bool:
+    """Independent provider terminology is necessary, not proof of pixels."""
+    value = " ".join(str(metadata).casefold().replace("-", " ").split())
+    return any(term in value for term in (
+        "bioluminescen", "bioluminescent", "glowing plankton",
+        "glowing ocean", "glowing sea", "blue glowing waves",
+        "blue glowing water", "plankton glow", "ocean glowing",
+        "sea glowing"))
+
+
 def is_steel_ship_floating_topic(topic: str) -> bool:
     """Narrow scope: a flotation explainer, not shipwrecks or submarines."""
     terms = words(topic)
@@ -290,6 +309,17 @@ def deterministic_stock_shots(topic: str):
             ("lava", "lava flow near water"),
             ("volcano", "volcano lava eruption"),
             ("lava", "molten lava flow"),
+        ]
+    elif is_glowing_ocean_topic(topic):
+        # Production #85 selected plain "underwater sea" as alleged blue
+        # bioluminescence. Never search generic daytime or dark water as
+        # though it showed glowing plankton.
+        choices = [
+            ("ocean", "bioluminescent ocean waves"),
+            ("ocean", "glowing ocean blue night"),
+            ("ocean", "bioluminescence glowing sea"),
+            ("ocean", "glowing plankton ocean"),
+            ("ocean", "blue glowing waves beach"),
         ]
     elif "northern" in t and ("light" in t or "aurora" in t):
         choices = [
