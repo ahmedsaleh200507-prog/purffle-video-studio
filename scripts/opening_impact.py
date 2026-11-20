@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import io
 import math
+import statistics
 from pathlib import Path
 import shutil
 import subprocess
 
 
-def _first_frames(path: Path):
+def _first_frames(path: Path, *, focus: float = 0.5):
     """Sample exactly the opening seconds of the source used by the renderer."""
     from PIL import Image
     binary = shutil.which("ffmpeg")
@@ -26,8 +27,9 @@ def _first_frames(path: Path):
             process = subprocess.run(
                 [binary, "-hide_banner", "-nostdin", "-loglevel", "error",
                  "-threads", "2", "-ss", str(second), "-i", str(path),
-                 "-vf", "scale=96:170:force_original_aspect_ratio=increase,"
-                        "crop=96:170,setsar=1",
+                 "-vf", ("scale=192:340:force_original_aspect_ratio=increase,"
+                          "crop=192:340:x='max(0,min(iw-ow,iw*"
+                          f"{focus:.5f}" + "-ow/2))':y='(ih-oh)/2',setsar=1"),
                  "-frames:v", "1", "-f", "image2pipe",
                  "-vcodec", "mjpeg", "-"],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -90,17 +92,59 @@ def _evaluate_frames(frames) -> dict:
 
 def inspect_opening(path: Path) -> dict:
     """Inspect decoded real pixels, never trust only provider metadata."""
-    return _evaluate_frames(_first_frames(path))
+    return _evaluate_frames([frame.resize((96, 170))
+                             for frame in _first_frames(path)])
 
 
-def prioritize_opening(topic, items, plans, reports, *, analyzer=None) -> dict:
+def _semantic_subject_screen(frames, specification, *, scorer=None):
+    """Contrast the real 9:16 first-second crop with subject vs scenery.
+
+    This is CLIP-based comparative screening, NOT an object detector or a
+    measured likelihood of viewer retention.
+    """
+    if len(frames) != 2:
+        return {"verified": False, "reason": "subject_frames_unavailable"}
+    if scorer is None:
+        from media_validation import SceneMatcher
+        scorer = SceneMatcher()._similarities
+    captions = [specification["positive"], *specification["negatives"]]
+    matrix = scorer(frames, captions)
+    if len(matrix) != 2 or any(len(row) != len(captions) for row in matrix):
+        raise RuntimeError("opening_subject_unverified: local visual scorer malformed")
+    score = statistics.median(float(row[0]) for row in matrix)
+    margin = statistics.median(
+        float(row[0]) - max(float(x) for x in row[1:]) for row in matrix)
+    accepted = score >= .235 and margin >= .012
+    return {
+        "verified": bool(accepted),
+        "subject": specification["subject"],
+        "subject_similarity": round(score, 4),
+        "subject_minus_scenery": round(margin, 4),
+        "reason": ("subject_favored_over_scenery" if accepted else
+                   "opening_subject_not_prominent_enough"),
+        "method": "local_clip_contrast_actual_9_16_opening_crop",
+        "limitations": "Similarity cannot prove exact objects or retention",
+    }
+
+
+def _measure_opening(path, focus, specification):
+    frames = _first_frames(path, focus=focus)
+    result = _evaluate_frames([f.resize((96, 170)) for f in frames])
+    if specification is not None and result.get("verified"):
+        result["subject_screen"] = _semantic_subject_screen(frames, specification)
+    return result
+
+
+def prioritize_opening(topic, items, plans, reports, *, analyzer=None,
+                       semantic_analyzer=None) -> dict:
     """Put strongest verified FIRST-SECOND shot first for all Shorts.
 
     Reorder clip+visual-plan+source-provenance together *before* screenplay
     generation. Do not publish if no valid opening can be inspected. Test
     doubles without media bytes may skip inspection; real media paths never do.
     """
-    from topic_footage import is_lava_ocean_topic
+    from topic_footage import is_lava_ocean_topic, opening_subject_prompts
+    specification = opening_subject_prompts(topic)
     if not len(items) == len(plans) == len(reports):
         raise RuntimeError("opening_quality_unverified: scene/plan/report lengths differ")
     if not items:
@@ -120,8 +164,24 @@ def prioritize_opening(topic, items, plans, reports, *, analyzer=None) -> dict:
                       and not {"submarine", "sinking", "capsize"} & topic_tokens)
     choices = []
     for idx, (item, plan, report, path) in enumerate(zip(items, plans, reports, paths)):
-        measurements = dict(analyze(path))
-        source_hint = str(report.get("source_page") or report.get("source_url") or "").casefold()
+        focus = float(getattr(item, "extra", {}).get("match", {}).get(
+            "crop_focus_x", report.get("match", {}).get("crop_focus_x", .5)))
+        if not math.isfinite(focus) or not 0 <= focus <= 1:
+            raise RuntimeError("opening_quality_unverified: invalid scene crop focus")
+        measurements = dict(analyze(path) if analyzer is not None else
+                            _measure_opening(path, focus, specification))
+        # Offline doubles with an injected pixel analyzer avoid a live CLIP
+        # dependency; a separate injected semantic analyzer tests this branch.
+        if semantic_analyzer is not None and specification is not None:
+            measurements["subject_screen"] = dict(
+                semantic_analyzer(path, specification, focus))
+        subject_screen = measurements.get("subject_screen")
+        if subject_screen is not None and subject_screen.get("verified") is not True:
+            measurements["verified"] = False
+            measurements["reason"] = "opening_subject_not_prominent_enough"
+        source_hint = str(
+            report.get("license", {}).get("source_page") or
+            report.get("source_page") or report.get("source_url") or "").casefold()
         if (steel_ship and any(term in source_hint for term in (
                 "abandoned", "shipwreck", "wrecked", "beached",
                 "dry-dock", "drydock"))):
@@ -142,7 +202,11 @@ def prioritize_opening(topic, items, plans, reports, *, analyzer=None) -> dict:
                 relevance = 0.0
             # Only trust an *early* lava glimpse as a gripping lava opening.
             hot = float(measurements.get("hot_lava_ratio") or 0)
-            rating = impact + 18.0 * relevance + (min(40.0, 400 * hot) if lava else 0.0)
+            subject_margin = (float(subject_screen["subject_minus_scenery"])
+                              if subject_screen else 0.0)
+            rating = (impact + 18.0 * relevance +
+                      min(14.0, max(0.0, subject_margin) * 160) +
+                      (min(40.0, 400 * hot) if lava else 0.0))
         measurements.update(original_scene=idx + 1, rank=round(rating, 2),
                             query=str(plan.get("visual_search_query", ""))[:100])
         choices.append(measurements)
@@ -160,9 +224,13 @@ def prioritize_opening(topic, items, plans, reports, *, analyzer=None) -> dict:
         for group in (items, plans, reports):
             group.insert(0, group.pop(winner))
     result = {"state": "selected", "original_scene": winner + 1,
-              "first_seconds_inspected": True,
+              "first_seconds_inspected": True, "crop_focus_aware": True,
               "no_opening_title": True, "clip_scores": choices,
-              "chosen_score": choices[winner]["rank"]}
+              "chosen_score": choices[winner]["rank"],
+              "subject_screen": choices[winner].get("subject_screen"),
+              "visual_confidence": ("strong" if choices[winner]["rank"] >= 68
+                                    else "medium"),
+              "visual_confidence_type": "editorial_heuristic_not_retention_prediction"}
     print(f"[OPENING QUALITY] selected original scene {winner+1} / "
           f"{len(items)} first-second score {choices[winner]['rank']:.1f}",
           flush=True)
