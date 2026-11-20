@@ -71,10 +71,10 @@ def test_workflow_contract():
     job = workflow['jobs']['create-videos']
     assert job['env']['RESOLUTION'] == '720x1280'
     assert job['permissions'] if 'permissions' in job else workflow['permissions'] == {'contents': 'read'}
-    # Ten slots are queued independently. At most two share provider quotas.
+    # Ten slots are queued independently; shared Groq quota requires one at a time.
     strategy = job['strategy']
     assert strategy['fail-fast'] is False
-    assert strategy['max-parallel'] == 2
+    assert strategy['max-parallel'] == 1
     slots = strategy['matrix']['include']
     assert [s['slot'] for s in slots] == list(range(1, 11))
     assert [s['input'] for s in slots] == [f'video_{i}' for i in range(1, 11)]
