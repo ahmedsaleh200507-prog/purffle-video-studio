@@ -82,3 +82,21 @@ def test_secondary_runtime_error_does_not_weaken_validation(monkeypatch):
     with pytest.raises(RuntimeError, match="word alignment"):
         voice.verify_reference_asr("Volcanoes erupt", Path("recorded.wav"), long_form=True)
     assert calls == ["base.en", "small.en"]
+
+
+def test_long_only_fallback_splits_technical_clause_that_blocked_chapter_eleven():
+    original = (
+        "When glaciers retreat, they leave behind cirques—amphitheater‑shaped "
+        "hollows—and sharp arêtes that expose the volcanic core."
+    )
+    # Old Shorts strict splitter cannot split at this early three-word comma.
+    assert voice._safe_split_for_exact_audio(original) == []
+    long_parts = voice._safe_split_for_long_form_audio(original)
+    assert len(long_parts) == 2
+    assert all(6 <= len(voice._tokens(p)) <= 35 for p in long_parts)
+    assert voice._tokens(" ".join(long_parts)) == voice._tokens(original)
+
+
+def test_long_only_fallback_refuses_too_short_utterances():
+    assert voice._safe_split_for_long_form_audio("Ice melts quickly.") == []
+    assert voice._safe_split_for_long_form_audio("Lava flows.") == []
