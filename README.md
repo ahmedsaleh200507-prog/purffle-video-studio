@@ -40,3 +40,9 @@ Yerel geliştirici testleri: `pip install -r requirements-dev.txt`, CPU PyTorch 
 Görüntü kaynağının kısa kenarı en az 720px olmalı. Dikey 720×1280 çıktı tercih edilir; gerçek Full HD (1920×1080) yatay görüntü 9:16 kırpıldığında **en fazla 1,20× büyütmeye** izin verilir; `portrait_crop_scale` ve `upscaled_after_crop` alanlarında açıkça kaydedilir. 1280×720 gibi düşük netlikli yatay görüntü bu kurala uymaz. `PURFFLE_MAX_PORTRAIT_UPSCALE=1.0` tam yerel kırpma şartını geri getirir.
 
 Bir sahne için toplam arama süresi yaklaşık 210 saniye ile sınırlandırılmıştır; sürenin dolması durumunda tamamlanamayan video, diğer videoların çalışmasını engellemez. Toplam 10 video 10 bağımsız Actions görevidir ve en fazla ikisi paralel çalışır. Kod testlerinin geçmesi canlı stok kaynağı bulunacağını garanti etmez.
+
+## İki ayrı video oluşturma bölümü
+
+**1. Shorts (9:16):** [Shorts Video Maker](https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/workflows/videos.yml) — mevcut 1–10 Shorts üretimini kullanır, eski üretim mantığı değiştirilmedi.
+
+**2. 10 Dakikalık Video (16:9):** [10 Minute Video Maker — Preview](https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/workflows/long-videos.yml) — ayrı bir konu ve dil girişidir. Şimdilik yalnızca 600 saniye, 1920×1080, 16:9 hedefiyle istek JSON'u hazırlar. **MP4 üretmez**; uzun video motoru henüz uygulanmadı. Short'un 24 saniyelik motoru 10 dakika üretmiş gibi gösterilmez.
