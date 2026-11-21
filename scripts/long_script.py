@@ -82,12 +82,12 @@ CHAPTER_SCHEMA = {
 # Substitute plain-language equivalents BEFORE any voice synthesis; the saved
 # script, the actual audio and captions all use exactly this finalized wording.
 _SPOKEN_EQUIVALENTS = (
-    (r"\\bj[oö]kulhlaups?\\b", "sudden glacier floods"),
-    (r"\\bcirques?\\b", "bowl shaped valleys"),
-    (r"\\bar[eê]tes?\\b", "steep mountain ridges"),
-    (r"\\blahars?\\b", "volcanic mudflows"),
-    (r"\\brhyolitic\\b", "silica rich"),
-    (r"\\bamphitheat(?:er|re)[- ]shaped\\b", "bowl shaped"),
+    (r"\bj[oö]kulhlaups?\b", "sudden glacier floods"),
+    (r"\bcirques?\b", "bowl shaped valleys"),
+    (r"\bar[eê]tes?\b", "steep mountain ridges"),
+    (r"\blahars?\b", "volcanic mudflows"),
+    (r"\brhyolitic\b", "silica rich"),
+    (r"\bamphitheat(?:er|re)[- ]shaped\b", "bowl shaped"),
 )
 
 
