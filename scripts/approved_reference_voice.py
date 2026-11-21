@@ -146,7 +146,7 @@ def _safe_split_for_long_form_audio(text: str) -> list[str]:
     if normal:
         return normal
     whole = " ".join(str(text).split())
-    chunks = list(re.finditer(r"\\S+", whole))
+    chunks = list(re.finditer(r"\S+", whole))
     if not 14 <= len(chunks) <= 35:
         return []
     positions = range(6, len(chunks)-5)
