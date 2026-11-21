@@ -55,14 +55,14 @@ _EVENT_FAMILIES = (
         ("eruption", "erupt", "erupting", "ash", "plume", "explosion", "lava", "fountain"),
     ),
     (
-        "breaching", r"\b(breach\w*|leap\w*|jump\w*|spring\w*|springen|springt|sprüng\w*)\b",
+        "breaching", r"\b(breach\w*|leap\w*|jump\w*|burst\w*\s+out|spring\w*|springen|springt|sprüng\w*)\b",
         ("breaching whale splash", "animal jumping water", "leaping animal"),
         "Real footage of a large sea animal visibly leaping above the water with a splash.",
         "A calm ocean surface or an animal swimming underwater without leaping.",
         ("breach", "breaching", "jump", "jumping", "leap", "leaping"),
     ),
     (
-        "breaking", r"\b(break\w* apart|break\w* off|fractur\w*|calv\w*|zerbrech\w*|abbrech\w*|abbricht)\b",
+        "breaking", r"\b(break\w*\s+(?:into|apart|off)|fractur\w*|calv\w*|zerbrech\w*|abbrech\w*|abbricht)\b",
         ("iceberg breaking", "ice breaking apart", "glacier ice calving"),
         "Real video of a large piece of ice visibly splitting or breaking away into water.",
         "A stable motionless iceberg or glacier with no visible ice breaking.",
