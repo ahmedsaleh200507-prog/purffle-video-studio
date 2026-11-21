@@ -300,14 +300,22 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
         queries = (contract["queries"][:3] if contract
                    else [option["visual_search_query"]])
         selected = False
+        # One bounded wall-clock budget for ALL aliases of one spoken scene.
+        # Otherwise each alias gets a fresh 75s provider scan and a ten-video
+        # batch can exceed the runner timeout before reaching the next scene.
+        shot_budget_deadline = time.monotonic() + 135
         for query in queries:
+            if time.monotonic() >= shot_budget_deadline:
+                attempts.append({"scene": slot, "query": query,
+                                 "status": "budget_exhausted"})
+                break
             plan = _scene_data({**option, "visual_search_query": query})
             payload = dict(plan)
             if contract:
                 payload["_visual_contract"] = contract
-            # Keep each alias bounded; do not exhaust the total per-scene
-            # video budget or alter per-source rate/circuit breakers.
-            visuals._shot_deadline = time.monotonic() + 100
+            # Keep total aliases inside the same scene budget; preserve
+            # strict per-source rate limits and download/crop/license gates.
+            visuals._shot_deadline = shot_budget_deadline
             start = len(visuals.report["scenes"])
             try:
                 item = visuals.for_scene(len(items), query, json.dumps(payload),
