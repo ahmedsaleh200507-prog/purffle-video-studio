@@ -209,10 +209,18 @@ def metadata_allows(contract, provider_text):
     if not contract.get("event_required"):
         return True
     text = str(provider_text or "").casefold().replace("-", " ").replace("_", " ")
+    clues = tuple(str(w) for w in contract.get("metadata_keywords", ()))
+    # A negated mention ('ocean without lava') is evidence AGAINST the event,
+    # not confirmation. This caught a false hit in the first v4 regression.
+    if clues:
+        disclaimed = r"\\b(?:no|without|lacking|absence of|not showing)\\s+(?:\\w+\\s+){0,2}(?:" + (
+            "|".join(re.escape(w) for w in clues)) + r")\\b"
+        if re.search(disclaimed, text):
+            return False
     # Explicit event vocabulary *and* scene-level visual CLIP are needed to
     # avoid explaining an eruption over an ordinary cloud-covered mountain.
-    return any(re.search(r"(?<![a-z])" + re.escape(str(word)), text)
-               for word in contract.get("metadata_keywords", ()))
+    return any(re.search(r"(?<![a-z])" + re.escape(word), text)
+               for word in clues)
 
 
 def visual_scores(contract, scores):
