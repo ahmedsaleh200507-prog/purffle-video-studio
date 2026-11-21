@@ -139,7 +139,8 @@ def test_integration_happens_before_script_voice_and_render():
     assert preflight.index("opening_review = prioritize_opening(") < preflight.index(
         "# Re-number successful selections")
     assert '"opening_review": opening_review' in preflight
-    assert producer.index("prepare_verified_palette(") < producer.index("studio.draft(")
+    assert producer.index("screen_narration(") < producer.index("prepare_verified_palette(")
+    assert producer.index("studio.draft(") < producer.index("prepare_verified_palette(")
     assert producer.index("studio.draft(") < producer.index("studio.produce(")
     assert "hook_overlay=False" in producer
     assert "screen_narration(" in producer
