@@ -7,6 +7,8 @@ native-resolution, motion, local CLIP, exact uniqueness and a successful render.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 import io
 import math
 import re
@@ -17,6 +19,21 @@ from pathlib import Path
 from PIL import Image
 
 from topic_footage import words
+
+_SCENE_TARGET = ContextVar("purffle_director_scene_target", default=None)
+
+
+@contextmanager
+def use_story_scene_target(count):
+    token = _SCENE_TARGET.set(count)
+    try:
+        yield
+    finally:
+        _SCENE_TARGET.reset(token)
+
+
+def story_scene_target():
+    return _SCENE_TARGET.get()
 
 
 # Visualizable *actions*, not scientific truth claims. First spoken statement
@@ -98,7 +115,20 @@ def build_contract(scene, topic, index):
     primary_clause = _first_statement(narration).casefold()
     chosen = None
     for name, pattern, variants, positive, negative, keywords in _EVENT_FAMILIES:
-        if re.search(pattern, primary_clause, re.I):
+        # Verb alone is not enough: 'gas breaks magma apart' is NOT footage
+        # of an iceberg cracking. Couple actions to the grounded visible
+        # source subject rather than general English verb similarities.
+        subject_lower = subject.casefold()
+        relevant = (
+            name == "lava_flow" and bool(re.search(r"volcan|lava|magma|vulkan", subject_lower))
+            or name == "eruption" and bool(re.search(r"volcan|lava|magma|vulkan", subject_lower))
+            or name == "breaching" and bool(re.search(r"whale|dolphin|wal|ocean", subject_lower))
+            or name == "breaking" and bool(re.search(r"ice|glacier|iceberg|eis", subject_lower))
+            or name == "lightning" and bool(re.search(r"lightning|blitz|storm", subject_lower))
+            or name == "glowing" and bool(re.search(r"ocean|sea|aurora|northern|wave|polar|night|meer", subject_lower))
+            or name == "water_motion" and bool(re.search(r"wave|ocean|sea|surf|welle|meer", subject_lower))
+        )
+        if relevant and re.search(pattern, primary_clause, re.I):
             chosen = (name, variants, positive, negative, keywords)
             break
     # For an invisible mechanism, stock footage is only an *illustration*.
