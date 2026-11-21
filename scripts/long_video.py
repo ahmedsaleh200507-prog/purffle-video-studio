@@ -14,12 +14,45 @@ LONG_CHAPTER_QUERIES = (
     "volcanic landscape after eruption", "volcano aerial",
 )
 LONG_FALLBACK_QUERIES = ("volcano eruption", "lava flow", "volcano crater", "volcanic ash")
+# Genuine modern glacier footage is illustrative of the environment, not
+# footage of prehistoric events or scenes from a copyrighted animated film.
+FIRE_AND_ICE_QUERIES = (
+    "volcano under glacier iceland", "glacier mountain ice aerial",
+    "volcano lava eruption", "volcanic lava icy mountain",
+    "volcano steam eruption", "glacier ice cave",
+    "glacier river flood", "iceland volcano eruption",
+    "volcano volcanic ash cloud", "volcano smoke eruption",
+    "glacier mountain aerial", "glacier ice sheet",
+    "volcano crater aerial", "iceland volcanic mountain",
+)
+GLACIER_VISUAL_CHAPTERS = frozenset((1, 5, 6, 10, 11))
+GLACIER_FALLBACK_QUERIES = (
+    "glacier ice mountain", "glacier aerial", "ice glacier",
+    "snow glacier mountains", "glacier ice cave",
+)
 
 
-def long_visual_queries(index):
-    """Priority footage search for a single English volcano documentary chapter."""
-    selected = LONG_CHAPTER_QUERIES[index % len(LONG_CHAPTER_QUERIES)]
-    return list(dict.fromkeys((selected, *LONG_FALLBACK_QUERIES)))
+def long_expected_subject(index, topic):
+    from long_script import is_fire_and_ice
+    return ("glacier" if is_fire_and_ice(topic)
+            and index % 14 in GLACIER_VISUAL_CHAPTERS else "volcano")
+
+
+
+
+
+def long_visual_queries(index, topic=""):
+    """Priority search for the requested chapter in an original documentary."""
+    from long_script import is_fire_and_ice
+    if is_fire_and_ice(topic):
+        selected = FIRE_AND_ICE_QUERIES[index % len(FIRE_AND_ICE_QUERIES)]
+        fallback = (GLACIER_FALLBACK_QUERIES
+                    if long_expected_subject(index, topic) == "glacier"
+                    else LONG_FALLBACK_QUERIES)
+    else:
+        selected = LONG_CHAPTER_QUERIES[index % len(LONG_CHAPTER_QUERIES)]
+        fallback = LONG_FALLBACK_QUERIES
+    return list(dict.fromkeys((selected, *fallback)))
 
 
 def save(path, obj):
@@ -156,7 +189,8 @@ def confirm_long_stock_sources(registry):
     return sorted(ready)
 
 
-def long_visual_verifier(path, metadata, need, *, matcher=None):
+def long_visual_verifier(path, metadata, need, *, matcher=None,
+                         expected_subject="volcano"):
     """Reject mismatched real frames even when provider keywords say 'volcano'.
 
     This screening is only for 10-minute documentaries. Shorts keep their
@@ -167,7 +201,11 @@ def long_visual_verifier(path, metadata, need, *, matcher=None):
     from media_validation import SceneMatcher, SceneSpec, ValidationError
     matcher = matcher if matcher is not None else SceneMatcher(threshold=.22)
     details = str(metadata or "").casefold()
-    if "lava" in details or "magma" in details:
+    if expected_subject == "glacier":
+        # Only real glacier footage; do not confuse general snow or a mountain
+        # roadway with a continental ice sheet.
+        subject, query = "glacier", "glacier ice mountain"
+    elif "lava" in details or "magma" in details:
         subject, query = "lava", "molten lava flowing"
     elif "ash" in details and ("volcan" in details or "erupt" in details):
         subject, query = "volcano", "volcanic ash eruption plume"
@@ -181,7 +219,7 @@ def long_visual_verifier(path, metadata, need, *, matcher=None):
     return result
 
 
-def find_stock(index, chapter_seconds, seen, work, registry=None):
+def find_stock(index, chapter_seconds, seen, work, registry=None, topic=""):
     """Find distinct, genuinely moving footage; allow 3 sources when 4 absent.
 
     Keep one provider registry for the entire long video so provider 429
@@ -199,16 +237,19 @@ def find_stock(index, chapter_seconds, seen, work, registry=None):
     val = QualityValidator(min_short_side=720)
     chosen = []
     attempts = 0
-    for query in long_visual_queries(index):
+    expected_subject = long_expected_subject(index, topic)
+    for query in long_visual_queries(index, topic):
         for provider in ("pexels","pixabay"):
             for candidate in reg.search(provider,query)[:30]:
                 key=(candidate.source,str(candidate.id))
                 if key in seen:
                     continue
                 # Query matches alone are not evidence of volcanic footage.
-                if not any(x in candidate.text.lower() for x in (
-                    "volcan", "lava", "magma", "eruption", "crater", "volcanic ash"
-                )):
+                labels = candidate.text.lower()
+                terms = (("glacier", "glacial", "ice sheet")
+                         if expected_subject == "glacier"
+                         else ("volcan", "lava", "magma", "eruption", "crater"))
+                if not any(term in labels for term in terms):
                     continue
                 attempts += 1
                 if attempts > 24:
@@ -225,7 +266,8 @@ def find_stock(index, chapter_seconds, seen, work, registry=None):
                     # of this source, not the entire clip (which may change scene).
                     visual_span = min(duration, chapter_seconds / 3)
                     visual = long_visual_verifier(
-                        path, candidate.text, visual_span)
+                        path, candidate.text, visual_span,
+                        expected_subject=expected_subject)
                     seen.add(key)
                     lic=candidate.extra["license"]
                     chosen.append((path,duration,
@@ -341,7 +383,7 @@ def main():
         stage="real_stock"
         used,scenes,credits=set(),[],[]
         for i,(wav,seconds) in enumerate(audio):
-            clips=find_stock(i,seconds,used,work,registry=registry)
+            clips=find_stock(i,seconds,used,work,registry=registry,topic=a.topic)
             credits += [c[2] for c in clips]
             stage=f"render_chapter_{i+1}"
             scenes.append(render_scene(i+1,wav,seconds,clips,work))

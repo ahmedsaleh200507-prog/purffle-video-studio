@@ -26,6 +26,32 @@ TOPICS = (
     "What remains after an eruption",
     "What we can and cannot predict",
 )
+# A distinct, original documentary linking the current Ice Age search trend
+# to genuine subglacial volcano science. Do NOT use Disney or third-party clips.
+FIRE_AND_ICE_TOPICS = (
+    "A hot volcano hidden beneath a frozen glacier",
+    "How glaciers can cover volcanoes",
+    "Where the magma beneath the ice comes from",
+    "What happens when lava touches glacier ice",
+    "Steam explosions beneath ice",
+    "How volcanic heat melts ice into hidden lakes",
+    "Sudden floods released from beneath glaciers",
+    "Iceland as a real world example of fire under ice",
+    "How volcanic ash can spread over frozen landscapes",
+    "What eruption clouds mean for the sky and aviation",
+    "How glaciers reshape volcanic mountains",
+    "Why Earth's last glaciation was a slow natural process",
+    "How scientists monitor volcanoes beneath ice",
+    "Why real fire and ice science is stranger than fiction",
+)
+
+
+def is_fire_and_ice(topic: str) -> bool:
+    lower = str(topic).casefold()
+    return (any(part in lower for part in ("ice age", "glacier", "beneath ice"))
+            and any(part in lower for part in ("volcan", "lava", "eruption")))
+
+
 BATCH_SIZES = (4, 4, 4, 2)
 
 CHAPTER_SCHEMA = {
@@ -81,12 +107,22 @@ def build_documentary(topic: str, client=None, *, sleep=time.sleep):
     if client is None:
         from groq import Groq
         client = Groq(api_key=os.environ["GROQ_API_KEY"], timeout=120)
+    subjects = FIRE_AND_ICE_TOPICS if is_fire_and_ice(topic) else TOPICS
     finished = []
     at = 0
     for batch_number, size in enumerate(BATCH_SIZES, 1):
-        requested = TOPICS[at:at+size]
+        requested = subjects[at:at+size]
         start = at + 1
         instruction = (
+            ("This is an original science documentary, NOT a film trailer. "
+             "For the ice-under-volcano topic, explain real subglacial eruptions, "
+             "steam, ice melt, and glacial floods with cautious accurate science. "
+             "The new Ice Age: Boiling Point film trailer released November 2026 "
+             "sparked interest in the theme; if mentioned, treat it only as an "
+             "opening cultural reference, not as scientific evidence or a source "
+             "of video footage. Do not claim a global ice age can happen overnight. "
+             "Modern glacier stock cannot depict actual prehistoric history. "
+             if is_fire_and_ice(topic) else "") + (
             f"Write section {start} through {at + size} of a coherent English "
             f"10-minute educational documentary called {topic!r}. "
             f"Return a JSON object with exactly {size} chapters in the order of "
@@ -99,7 +135,7 @@ def build_documentary(topic: str, client=None, *, sleep=time.sleep):
               "Chapters should explain causal mechanisms and transition naturally. "
               "The FIRST chapter must start with an immediate intriguing hook. "
               "Last chapter concludes the film. Output JSON only."
-        )
+        ))
         failure_reason = "no_valid_response"
         for attempt in range(3):
             try:

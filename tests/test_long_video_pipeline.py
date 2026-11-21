@@ -17,7 +17,7 @@ import pytest
 
 from long_video import (
     real_word_captions, narrate, srt_time, render_scene, finish, probe,
-    find_stock, confirm_long_stock_sources, long_visual_verifier, long_visual_queries,
+    find_stock, confirm_long_stock_sources, long_visual_verifier, long_visual_queries, long_expected_subject,
 )
 
 
@@ -182,7 +182,13 @@ def test_ffmpeg_renders_narrated_chapter_and_embedded_subtitles(tmp_path):
         f.setnchannels(1)
         f.setsampwidth(2)
         f.setframerate(16000)
-        f.writeframes(b"\x00\x00" * 16000 * 2)
+        # A real narrator is audible; fully silent PCM makes FFmpeg loudnorm
+        # compute undefined loudness and is not a valid normalisation fixture.
+        import math, struct
+        f.writeframes(b"".join(
+            struct.pack("<h", int(1500 * math.sin(2 * math.pi * 220 * t / 16000)))
+            for t in range(16000 * 2)
+        ))
     media=[(src,2.5,{"source":"synthetic-test-only"})]
     chapter=render_scene(1,wav,2.0,media,tmp_path)
     assert chapter.is_file()
@@ -202,3 +208,60 @@ def test_ffmpeg_renders_narrated_chapter_and_embedded_subtitles(tmp_path):
     audio_streams = [s for s in streams if s["codec_type"] == "audio"]
     assert audio_streams[0]["codec_name"] == "aac"
 
+
+def test_fire_and_ice_documentary_has_expected_snow_and_volcanic_shots():
+    topic = "Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?"
+    assert long_expected_subject(1, topic) == "glacier"
+    assert long_expected_subject(5, topic) == "glacier"
+    assert long_expected_subject(6, topic) == "glacier"
+    assert long_expected_subject(10, topic) == "glacier"
+    assert long_expected_subject(0, topic) == "volcano"
+    assert long_expected_subject(9, topic) == "volcano"
+    assert "glacier" in long_visual_queries(1, topic)[0]
+    assert "volcano" in long_visual_queries(7, topic)[0]
+    assert "glacier" in long_visual_queries(1, topic)[1]
+
+
+def test_fire_and_ice_mismatched_glacier_frames_are_rejected():
+    from media_validation import ValidationError
+    class FakeMatcher:
+        def match(self, path, spec, metadata, duration):
+            assert spec.object == "glacier"
+            assert "glacier" in spec.visual_search_query
+            raise ValidationError("wrong glacier scene")
+    with pytest.raises(ValidationError, match="wrong glacier scene"):
+        long_visual_verifier(
+            Path("city-road.mp4"), "Glacier aerial",
+            12., matcher=FakeMatcher(), expected_subject="glacier")
+
+
+def test_fire_and_ice_requires_glacier_in_provider_title(monkeypatch, tmp_path):
+    import media_validation
+    import long_video
+    calls = []
+    candidates = [
+        SimpleNamespace(source="pixabay", id=i, text=title,
+                        url=f"https://example.org/{i}.mp4",
+                        extra={"license":{"creator":"Provider","id":"PIXABAY",
+                                          "source_page":f"https://pixabay.com/{i}"}})
+        for i,title in enumerate(("river bridge", "glacier mountain",
+                                  "glacier ice", "glacial ice sheet"), 1)
+    ]
+    class Registry:
+        def search(self, provider, query):
+            return candidates if provider=="pixabay" else []
+    monkeypatch.setattr(media_validation.VideoDownloader, "download",
+                        lambda self, url: tmp_path/url.rsplit("/",1)[-1])
+    monkeypatch.setattr(media_validation.QualityValidator, "validate",
+                        lambda self,path:{"width":1920,"height":1080,"duration":30.})
+    def verified(path, meta, need, *, expected_subject="volcano"):
+        calls.append(expected_subject)
+        assert "glaci" in meta.lower()
+        return {"verification":"local_clip_screening","visual_score":0.31}
+    monkeypatch.setattr(long_video, "long_visual_verifier", verified)
+    result = find_stock(1, 45., set(), tmp_path, registry=Registry(),
+                        topic="Ice Age vs Lava: Volcano Beneath a Glacier")
+    assert len(result)==3
+    assert len(calls)==3
+    assert all(x=="glacier" for x in calls)
+    assert all("bridge" not in c[2]["query"].lower() for c in result)

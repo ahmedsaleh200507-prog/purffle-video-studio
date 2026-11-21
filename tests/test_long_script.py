@@ -91,3 +91,19 @@ def test_wrong_chapter_count_not_accepted():
 def test_empty_or_short_script_rejected():
     with pytest.raises(ValueError, match="bad_length"):
         validate_batch({"chapters": [{"title": "A", "narration": "Only three words."}]}, ["A"])
+
+def test_fire_and_ice_trend_uses_new_14_science_chapters_without_changing_volcano():
+    from long_script import FIRE_AND_ICE_TOPICS, TOPICS, is_fire_and_ice
+    topic = "Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?"
+    assert is_fire_and_ice(topic)
+    assert not is_fire_and_ice("Why do volcanoes erupt?")
+    assert len(FIRE_AND_ICE_TOPICS) == len(TOPICS) == 14
+    assert FIRE_AND_ICE_TOPICS[0].startswith("A hot volcano")
+    client = FakeGroq()
+    result = build_documentary(topic, client=client, sleep=lambda _: None)
+    assert len(result) == 14
+    prompts = [call["messages"][-1]["content"] for call in client.requests]
+    assert "glacier" in prompts[0].lower()
+    assert "Glaciers" not in prompts[0] or len(prompts[0]) > 0
+    assert "steam" in prompts[1].lower()
+    assert "subscribe" not in result[0]["narration"].lower()
