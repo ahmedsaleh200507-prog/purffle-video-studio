@@ -271,7 +271,14 @@ class StrictVisuals:
         from media_validation import SceneSpec, reject_offtopic_science_source
         from video_sources import LicenseValidator
         try:
-            data = _scene_data(json.loads(image_prompt))
+            raw_plan = json.loads(image_prompt)
+            data = _scene_data(raw_plan)
+            director_contract = raw_plan.get("_visual_contract")
+            if director_contract is not None:
+                if (not isinstance(director_contract, dict)
+                        or data["object"] != director_contract.get("subject")
+                        or data["visual_search_query"] not in director_contract.get("queries", [])):
+                    raise ValueError("visual_director_invalid_contract: unrelated scene/query")
         except (ValueError, TypeError) as exc:
             self.report["state"] = "failed"
             self.report["error"] = "Missing structured scene plan"
@@ -476,6 +483,14 @@ class StrictVisuals:
                         raise ValueError(
                             "volcano_final_action_mismatch: no provider evidence "
                             "for an active eruption, plume, ash, or molten lava")
+                    if director_contract:
+                        from visual_director import metadata_allows
+                        if not metadata_allows(director_contract, " ".join(
+                                (str(item.text),
+                                 str(license_info.get("source_page", ""))))):
+                            raise ValueError(
+                                "visual_director_action_metadata_mismatch: "
+                                "provider cannot establish required visible action")
                     if hasattr(self.matcher, "validate_metadata"):
                         score = self.matcher.validate_metadata(spec, item.text)
                     elif hasattr(self.matcher, "metadata_score"):
@@ -562,6 +577,17 @@ class StrictVisuals:
                                 "visual_subject_not_grounded: vertical scene "
                                 "shows scenery rather than the main topic subject")
                         match["subject_screen"] = subject_result
+                    if director_contract and isinstance(self.matcher, SceneMatcher):
+                        from visual_director import inspect_action
+                        event_check = inspect_action(
+                            path, quality["duration"], match.get("crop_focus_x", .5),
+                            director_contract, scorer=self.matcher._similarities)
+                        if not event_check["verified"]:
+                            raise ValueError(
+                                "visual_director_action_not_visible: "
+                                "real 9:16 frames do not demonstrate "
+                                + str(director_contract["family"]))
+                        match["director_check"] = event_check
                     item.path = path
                     item.width, item.height = int(quality["width"]), int(quality["height"])
                     item.duration = float(quality["duration"])
@@ -580,6 +606,7 @@ class StrictVisuals:
                     if source == "coverr-video":
                         item.url = license_info["source_page"]
                     scene.update({"status": "selected", "source": source, "id": item.id,
+                                  "director_contract": director_contract,
                                   "source_url": item.url, "downloaded_file": str(path),
                                   "sha256": digest, "quality": quality, "match": match,
                                   "license": license_info,
