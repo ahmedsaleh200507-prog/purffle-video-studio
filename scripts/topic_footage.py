@@ -191,6 +191,41 @@ def bioluminescence_visible_in_metadata(metadata: str) -> bool:
         "sea glowing"))
 
 
+def is_sudden_volcano_eruption_topic(topic: str) -> bool:
+    """Only the explainer about a sudden explosive volcanic eruption."""
+    t = words(topic)
+    return (bool(t & {"volcano", "volcanoes"}) and
+            bool(t & {"erupt", "erupts", "eruption"}) and
+            bool(t & {"suddenly", "sudden"}) and
+            not t & {"island", "underwater", "ocean", "sea"})
+
+
+def explosive_volcano_evidence_in_metadata(value: str) -> bool:
+    """Independent stock title/source clue for a VISIBLE dramatic last shot.
+
+    This is only a preflight necessary-condition test. A live CLIP comparison
+    still checks the video crop for a dark ash plume / actual eruption.
+    """
+    raw = str(value or "").casefold().replace("-", " ").replace("_", " ")
+    import re
+    terms = set(re.findall(r"[a-z]+", raw))
+    return bool(terms & {"erupting", "eruption", "exploding",
+                         "explosive", "explosion", "ash", "plume",
+                         "blast", "fountain", "lava"})
+
+
+def explosive_volcano_last_shot_prompts():
+    return {
+        "subject": "active_volcanic_eruption",
+        "positive": ("A real volcanic eruption with bright erupting lava "
+                     "and thick smoke or ash billowing from an active crater."),
+        "negatives": (
+            "A calm green mountain with wispy mist or fog and no eruption.",
+            "A distant rocky mountain slope surrounded by clouds with no molten lava.",
+        ),
+    }
+
+
 def is_steel_ship_floating_topic(topic: str) -> bool:
     """Narrow scope: a flotation explainer, not shipwrecks or submarines."""
     terms = words(topic)
@@ -371,7 +406,7 @@ def deterministic_stock_shots(topic: str):
             ("volcano", "volcano erupting lava"),
             ("lava", "molten lava flow volcano"),
             ("volcano", "volcano eruption close up"),
-            ("volcano", "volcano smoking crater"),
+            ("volcano", "volcano explosive eruption ash plume"),
             ("volcano", "volcano aerial eruption"),
         ]
     elif "iceberg" in t:
