@@ -90,6 +90,23 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
     if any(not scene.get('source') or not scene.get('sha256')
            or not scene.get('match') or not scene.get('license') for scene in scenes):
         raise RuntimeError('Footage provenance or frame verification missing in scene report')
+    # The proof must survive beyond candidate selection: for v4, every MP4
+    # scene must retain a reviewed spoken-scene contract AND a passed actual
+    # portrait multi-timestamp CLIP event check. Never mark a playable MP4
+    # "successful" merely because generic topic stock was downloaded.
+    if report.get('strategy') == 'v4_evidence_first_director_verified_before_voice':
+        if any(
+            not scene.get('director_contract')
+            or scene.get('match', {}).get('director_check', {}).get('verified') is not True
+            for scene in scenes
+        ):
+            raise RuntimeError(
+                'visual_director_unverified: at least one narrated scene '
+                'lacks an independently checked real-video action match')
+        if [scene.get('director_contract', {}).get('index') for scene in scenes] != list(
+                range(1, len(scenes) + 1)):
+            raise RuntimeError(
+                'visual_director_sequence_mismatch: spoken scene and verified clip order differ')
     # Exactly the same bound is checked during candidate selection and
     # FFmpeg segment preparation. Scene reports retain the measured resize.
     from media_validation import portrait_crop_allowed
