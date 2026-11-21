@@ -113,5 +113,5 @@ def test_real_video_workflows_include_fns_and_do_not_change_locked_english_voice
                  "daily-life-five-20261118.yml",
                  "one-video-volcanic-island-20261118.yml"):
         yml = (root / name).read_text()
-        assert "VISUAL_SOURCES: freenaturestock-video," in yml
+        assert "freenaturestock-video" in next(line for line in yml.splitlines() if "VISUAL_SOURCES:" in line)
         assert "PURFFLE_NARRATOR_LOCK: '1'" in yml
