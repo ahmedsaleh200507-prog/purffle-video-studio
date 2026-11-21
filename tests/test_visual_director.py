@@ -51,6 +51,11 @@ def test_event_contract_does_not_map_invisible_science_to_fake_ice_breaking():
         object="iceberg", action="ambient",
         visual_search_query="iceberg floating ocean")
     assert build_contract(ice, "Why Do Icebergs Break Apart?", 1)["family"] == "breaking"
+    whale = SimpleNamespace(
+        narration="A humpback whale bursts out of the sea and splashes down.",
+        object="whale", action="ambient",
+        visual_search_query="whale ocean close up")
+    assert build_contract(whale, "Why Do Whales Jump?", 1)["family"] == "breaching"
 
 
 def test_visual_contract_is_multi_frame_not_provider_title_only():
