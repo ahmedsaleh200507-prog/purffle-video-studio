@@ -221,7 +221,11 @@ def find_stock(index, chapter_seconds, seen, work, registry=None):
                     if (int(q["width"]) < 1280 or int(q["height"]) < 720
                             or duration < chapter_seconds / (4*1.5)):
                         continue
-                    visual = long_visual_verifier(path, candidate.text, duration)
+                    # Inspect the frames that will be used at the BEGINNING
+                    # of this source, not the entire clip (which may change scene).
+                    visual_span = min(duration, chapter_seconds / 3)
+                    visual = long_visual_verifier(
+                        path, candidate.text, visual_span)
                     seen.add(key)
                     lic=candidate.extra["license"]
                     chosen.append((path,duration,
