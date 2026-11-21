@@ -9,6 +9,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 
 TOPICS = (
     "A question from inside Earth",
@@ -75,6 +76,41 @@ CHAPTER_SCHEMA = {
 }
 
 
+# Spoken English narration must be understandable to viewers and recognizable
+# in independently timed real audio. Particularly difficult loanwords were
+# responsible for the failure at chapter 11 of the Fire and Ice production.
+# Substitute plain-language equivalents BEFORE any voice synthesis; the saved
+# script, the actual audio and captions all use exactly this finalized wording.
+_SPOKEN_EQUIVALENTS = (
+    (r"\bj[oö]kulhlaups?\b", "sudden glacier floods"),
+    (r"\bcirques?\b", "bowl shaped valleys"),
+    (r"\bar[eê]tes?\b", "steep mountain ridges"),
+    (r"\blahars?\b", "volcanic mudflows"),
+    (r"\brhyolitic\b", "silica rich"),
+    (r"\bamphitheat(?:er|re)[- ]shaped\b", "bowl shaped"),
+)
+
+
+def accessible_science_narration(text: str) -> str:
+    """Simplify a few inaccessible technical words, never invent audio timing.
+
+    Restricted to the fire-and-ice long documentary. This changes only future
+    script text *before* the narrator speaks; no subtitle/audio falsification.
+    """
+    value = str(text).replace("’", "'").replace("‘", "'")
+    # Unicode dash characters can be read aloud unpredictably by small TTS,
+    # particularly when they combine multiple technical words.
+    for dash in ("—", "–"):
+        value = value.replace(dash, ", ")
+    for hyphen in ("‑", "‐", "−"):
+        value = value.replace(hyphen, "-")
+    value = unicodedata.normalize("NFKD", value)
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    for pattern, replacement in _SPOKEN_EQUIVALENTS:
+        value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
+    return " ".join(value.split())
+
+
 def count_words(s):
     return len(re.findall(r"\b[\w'-]+\b", str(s)))
 
@@ -114,7 +150,11 @@ def build_documentary(topic: str, client=None, *, sleep=time.sleep):
         requested = subjects[at:at+size]
         start = at + 1
         instruction = (
-            ("This is an original science documentary, NOT a film trailer. "
+            ("Use accessible spoken English and short, natural clauses. "
+             "AVOID obscure specialist terms, accented spellings, em dashes, "
+             "and complicated technical names that speech engines or viewers "
+             "could mishear; use plain-language explanations instead. "
+             "This is an original science documentary, NOT a film trailer. "
              "For the ice-under-volcano topic, explain real subglacial eruptions, "
              "steam, ice melt, and glacial floods with cautious accurate science. "
              "The new Ice Age: Boiling Point film trailer released November 2026 "
@@ -165,6 +205,17 @@ def build_documentary(topic: str, client=None, *, sleep=time.sleep):
                 raw = choice.message.content or ""
                 parsed = json.loads(raw)
                 batch = validate_batch(parsed, requested)
+                if is_fire_and_ice(topic):
+                    batch = [
+                        {**chapter, "narration": accessible_science_narration(
+                            chapter["narration"])}
+                        for chapter in batch
+                    ]
+                    # Final saved narration is what both the private voice
+                    # and actual word-aligned subtitles will speak.
+                    if any(not 90 <= count_words(item["narration"]) <= 135
+                           for item in batch):
+                        raise ValueError("spoken_language_simplification_bad_length")
                 finished.extend(batch)
                 failure_reason = ""
                 print(f"[SCRIPT] verified batch={batch_number}/4 chapters={len(batch)}", flush=True)
