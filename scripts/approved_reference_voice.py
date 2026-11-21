@@ -131,6 +131,39 @@ def _safe_split_for_exact_audio(text: str) -> list[str]:
 
 
 @lru_cache(maxsize=2)
+def _safe_split_for_long_form_audio(text: str) -> list[str]:
+    """Long-documentary-only fallback when a complete utterance is misheard.
+
+    First try the unmodified Shorts clause splitter. If punctuation cannot
+    produce two viable clauses (e.g. a three-word introductory clause), split
+    a 14-35-word utterance at a near-middle word boundary instead.
+
+    Each part must still be independently spoken by the SAME approved private
+    narrator and verified against its real WAV using independent ASR. Splitting
+    is not an exemption from word or speaker verification.
+    """
+    normal = _safe_split_for_exact_audio(text)
+    if normal:
+        return normal
+    whole = " ".join(str(text).split())
+    chunks = list(re.finditer(r"\\S+", whole))
+    if not 14 <= len(chunks) <= 35:
+        return []
+    positions = range(6, len(chunks)-5)
+    if not positions:
+        return []
+    def priority(i):
+        previous = whole[chunks[i-1].start():chunks[i-1].end()]
+        punctuation = previous.endswith((",", ";", ":", "—", "–"))
+        return (not punctuation, abs(i - len(chunks) / 2))
+    cut = min(positions, key=priority)
+    parts = [whole[:chunks[cut].start()].strip(), whole[chunks[cut].start():].strip()]
+    if (all(6 <= len(_tokens(piece)) <= 35 for piece in parts)
+            and _tokens(" ".join(parts)) == _tokens(whole)):
+        return parts
+    return []
+
+
 def _verified_asr_model(model_name: str):
     """Reuse CPU recognizers. Neither receives the script as an ASR prompt."""
     if model_name not in {"base.en", "small.en"}:
@@ -340,7 +373,10 @@ def synthesize(text, out, settings, *, segments=None, long_form=False):
             # All three full-length attempts failed. Rescue ONLY by speaking
             # the SAME words as shorter clauses using the SAME private voice.
             # Never guess transcripts, alter a narration word or switch speaker.
-            fragments = _safe_split_for_exact_audio(sentence) if allow_split else []
+            fragments = (
+                (_safe_split_for_long_form_audio(sentence)
+                 if long_form else _safe_split_for_exact_audio(sentence))
+                if allow_split else [])
             if fragments:
                 print(f"[VOICE RESCUE] exact-transcript clause split "
                       f"fragments={len(fragments)}", flush=True)
