@@ -462,6 +462,20 @@ class StrictVisuals:
                                       str(license_info.get("source_page", ""))))):
                         raise ValueError("offtopic_bioluminescence: provider metadata "
                                          "does not establish glowing marine organisms")
+                    # #86: the last scene describes an explosive eruption.
+                    # A calm cloud-covered mountain is scientifically related
+                    # but MUST NOT stand in for the narrated explosion.
+                    from topic_footage import (
+                        is_sudden_volcano_eruption_topic,
+                        explosive_volcano_evidence_in_metadata)
+                    if (idx >= 3 and is_sudden_volcano_eruption_topic(topic)
+                            and not explosive_volcano_evidence_in_metadata(
+                                " ".join((
+                                    str(item.text),
+                                    str(license_info.get("source_page", "")))))):
+                        raise ValueError(
+                            "volcano_final_action_mismatch: no provider evidence "
+                            "for an active eruption, plume, ash, or molten lava")
                     if hasattr(self.matcher, "validate_metadata"):
                         score = self.matcher.validate_metadata(spec, item.text)
                     elif hasattr(self.matcher, "metadata_score"):
@@ -533,6 +547,9 @@ class StrictVisuals:
                     from topic_footage import opening_subject_prompts
                     from media_validation import SceneMatcher
                     subject_specification = opening_subject_prompts(topic)
+                    if idx >= 3 and is_sudden_volcano_eruption_topic(topic):
+                        from topic_footage import explosive_volcano_last_shot_prompts
+                        subject_specification = explosive_volcano_last_shot_prompts()
                     if subject_specification and isinstance(self.matcher, SceneMatcher):
                         from opening_impact import _first_frames, _semantic_subject_screen
                         focus = float(match.get("crop_focus_x", .5))
