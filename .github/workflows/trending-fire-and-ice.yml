@@ -1,0 +1,107 @@
+name: '03 - Trending Fire and Ice 10 Minute Documentary (16:9)'
+run-name: "Trending Documentary | Fire and Ice - Glacial Volcano"
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'Original fire and ice science film; no copyrighted movie footage'
+        required: true
+        default: 'Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?'
+        type: string
+      language:
+        description: 'First pilot: approved English male voice'
+        required: true
+        type: choice
+        default: en
+        options:
+          - en
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/trending-fire-and-ice.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  create-10-minute-video:
+    name: 'Original 10-min trending documentary | Ice Age science'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      PURFFLE_REFERENCE_OPUS_B64: ${{ secrets.PURFFLE_REFERENCE_OPUS_B64 }}
+      LLM_MODEL: openai/gpt-oss-20b
+      HF_HOME: ${{ github.workspace }}/.cache/huggingface
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      TOKENIZERS_PARALLELISM: 'false'
+      PURFFLE_API_INTERVAL_SECONDS: '1.6'
+      VIDEO_TOPIC: ${{ github.event_name == 'workflow_dispatch' && inputs.topic || 'Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Static long-video sanity checks
+        run: |
+          python -m compileall -q scripts
+          python scripts/long_video.py --self-test
+          python -m pip install 'pytest>=8,<10'
+          python -m pytest -q tests/test_long_script.py tests/test_long_voice.py tests/test_long_video_pipeline.py tests/test_long_reference_alignment_fallback.py
+      - name: Check approved private male reference
+        run: python scripts/english_reference_policy.py --topic 'en|Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?'
+      - name: Install FFmpeg
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
+          ffprobe -version | head -n 1
+      - name: Install reproducible reference voice and render dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'torch==2.6.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements-dev.txt
+          python -m pip install --no-cache-dir 'faster-whisper==1.2.1' 'resemblyzer==0.1.4' 'av==18.1.0'
+          python -m venv --system-site-packages .venv-reference
+          .venv-reference/bin/python -m pip install --upgrade pip
+          .venv-reference/bin/python -m pip install 'torchaudio==2.6.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+          .venv-reference/bin/python -m pip install --no-cache-dir 'chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217'
+      - name: Render original fire-and-ice science documentary
+        run: python scripts/long_video.py --topic "$VIDEO_TOPIC" --language en
+      - name: Verify MP4 duration 9-11 minutes, size, audio
+        run: |
+          python - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          root=Path("long_video_output/result")
+          report=json.loads((root/"report.json").read_text())
+          assert report["status"]=="ok"
+          mp4=root/"long-video.mp4"
+          assert mp4.is_file() and mp4.stat().st_size>3_000_000
+          d=json.loads(subprocess.check_output(["ffprobe","-v","error","-show_streams","-show_format","-of","json",str(mp4)]))
+          seconds=float(d["format"]["duration"])
+          v=next(s for s in d["streams"] if s["codec_type"]=="video")
+          assert 540<=seconds<=660 and (v["width"],v["height"])==(1920,1080)
+          assert any(s["codec_type"]=="audio" for s in d["streams"])
+          print("Long video MP4 passed all technical checks:", seconds)
+          PY
+      - name: Upload real result or failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trending-fire-and-ice-10min
+          path: |
+            long_video_output/result/report.json
+            long_video_output/result/long-video.mp4
+            long_video_output/result/captions.srt
+            long_video_output/result/script.json
+            long_video_output/result/credits.json
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0
