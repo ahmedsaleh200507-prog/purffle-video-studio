@@ -280,7 +280,8 @@ def synthesize(text, out, settings, *, segments=None, long_form=False):
                     length = _wav_duration(output)
                     score = voice_similarity(reference, output)
                     try:
-                        timed_words = check_real_word_timing(sentence, output, long_form=long_form)
+                        timed_words = (check_real_word_timing(sentence, output, long_form=True)
+                                   if long_form else check_real_word_timing(sentence, output))
                     except RuntimeError as asr_error:
                         if (attempt != len(seeds)
                                 or "does not exactly match" not in str(asr_error)):
@@ -291,8 +292,10 @@ def synthesize(text, out, settings, *, segments=None, long_form=False):
                         # independent CPU ASR model. It must still recognize
                         # EVERY original word and supply REAL word timestamps.
                         try:
-                            timed_words = check_real_word_timing(
-                                sentence, output, model_name="small.en", long_form=long_form)
+                            timed_words = (check_real_word_timing(
+                                sentence, output, model_name="small.en", long_form=True)
+                                if long_form else check_real_word_timing(
+                                sentence, output, model_name="small.en"))
                         except Exception:
                             raise asr_error from None
                         print("[VOICE ASR] exact transcript confirmed by "
