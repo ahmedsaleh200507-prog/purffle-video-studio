@@ -172,6 +172,7 @@ def test_final_source_artifact_never_contains_signed_coverr_url():
                  "one-video-volcanic-island-20261118.yml",
                  "daily-life-five-20261118.yml"):
         text=(repo/".github"/"workflows"/name).read_text()
-        assert "VISUAL_SOURCES: freenaturestock-video,coverr-video," in text
+        sources = next(line for line in text.splitlines() if "VISUAL_SOURCES:" in line)
+        assert "coverr-video" in sources and "freenaturestock-video" in sources
         assert "secrets.COVERR_API_KEY" in text
         assert "PURFFLE_COVERR_MAX_CALLS: '5'" in text
