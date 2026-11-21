@@ -8,6 +8,9 @@ from types import SimpleNamespace
 import pytest
 
 from topic_footage import (
+    is_sudden_volcano_eruption_topic,
+    explosive_volcano_evidence_in_metadata,
+    explosive_volcano_last_shot_prompts,
     is_glowing_ocean_topic, bioluminescence_visible_in_metadata,
     contradicts_floating_ship, deterministic_stock_shots,
     is_steel_ship_floating_topic, opening_subject_prompts,
@@ -175,3 +178,50 @@ def test_production_85_blue_ocean_requires_bioluminescence_not_empty_sea():
     runtime = (Path(__file__).resolve().parents[1] /
                "scripts" / "studio_runtime.py").read_text()
     assert "offtopic_bioluminescence" in runtime
+
+
+def test_production_86_dramatic_final_cannot_use_calm_misty_volcano():
+    topic = "What Makes a Volcano Suddenly Erupt?"
+    assert is_sudden_volcano_eruption_topic(topic)
+    assert not is_sudden_volcano_eruption_topic(
+        "Why Do Volcanoes Create Islands?")
+    assert not explosive_volcano_evidence_in_metadata(
+        "volcano smoking crater mountains fog peaceful landscape")
+    assert not explosive_volcano_evidence_in_metadata(
+        "https://pixabay.com/videos/volcano-mountain-cloud-fog")
+    assert explosive_volcano_evidence_in_metadata(
+        "active volcano with a huge ash eruption plume")
+    assert explosive_volcano_evidence_in_metadata(
+        "volcano exploding lava fountain at night")
+    prompt = explosive_volcano_last_shot_prompts()
+    assert prompt["subject"] == "active_volcanic_eruption"
+    bad = _semantic_subject_screen(
+        [object(), object()], prompt,
+        scorer=lambda frames, captions: [
+            [.21, .35, .34], [.23, .36, .32]])
+    assert not bad["verified"]
+    good = _semantic_subject_screen(
+        [object(), object()], prompt,
+        scorer=lambda frames, captions: [
+            [.34, .19, .18], [.32, .20, .16]])
+    assert good["verified"]
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    runtime = (root / "scripts" / "studio_runtime.py").read_text()
+    stock = (root / "scripts" / "topic_footage.py").read_text()
+    assert "volcano_final_action_mismatch" in runtime
+    assert "explosive_volcano_last_shot_prompts" in runtime
+    assert '("volcano", "volcano smoking crater")' not in stock
+
+
+def test_production_86_narration_matches_lava_opening_not_invisible_ash_blast():
+    from fact_checked_topics import ground_verified_documentary
+    topic = "What Makes a Volcano Suddenly Erupt?"
+    for lang in ("en", "de"):
+        for scene_count in (3, 4):
+            scenes = ground_verified_documentary(
+                {}, topic, lang, scene_count=scene_count)["scenes"]
+            first = scenes[0]["narration"].casefold()
+            assert ("lava" in first)
+            assert ("volcano" in first or "vulkan" in first)
+            assert len(first.split()) >= 12
