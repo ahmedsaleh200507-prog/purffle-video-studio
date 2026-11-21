@@ -154,9 +154,18 @@ def main():
                 # The normalizer obtains precise, source-checked facts before
                 # anybody searches for clips. A visual query can never
                 # introduce an unsourced scientific claim into the speech.
-                with use_evidence(evidence):
+                from visual_director import use_story_scene_target
+                from fact_checked_topics import (verified_documentary_kind,
+                                                 _lightning_repeated_topic)
+                # An existing exact-source three-scene factual variant is
+                # preferable to demanding four independent stock clips.
+                topic = os.environ['VIDEO_TOPIC']
+                target_count = (3 if (
+                    verified_documentary_kind(topic) or
+                    _lightning_repeated_topic(topic)) else None)
+                with use_story_scene_target(target_count), use_evidence(evidence):
                     screenplay, pick, writer = studio.draft(
-                        os.environ['VIDEO_TOPIC'], style='facts')
+                        topic, style='facts')
                 try:
                     from science_fact_guard import validate_unsourced_quantities
                     validate_unsourced_quantities(
