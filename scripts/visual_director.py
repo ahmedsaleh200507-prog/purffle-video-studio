@@ -223,8 +223,8 @@ def metadata_allows(contract, provider_text):
                for word in clues)
 
 
-def visual_scores(contract, scores):
-    """Generic event-vs-non-event ranking over several source timestamps.
+def visual_scores(contract, scores, *, opening=False):
+    """Generic event-vs-non-event ranking over the USED source-video interval.
 
     CLIP is a weak comparative heuristic: it cannot certify causal claims or
     identify a particular person. Fail closed rather than invent visual proof.
@@ -240,8 +240,17 @@ def visual_scores(contract, scores):
     # an opening frame may show the buildup. Thresholds are conservative
     # editorial heuristics, not measured accuracy or viewer-retention scores.
     passed = peak >= 0.24 and margin >= 0.02
+    # On scene 1 a late event cannot rescue a sky-only or dormant first
+    # three seconds. First two timestamps are within roughly 0-2s.
+    opening_action_visible = None
+    if opening and contract["event_required"]:
+        opening_action_visible = any(
+            float(row[0]) >= 0.24 and float(row[0]) - float(row[1]) >= 0.02
+            for row in scores[:2])
+        passed = passed and opening_action_visible
     return {
-        "verified": passed,
+        "verified": bool(passed),
+        "opening_action_visible": opening_action_visible,
         "family": contract["family"],
         "event_required": bool(contract["event_required"]),
         "max_similarity": round(peak, 4),
@@ -276,13 +285,17 @@ def _frame_at(path, seconds, crop_focus, *, runner=None):
         return img.convert("RGB").copy()
 
 
-def inspect_action(path, duration, crop_focus, contract, *, scorer=None, frames=None):
-    """Check ACTUAL 9:16 footage in several moments, never provider previews."""
+def inspect_action(path, duration, crop_focus, contract, *,
+                   scorer=None, frames=None, opening=False):
+    """Check the ACTUAL rendered interval (not the whole stock source clip)."""
     if frames is None:
         length = float(duration)
         if not math.isfinite(length) or length <= 0:
             raise RuntimeError("visual_director_missing_duration")
-        times = [min(0.5, length * .15), length * .5, length * .85]
+        # The renderer uses item.extra['start']=0 and only the first NEED
+        # seconds. Inspecting the entire source would approve an explosion
+        # at 40s even when the final video cuts away at 10s.
+        times = [min(.4, length * .1), min(1.7, length * .35), length * .66]
         frames = [_frame_at(path, moment, crop_focus) for moment in times]
     if not frames or len(frames) < 2:
         raise RuntimeError("visual_director_unverified_frames")
@@ -290,4 +303,4 @@ def inspect_action(path, duration, crop_focus, contract, *, scorer=None, frames=
         from media_validation import SceneMatcher
         scorer = SceneMatcher()._similarities
     matrix = scorer(frames, [contract["positive"], contract["negative"]])
-    return visual_scores(contract, matrix)
+    return visual_scores(contract, matrix, opening=opening)
