@@ -213,8 +213,8 @@ def metadata_allows(contract, provider_text):
     # A negated mention ('ocean without lava') is evidence AGAINST the event,
     # not confirmation. This caught a false hit in the first v4 regression.
     if clues:
-        disclaimed = r"\\b(?:no|without|lacking|absence of|not showing)\\s+(?:\\w+\\s+){0,2}(?:" + (
-            "|".join(re.escape(w) for w in clues)) + r")\\b"
+        disclaimed = r"\b(?:no|without|lacking|absence of|not showing)\s+(?:\w+\s+){0,2}(?:" + (
+            "|".join(re.escape(w) for w in clues)) + r")\b"
         if re.search(disclaimed, text):
             return False
     # Explicit event vocabulary *and* scene-level visual CLIP are needed to
