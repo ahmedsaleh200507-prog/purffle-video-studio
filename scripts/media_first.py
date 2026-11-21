@@ -229,7 +229,8 @@ def prioritize_lava_opening(topic, items, plans, scene_reports, *,
 
 
 def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
-                             min_scenes=3, max_scenes=4, clip_seconds=10.0):
+                             min_scenes=3, max_scenes=4, clip_seconds=10.0,
+                             storyboard=None):
     """Download, probe, and visually verify each potential shot BEFORE TTS.
 
     On failure there is an early, explicit media-preflight error rather than a
@@ -244,7 +245,33 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
     if clip_seconds <= 0:
         raise ValueError("Media-first clip length must be positive")
     visuals = visuals if visuals is not None else StrictVisuals(settings)
-    options = _grounded_candidates(topic, llm)
+    # NEW: when a factual script has already passed science/source review,
+    # search for its exact visible actions in NARRATION ORDER instead of
+    # gathering four vaguely topic-related clips and adding facts afterward.
+    # Keep the old entry point for independent and offline regression callers.
+    director_mode = storyboard is not None
+    if director_mode:
+        from visual_director import build_contract
+        scenes = list(getattr(storyboard, "scenes", []) or [])
+        if not 2 <= len(scenes) <= 6:
+            raise ValueError("visual_director_requires_2_to_6_reviewed_scenes")
+        if len(scenes) != min_scenes:
+            raise ValueError("visual_director_count_mismatch: no script scene may be silently lost")
+        options = []
+        for index, scene in enumerate(scenes, 1):
+            contract = build_contract(scene, topic, index)
+            plan = {
+                "main_character": str(getattr(scene, "main_character", "") or ""),
+                "object": str(getattr(scene, "object", "") or ""),
+                "action": str(getattr(scene, "action", "") or "ambient"),
+                "location": str(getattr(scene, "location", "") or ""),
+                "time": str(getattr(scene, "time", "") or ""),
+                "visual_search_query": contract["queries"][0],
+                "_visual_contract": contract,
+            }
+            options.append(plan)
+    else:
+        options = _grounded_candidates(topic, llm)
     if not options:
         error = ("media_preflight_no_topic_palette: no subject-grounded "
                  "stock queries could be derived from the topic")
@@ -262,36 +289,65 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
     items, plans, attempts, selected_rows = [], [], [], []
     dest_dir = Path(os.environ.get("MEDIA_FIRST_WORK_DIR", "media_cache/v3_preflight"))
     dest_dir.mkdir(parents=True, exist_ok=True)
-    for option in options:
+    for slot, option in enumerate(options, 1):
         if len(items) == max_scenes:
             break
-        plan = _scene_data(option)
-        query = plan["visual_search_query"]
-        # Keep a bounded total selection budget even with many providers.
-        visuals._shot_deadline = time.monotonic() + 135
-        start = len(visuals.report["scenes"])
-        try:
-            item = visuals.for_scene(len(items), query, json.dumps(plan),
-                                     topic, clip_seconds, dest_dir)
-        except RuntimeError as exc:
-            if "No suitable verified REAL VIDEO" not in str(exc):
-                raise
-            attempts.append({"query": query, "status": "rejected",
-                             "reason": str(exc)[:220]})
-            continue
-        matches = [row for row in visuals.report["scenes"][start:]
-                   if row.get("status") == "selected"]
-        if len(matches) != 1:
-            raise RuntimeError("media_preflight_inconsistent_scene_selection")
-        selected_rows.append(matches[0])
-        items.append(item)
-        plans.append(plan)
-        attempts.append({"query": query, "status": "selected",
-                         "source": item.source, "id": item.id})
+        contract = option.get("_visual_contract") if director_mode else None
+        # Three event-specific aliases can find footage even when providers
+        # index 'breaching' but not 'jumping', or 'ash plume' not 'eruption'.
+        # This only broadens searches; the SAME strict evidence contract
+        # applies to every accepted video, regardless of query variant.
+        queries = (contract["queries"][:3] if contract
+                   else [option["visual_search_query"]])
+        selected = False
+        for query in queries:
+            plan = _scene_data({**option, "visual_search_query": query})
+            payload = dict(plan)
+            if contract:
+                payload["_visual_contract"] = contract
+            # Keep each alias bounded; do not exhaust the total per-scene
+            # video budget or alter per-source rate/circuit breakers.
+            visuals._shot_deadline = time.monotonic() + 100
+            start = len(visuals.report["scenes"])
+            try:
+                item = visuals.for_scene(len(items), query, json.dumps(payload),
+                                         topic, clip_seconds, dest_dir)
+            except RuntimeError as exc:
+                if "No suitable verified REAL VIDEO" not in str(exc):
+                    raise
+                attempts.append({"scene": slot, "query": query, "status": "rejected",
+                                 "reason": str(exc)[:220]})
+                continue
+            matches = [row for row in visuals.report["scenes"][start:]
+                       if row.get("status") == "selected"]
+            if len(matches) != 1:
+                raise RuntimeError("media_preflight_inconsistent_scene_selection")
+            selected_rows.append(matches[0])
+            items.append(item)
+            plans.append(plan)
+            attempts.append({"scene": slot, "query": query, "status": "selected",
+                             "source": item.source, "id": item.id})
+            selected = True
+            break
+        if director_mode and not selected:
+            attempts.append({
+                "scene": slot, "status": "unavailable",
+                "reason": "No verified real video satisfies this spoken scene's "
+                          "action, license, portrait crop and motion rules."})
     # Rank the ACTUAL first 1.2 seconds across all accepted real clips.
     # Fail before TTS if no vivid, moving, topic-relevant opening exists.
     from opening_impact import prioritize_opening
-    opening_review = prioritize_opening(topic, items, plans, selected_rows)
+    if director_mode:
+        # A preapproved factual story has a fixed spoken order. Never reorder
+        # scene 4 to the start simply because it looks more striking; that
+        # silently recreates the #86 narration/footage mismatch.
+        opening_review = (
+            prioritize_opening(topic, items[:1], plans[:1], selected_rows[:1])
+            if len(items) == len(options) else
+            {"state": "not_selected_incomplete_storyboard",
+             "reason": "A narrated scene has no verified corresponding footage"})
+    else:
+        opening_review = prioritize_opening(topic, items, plans, selected_rows)
     # Re-number successful selections because rejected candidates occupied
     # transient scene indexes. Never mistake skipped attempts for final scenes.
     for index, row in enumerate(selected_rows, 1):
@@ -300,21 +356,28 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
         row["illustrative_not_exact_event"] = True
     visuals.report["scenes"] = selected_rows
     visuals.report["state"] = "footage_ready" if len(items) >= min_scenes else "failed"
-    visuals.report["strategy"] = "v3_media_first_verified_before_script_and_voice"
+    visuals.report["strategy"] = (
+        "v4_evidence_first_director_verified_before_voice" if director_mode
+        else "v3_media_first_verified_before_script_and_voice")
     visuals.report["preflight_attempts"] = attempts
     visuals.report["opening_review"] = opening_review
     if len(items) < min_scenes:
         visuals.report["error"] = (
             f"media_preflight_insufficient_footage: verified {len(items)} "
-            f"of {min_scenes} required unique video clips")
+            f"of {min_scenes} required unique video clips"
+            + ("; director requires accurate coverage of every narrated scene"
+               if director_mode else ""))
     else:
         visuals.report.pop("error", None)
     visuals._save()
     save_path = Path(os.getenv("MEDIA_FIRST_REPORT", "media-first-plan.json"))
     save_path.parent.mkdir(parents=True, exist_ok=True)
     save_path.write_text(json.dumps({
-        "strategy": "v3_media_first_verified_before_script_and_voice",
+        "strategy": ("v4_evidence_first_director_verified_before_voice"
+                     if director_mode else "v3_media_first_verified_before_script_and_voice"),
         "topic": topic, "required": min_scenes, "verified": len(items),
+        "director_mode": director_mode,
+        "unavailable_scenes": [x for x in attempts if x["status"] == "unavailable"],
         "opening_review": opening_review,
         "selected": [
             {"index": i+1, "query": p["visual_search_query"],
@@ -323,12 +386,16 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
              "quality": m.extra.get("quality"),
              "license": m.extra.get("license"),
              "subject_screen": m.extra.get("match", {}).get("subject_screen"),
-             "crop_focus_x": m.extra.get("match", {}).get("crop_focus_x")}
+             "crop_focus_x": m.extra.get("match", {}).get("crop_focus_x"),
+             "director_contract": m.extra.get("match", {}).get("director_check")}
             for i, (p, m) in enumerate(zip(plans, items))],
         "attempts": attempts,
     }, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     if len(items) < min_scenes:
         raise RuntimeError(visuals.report["error"])
+    if director_mode and len(items) != len(options):
+        raise RuntimeError("visual_director_incomplete_storyboard: "
+                           "scene-to-clip coverage is not one-to-one")
     print(f"[MEDIA FIRST] {len(items)} verified clips ready BEFORE script or voice", flush=True)
     return VerifiedPalette(str(topic), plans, items, visuals.credits.copy(), attempts)
 
