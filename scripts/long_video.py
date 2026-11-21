@@ -36,6 +36,26 @@ def chapters(topic):
     from long_script import build_documentary
     return build_documentary(topic)
 
+def voice_segments(text):
+    """Preserve narration exactly, while keeping 2-6 natural speech segments.
+
+    Merge the shortest adjacent sentences as needed instead of cutting every
+    25 words mid-sentence. The approved voice code validates the entire spoken
+    transcript and independently validates each real audio segment.
+    """
+    pieces = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+    while len(pieces) > 6:
+        index = min(range(len(pieces)-1),
+                    key=lambda k: len(pieces[k]) + len(pieces[k+1]))
+        pieces[index:index+2] = [pieces[index] + " " + pieces[index+1]]
+    if (not 2 <= len(pieces) <= 6 or
+            any(not 10 <= len(piece) <= 350 or words(piece) < 6 for piece in pieces)):
+        raise RuntimeError("Narration cannot be segmented safely at sentence boundaries")
+    if " ".join(pieces) != " ".join(text.split()):
+        raise RuntimeError("Sentence chunking changed the narration")
+    return pieces
+
+
 def narrate(data,work):
     from english_reference_policy import enforce_english_reference_only
     from approved_reference_voice import synthesize
@@ -43,14 +63,11 @@ def narrate(data,work):
     audios, lines, offset=[],[],0.0
     for i,c in enumerate(data):
         text=c["narration"]
-        # Fixed approved male voice; smaller exact-text audio chunks keep
-        # full chapters within the private nano worker's utterance limit.
-        tokens = text.split()
-        parts = [" ".join(tokens[j:j+25]) for j in range(0, len(tokens), 25)]
-        if not (2 <= len(parts) <= 6 and all(10 <= len(p) <= 350 for p in parts)):
-            raise RuntimeError(f"Chapter {i+1} cannot be segmented safely")
-        segments = parts
-        speech=synthesize(text,work/f"voice-{i+1}",SimpleNamespace(language="en"),segments=segments)
+        # Real sentence boundaries help the approved TTS worker avoid clipped
+        # speech; the old fixed 25-word slices cut clauses in mid-sentence.
+        segments = voice_segments(text)
+        speech=synthesize(text,work/f"voice-{i+1}",SimpleNamespace(language="en"),
+                          segments=segments, long_form=True)
         if not Path(speech.audio).is_file() or not speech.words or not 20<=speech.duration<=95:
             raise RuntimeError(f"Chapter {i+1} approved voice invalid")
         audios.append((Path(speech.audio),float(speech.duration)))
