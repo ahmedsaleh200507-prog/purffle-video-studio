@@ -132,6 +132,16 @@ def srt_time(t):
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+def confirm_long_stock_sources(registry):
+    """Detect missing stock credentials BEFORE expensive long narration work."""
+    ready = set(getattr(registry, "enabled", [])) & {"pexels", "pixabay"}
+    if not ready:
+        raise RuntimeError(
+            "long_stock_preflight: neither Pixabay nor Pexels is configured; "
+            "video would have no genuine footage, so voice generation was skipped")
+    return sorted(ready)
+
+
 def find_stock(index, chapter_seconds, seen, work, registry=None):
     """Find distinct, genuinely moving footage; allow 3 sources when 4 absent.
 
@@ -268,6 +278,10 @@ def main():
     try:
         from english_reference_policy import enforce_english_reference_only
         enforce_english_reference_only("en")
+        stage="long_stock_preflight"
+        from video_sources import ProviderRegistry
+        registry = ProviderRegistry()
+        print("[LONG SOURCES READY]", confirm_long_stock_sources(registry), flush=True)
         stage="script"
         text=chapters(a.topic)
         save(output/"script.json",{"chapters":text})
@@ -277,8 +291,6 @@ def main():
             for j,(start,end,line) in enumerate(subs,1):
                 f.write(f"{j}\n{srt_time(start)} --> {srt_time(end)}\n{line}\n\n")
         stage="real_stock"
-        from video_sources import ProviderRegistry
-        registry = ProviderRegistry()
         used,scenes,credits=set(),[],[]
         for i,(wav,seconds) in enumerate(audio):
             clips=find_stock(i,seconds,used,work,registry=registry)
