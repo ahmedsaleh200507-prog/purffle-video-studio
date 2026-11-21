@@ -134,19 +134,11 @@ def main():
         stage = 'production'
         studio = Studio(s)
         if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1':
-            from media_first import (prepare_verified_palette, use_palette,
-                                     validate_narration_timing)
-            stage = 'media_preflight'
-            # #85 lightning found two verified moving HD storm clips; the
-            # old 3-clip minimum rejected the entire video. For THIS curated,
-            # self-contained thunder-delay explanation, two independent
-            # verified shots suffice with an approved two-scene narration.
-            from fact_checked_topics import verified_documentary_kind
-            minimum_scenes = (2 if verified_documentary_kind(
-                os.environ['VIDEO_TOPIC']) == 'lightning_thunder_delay' else 3)
-            palette = prepare_verified_palette(
-                os.environ['VIDEO_TOPIC'], s, studio.llm,
-                min_scenes=minimum_scenes, max_scenes=4, clip_seconds=10.0)
+            # V4 ROOT FIX: verified factual script FIRST, then explicit
+            # scene-by-scene real-video contracts, then the approved narration.
+            # Old palette-first gathered vaguely related clips and forced a
+            # fixed science story over them (#84 ship, #86 volcano).
+            from media_first import (prepare_verified_palette, validate_narration_timing)
             from science_sources import discover_evidence, screen_narration, use_evidence
             stage = 'science_sources'
             try:
@@ -156,53 +148,70 @@ def main():
                 write_source_failure(str(source_error),
                                      os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                 raise
-            from retention_storyboard import choose_duration_seconds
-            fact_count = len(getattr(evidence, 'sources', []) or [])
-            planned_seconds = choose_duration_seconds(
-                os.environ['VIDEO_TOPIC'], len(palette.items),
-                fact_count=fact_count)
-            palette.planned_seconds = planned_seconds
-            s = replace(s, target_seconds=planned_seconds)
-            studio.s = s
-            studio.clock.scale = max(.25, planned_seconds / 40)
-            logging.info('Adaptive Shorts target: %d seconds from %d verified scenes and %d evidence sources',
-                         planned_seconds, len(palette.items), fact_count)
+
             stage = 'grounded_script'
             for attempt in range(3):
-                with use_palette(palette), use_evidence(evidence):
+                # The normalizer obtains precise, source-checked facts before
+                # anybody searches for clips. A visual query can never
+                # introduce an unsourced scientific claim into the speech.
+                with use_evidence(evidence):
                     screenplay, pick, writer = studio.draft(
                         os.environ['VIDEO_TOPIC'], style='facts')
                 try:
                     from science_fact_guard import validate_unsourced_quantities
                     validate_unsourced_quantities(
                         screenplay, os.environ['VIDEO_TOPIC'])
-                    validate_narration_timing(palette, screenplay, s.language)
-                    stage = 'retention_review'
                     from retention_storyboard import audit_storyboard
                     storyboard_audit = audit_storyboard(
-                        os.environ['VIDEO_TOPIC'], screenplay, s.language,
-                        planned_seconds=planned_seconds)
+                        os.environ['VIDEO_TOPIC'], screenplay, s.language)
                     stage = 'science_review'
                     screen_narration(
                         screenplay, evidence, studio.llm,
                         path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
-                    from retention_storyboard import save_storyboard_report
-                    save_storyboard_report(
-                        os.environ.get('RETENTION_REPORT',
-                                       str(target.with_name('retention-report.json'))),
-                        storyboard_audit)
                     break
                 except RuntimeError as script_error:
                     if attempt >= 2:
                         raise
                     logging.warning(
-                        'V3 factuality, source or timing preflight rejected draft (%s); '
+                        'Source/factuality/storyboard screen rejected draft (%s); '
                         'requesting one more source-grounded script',
                         str(script_error)[:200])
                     stage = 'grounded_script'
+
+            stage = 'visual_director_preflight'
+            # Script comes first, so the required real-video count is exactly
+            # the number of actual factual sentences. No empty/duplicated
+            # "filler" clips may be inserted to reach an arbitrary target.
+            script_scene_count = len(screenplay.scenes)
+            if not 2 <= script_scene_count <= 6:
+                raise RuntimeError("visual_director_invalid_scene_count")
+            palette = prepare_verified_palette(
+                os.environ['VIDEO_TOPIC'], s, storyboard=screenplay,
+                min_scenes=script_scene_count, max_scenes=script_scene_count,
+                clip_seconds=10.0)
+            validate_narration_timing(palette, screenplay, s.language)
+            from retention_storyboard import choose_duration_seconds, save_storyboard_report
+            fact_count = len(getattr(evidence, 'sources', []) or [])
+            planned_seconds = choose_duration_seconds(
+                os.environ['VIDEO_TOPIC'], script_scene_count,
+                fact_count=fact_count)
+            palette.planned_seconds = planned_seconds
+            s = replace(s, target_seconds=planned_seconds)
+            studio.s = s
+            studio.clock.scale = max(.25, planned_seconds / 40)
+            storyboard_audit = audit_storyboard(
+                os.environ['VIDEO_TOPIC'], screenplay, s.language,
+                planned_seconds=planned_seconds)
+            save_storyboard_report(
+                os.environ.get('RETENTION_REPORT',
+                               str(target.with_name('retention-report.json'))),
+                storyboard_audit)
+            logging.info('V4 factual storyboard %d scenes matched %d independently '
+                         'verified unique moving footage clips, duration goal=%ds',
+                         script_scene_count, len(palette.items), planned_seconds)
             stage = 'production'
-            # The footage has already been downloaded, visually checked and
-            # deduplicated. Do not ask the providers to search again after TTS.
+            # Voice identity/audio/word captions policy is UNCHANGED. Upstream
+            # consumes only fully screened local media_map paths, not URLs.
             made = studio.produce(screenplay, pick, writer, upload=False,
                                   media_map=palette.media_map,
                                   credits=palette.credits)
