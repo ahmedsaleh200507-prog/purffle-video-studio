@@ -154,10 +154,11 @@ def test_llm_cannot_redirect_familiar_topic_to_unrelated_subject():
 
 def test_render_job_has_media_first_before_voice_by_contract():
     code = (Path(__file__).parents[1] / "scripts" / "render_job.py").read_text()
-    start = code.index("stage = 'media_preflight'")
+    start = code.index("stage = 'visual_director_preflight'")
     draft = code.index("studio.draft(")
+    fact_review = code.index("screen_narration(")
     production = code.index("studio.produce(")
-    assert start < draft < production
+    assert draft < fact_review < start < production
     assert "palette.media_map" in code
     assert "PURFFLE_MEDIA_FIRST" in code
 
