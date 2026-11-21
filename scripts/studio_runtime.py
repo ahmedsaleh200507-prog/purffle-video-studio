@@ -1046,13 +1046,16 @@ def install():
         # script with shootable B-roll rather than publish a fictional event.
         from media_first import active_palette, align_script_to_palette
         palette = active_palette()
+        from visual_director import story_scene_target
+        requested_scene_count = (
+            len(palette.plans) if palette else story_scene_target())
         data = ground_lightning_explainer(
             data, subject, language,
-            scene_count=len(palette.plans) if palette else None)
+            scene_count=requested_scene_count)
         from fact_checked_topics import ground_verified_documentary
         data = ground_verified_documentary(
             data, subject, language,
-            scene_count=len(palette.plans) if palette else None)
+            scene_count=requested_scene_count)
         # The verified video palette is authoritative for visual planning.
         # Narration may explain abstract facts without requiring exact footage.
         data = align_script_to_palette(data, palette)
@@ -1143,6 +1146,14 @@ For a blue-sky explanation, end with directly filmable sky, clouds, sunset,
 or sunlight footage, never people commenting on the explanation. Length is FLEXIBLE based on the topic, available verified footage and real facts: do not force 30 seconds, pad narration or loop clips. FIRST 1–2 SECONDS: immediate compelling real moving subject with a short truthful spoken hook (NO giant title overlay). Then move through curiosity, development with fresh facts, and a complete truthful payoff. Keep the opening short regardless of the video length. The system will fail a scene when
 exact suitable footage cannot be verified; never weaken the scene to hide that failure.
 """
+        from visual_director import story_scene_target
+        target_scenes = story_scene_target()
+        if target_scenes is not None:
+            user += (
+                f"\\nSOURCE-REVIEWED STORY FIRST: Write exactly {target_scenes} "
+                "complete, short factual scenes. Do not stretch a story to "
+                "four shots. The renderer will look for independently "
+                "verified real video for EACH spoken scene, in this order.")
         from media_first import active_palette, footage_prompt
         palette = active_palette()
         if palette:
