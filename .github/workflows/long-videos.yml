@@ -1,0 +1,75 @@
+name: '02 - 10 Minute Video Maker (16:9) - Preview'
+run-name: 'Long Video 10 min | Plan #${{ github.run_number }}'
+
+# Independent entry point from videos.yml (Shorts). The long-video rendering
+# engine is not implemented yet. Never report this preparatory job as an MP4.
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'Video topic (one topic, English or German)'
+        required: true
+        type: string
+      language:
+        description: 'Narration language'
+        required: true
+        type: choice
+        default: en
+        options:
+          - en
+          - de
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-long-video:
+    name: '10-minute video | Prepare request (MP4 not yet available)'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Build separate long-video request
+        env:
+          VIDEO_TOPIC: ${{ inputs.topic }}
+          VIDEO_LANGUAGE: ${{ inputs.language }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          topic = os.environ["VIDEO_TOPIC"].strip()
+          language = os.environ["VIDEO_LANGUAGE"].strip()
+          if len(topic) < 5 or len(topic) > 300:
+              raise SystemExit("Topic must contain 5-300 characters.")
+          if language not in {"en", "de"}:
+              raise SystemExit("Only English (en) or German (de) are supported.")
+          plan = {
+              "mode": "long_video",
+              "status": "PREPARATION_ONLY",
+              "rendered": False,
+              "mp4": None,
+              "topic": topic,
+              "language": language,
+              "target_duration_seconds": 600,
+              "resolution": "1920x1080",
+              "aspect_ratio": "16:9",
+              "fps": 30,
+              "storyboard_and_render_engine": "NOT_IMPLEMENTED",
+              "note": "This workflow only saves a request. The 10-minute MP4 generator is not ready yet."
+          }
+          Path("long-video-request.json").write_text(
+              json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          print("10-minute request prepared. NOT an MP4 production.")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("## 10-minute video preparation only\n\n")
+              f.write("No MP4 was generated. A separate long-video renderer is still needed.\n")
+          PY
+
+      - name: Save long-video request (not an MP4)
+        uses: actions/upload-artifact@v4
+        with:
+          name: long-video-request-NOT-MP4
+          path: long-video-request.json
+          retention-days: 7
