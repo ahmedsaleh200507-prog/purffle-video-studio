@@ -111,6 +111,25 @@ def test_pixabay_selects_real_4k_instead_of_medium(monkeypatch):
     assert reg.client.get.call_args.kwargs["params"]["video_type"] == "film"
 
 
+def test_footage_search_inspects_more_candidates_per_single_api_call(monkeypatch):
+    """#86: do not stop at Pexels 15 / Pixabay 20 first often-offtopic hits."""
+    monkeypatch.setenv("PIXABAY_API_KEY", "test-secret")
+    monkeypatch.setenv("PEXELS_API_KEY", "test-secret")
+    reg = registry({"hits": []})
+    assert reg.search("pixabay", "volcano eruption") == []
+    args = reg.client.get.call_args.kwargs
+    assert args["params"]["per_page"] == 60
+    assert reg.client.get.call_count == 1
+
+    reg.client.get.reset_mock()
+    reg.client.get.return_value = {"videos": []}
+    assert reg.search("pexels", "volcano eruption") == []
+    args = reg.client.get.call_args.kwargs
+    assert args["params"]["per_page"] == 50
+    assert reg.client.get.call_count == 1
+    assert args["params"]["size"] == "large"
+
+
 def test_nasa_selects_orig_leaves_resolution_unknown():
     reg = registry()
     reg.client.get.side_effect = [
