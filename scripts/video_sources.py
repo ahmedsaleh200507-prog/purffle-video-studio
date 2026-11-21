@@ -517,8 +517,11 @@ class ProviderRegistry:
         return [item for _, item in results]
 
     def _pixabay(self, query):
+        # One API request now screens up to 60 candidates rather than 20.
+        # No extra provider calls; downloaded clips remain strictly bounded
+        # by time, quality, relevance, real-footage and license checks.
         data = self.client.get("https://pixabay.com/api/videos/", params={
-            "key": os.environ["PIXABAY_API_KEY"], "q": query[:100], "per_page": 20,
+            "key": os.environ["PIXABAY_API_KEY"], "q": query[:100], "per_page": 60,
             "safesearch": "true", "video_type": "film"})
         result = []
         for rank, x in enumerate(data.get("hits", [])):
@@ -534,11 +537,13 @@ class ProviderRegistry:
         return sorted(result, key=lambda x: (x.height > x.width, min(x.width, x.height)), reverse=True)
 
     def _pexels(self, query):
+        # One API request now screens up to 50 candidates rather than 15.
+        # The documented per_page maximum is 80; do not increase requests.
         # Pexels documents /v1/videos/; the legacy /videos/ path is
         # deprecated. Search both orientations: 4K landscape clips can make
         # verified vertical 720p crops, and portrait is still ranked first.
         data = self.client.get("https://api.pexels.com/v1/videos/search", params={
-            "query": query, "per_page": 15, "size": "large"},
+            "query": query, "per_page": 50, "size": "large"},
             headers={"Authorization": os.environ["PEXELS_API_KEY"]})
         result = []
         for rank, x in enumerate(data.get("videos", [])):
