@@ -41,7 +41,7 @@ jobs:
       MKL_NUM_THREADS: '2'
       TOKENIZERS_PARALLELISM: 'false'
       PURFFLE_API_INTERVAL_SECONDS: '1.6'
-      VIDEO_TOPIC: ${{ github.event_name == 'workflow_dispatch' && inputs.topic || 'Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?' }}
+      VIDEO_TOPIC: "${{ github.event_name == 'workflow_dispatch' && inputs.topic || 'Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?' }}"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,7 +54,8 @@ jobs:
           python -m pip install 'pytest>=8,<10'
           python -m pytest -q tests/test_long_script.py tests/test_long_voice.py tests/test_long_video_pipeline.py tests/test_long_reference_alignment_fallback.py
       - name: Check approved private male reference
-        run: python scripts/english_reference_policy.py --topic 'en|Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?'
+        run: |
+          python scripts/english_reference_policy.py --topic "en|$VIDEO_TOPIC"
       - name: Install FFmpeg
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
