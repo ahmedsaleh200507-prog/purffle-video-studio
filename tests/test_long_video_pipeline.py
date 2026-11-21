@@ -1,0 +1,161 @@
+"""Real pipeline contracts for the isolated 10-minute workflow.
+
+No private voice sample, real API, or external stock clip is used in tests.
+Synthetic media proves actual FFmpeg output mechanics, never production quality.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+import json
+import math
+import os
+import shutil
+import wave
+
+import pytest
+
+from long_video import (
+    real_word_captions, narrate, srt_time, render_scene, finish, probe,
+    find_stock, confirm_long_stock_sources,
+)
+
+
+def fake_speech(*, fields="text", duration=43):
+    word_factory = lambda w,s,e: SimpleNamespace(**{
+        fields: w, "start": s, "end": e,
+    })
+    return SimpleNamespace(duration=duration, words=[
+        word_factory("Volcanoes", 0.1, 0.5),
+        word_factory("erupt.", 0.6, 1.0),
+        word_factory("Molten", 1.2, 1.7),
+        word_factory("rock", 1.8, 2.1),
+    ])
+
+
+def test_word_text_is_source_of_truth_for_private_english_voice_captions():
+    # From the pinned upstream purffle_shorts.timing.Word: .text not .word.
+    speech = fake_speech()
+    assert real_word_captions(speech, 60) == [
+        (60.1, 62.1, "Volcanoes erupt. Molten rock")
+    ]
+    assert srt_time(62.1) == "00:01:02,100"
+
+
+def test_word_word_property_bug_now_produces_early_actionable_contract_error():
+    with pytest.raises(RuntimeError, match="Word.text"):
+        real_word_captions(fake_speech(fields="word"), 0)
+
+
+def test_invalid_or_fabricated_timestamps_are_rejected():
+    speech = fake_speech()
+    speech.words[2].start = float("nan")
+    with pytest.raises(RuntimeError, match="timestamps are invalid"):
+        real_word_captions(speech, 0)
+    speech = fake_speech()
+    speech.words[3].end = 44
+    with pytest.raises(RuntimeError, match="timestamps are invalid"):
+        real_word_captions(speech, 0)
+
+
+def test_pinned_upstream_word_has_text():
+    timing = pytest.importorskip("purffle_shorts.timing")
+    word = timing.Word("lava", .2, .6)
+    assert word.text == "lava"
+    assert real_word_captions(SimpleNamespace(duration=1., words=[word]), 0)[0][2] == "lava"
+
+
+def test_all_fourteen_chapters_preserve_voice_word_contract(tmp_path, monkeypatch):
+    # Simulate the approved voice output, not voice synthesis itself:
+    # verifies the FULL 14-chapter speech -> timeline -> caption interaction.
+    voice = pytest.importorskip("approved_reference_voice")
+    policy = pytest.importorskip("english_reference_policy")
+    monkeypatch.setattr(policy, "enforce_english_reference_only", lambda lang: None)
+
+    def fake_synthesize(text, output, settings, *, segments, long_form=False):
+        assert long_form and settings.language == "en"
+        assert 2 <= len(segments) <= 6 and " ".join(segments) == text
+        path = Path(output) / "approved-generated.wav"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"test fixture: simulated reference WAV")
+        data = fake_speech(duration=43)
+        data.audio = path
+        return data
+
+    monkeypatch.setattr(voice, "synthesize", fake_synthesize)
+    chapter = {"narration": (
+        "Volcanoes arise when rock melts deep inside the Earth. "
+        "The resulting magma may slowly rise towards the ground. "
+        "Gases trapped in the rock help create pressure. "
+        "A sudden burst of pressure can cause eruptions."
+    )}
+    output, captions, seconds = narrate([chapter] * 14, tmp_path)
+    assert len(output) == 14 and len(captions) == 14
+    assert seconds == 602.
+    assert captions[0][0] == .1
+    assert captions[-1][0] > 540
+
+
+def test_long_stock_credentials_checked_before_expensive_voice():
+    with pytest.raises(RuntimeError, match="long_stock_preflight"):
+        confirm_long_stock_sources(SimpleNamespace(enabled=["wikimedia-video"]))
+    assert confirm_long_stock_sources(
+        SimpleNamespace(enabled=["pixabay", "pexels", "nasa-video"])
+    ) == ["pexels", "pixabay"]
+
+
+def test_stock_fallback_keeps_three_distinct_real_sources_without_faking(monkeypatch, tmp_path):
+    pytest.importorskip("PIL")
+    import media_validation
+    items = [
+        SimpleNamespace(source="pixabay", id=i, text="Real volcano eruption lava closeup",
+                        url=f"https://example.org/{i}.mp4",
+                        extra={"license": {
+                            "creator": "Stock contributor", "id": "PIXABAY",
+                            "source_page": f"https://pixabay.com/{i}",
+                        }})
+        for i in range(3)
+    ]
+    class FakeRegistry:
+        def search(self, provider, query):
+            return items if provider == "pixabay" else []
+    def fake_download(self, url):
+        return tmp_path / url.rsplit("/", 1)[-1]
+    monkeypatch.setattr(media_validation.VideoDownloader, "download", fake_download)
+    monkeypatch.setattr(media_validation.QualityValidator, "validate",
+                        lambda self, path: {"width": 1920, "height": 1080, "duration": 30.0})
+    seen=set()
+    selected=find_stock(0,45,seen,tmp_path,registry=FakeRegistry())
+    assert len(selected)==3
+    assert len(seen)==3
+    assert len({x[2]["id"] for x in selected})==3
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="FFmpeg required for real render contract")
+def test_ffmpeg_renders_narrated_chapter_and_embedded_subtitles(tmp_path):
+    from long_video import run
+    src = tmp_path / "test-footage.mp4"
+    wav = tmp_path / "voice.wav"
+    run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+         "-f","lavfi","-i","testsrc2=size=1280x720:rate=30",
+         "-t","2.5","-c:v","libx264","-preset","ultrafast",str(src)],60)
+    with wave.open(str(wav),"wb") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(16000)
+        f.writeframes(b"\x00\x00" * 16000 * 2)
+    media=[(src,2.5,{"source":"synthetic-test-only"})]
+    chapter=render_scene(1,wav,2.0,media,tmp_path)
+    assert chapter.is_file()
+    # Subtitles live in a separate selectable MP4 track as in production.
+    captions=tmp_path/"captions.srt"
+    captions.write_text("1\n00:00:00,100 --> 00:00:01,700\nSynthetic footage test\n",encoding="utf-8")
+    final=tmp_path/"contract.mp4"
+    finish([chapter],captions,final,tmp_path)
+    assert final.is_file()
+    seconds,width,height,audio=probe(final)
+    assert 1.8 <= seconds <= 2.3 and (width,height)==(1920,1080) and audio
+    from long_video import run
+    streams=json.loads(run(["ffprobe","-v","error","-show_streams","-of","json",str(final)],60))["streams"]
+    assert any(s["codec_type"]=="subtitle" for s in streams)

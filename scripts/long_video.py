@@ -1,5 +1,5 @@
 """Experimental long-form documentary renderer. Shorts workflow remains untouched."""
-import argparse, json, os, re, subprocess
+import argparse, json, os, re, subprocess, math
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -56,6 +56,51 @@ def voice_segments(text):
     return pieces
 
 
+def real_word_captions(speech, chapter_start):
+    """Use the pinned upstream Word.text contract, not Whisper's raw Word.word.
+
+    Strict validation here prevents the late AttributeError previously seen
+    after spending several minutes producing private reference audio. Caption
+    times are checked directly against real voice WAV samples; never guessed.
+    """
+    duration = float(speech.duration)
+    if not math.isfinite(duration) or duration <= 0:
+        raise RuntimeError("long_voice_contract: invalid recorded audio duration")
+    raw_words = getattr(speech, "words", None)
+    if not raw_words:
+        raise RuntimeError("long_voice_contract: no aligned words")
+    validated = []
+    previous_end = 0.0
+    for number, word in enumerate(raw_words, 1):
+        text = getattr(word, "text", None)
+        start = getattr(word, "start", None)
+        end = getattr(word, "end", None)
+        if not isinstance(text, str) or not text.strip():
+            raise RuntimeError(
+                f"long_voice_contract: word {number} missing required upstream Word.text")
+        try:
+            start, end = float(start), float(end)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"long_voice_contract: word {number} lacks real timing") from exc
+        if (not math.isfinite(start) or not math.isfinite(end)
+                or start < -0.01 or start < previous_end - 0.08
+                or end <= start or end > duration + 0.15):
+            raise RuntimeError(
+                f"long_voice_contract: word {number} timestamps are invalid")
+        validated.append((text.strip(), max(0.0, start), end))
+        previous_end = end
+    captions = []
+    for j in range(0, len(validated), 6):
+        group = validated[j:j+6]
+        captions.append((
+            float(chapter_start) + group[0][1],
+            float(chapter_start) + group[-1][2],
+            " ".join(word[0] for word in group)
+        ))
+    return captions
+
+
 def narrate(data,work):
     from english_reference_policy import enforce_english_reference_only
     from approved_reference_voice import synthesize
@@ -71,9 +116,7 @@ def narrate(data,work):
         if not Path(speech.audio).is_file() or not speech.words or not 20<=speech.duration<=95:
             raise RuntimeError(f"Chapter {i+1} approved voice invalid")
         audios.append((Path(speech.audio),float(speech.duration)))
-        for j in range(0,len(speech.words),6):
-            g=speech.words[j:j+6]
-            lines.append((offset+g[0].start,offset+g[-1].end," ".join(x.word.strip() for x in g)))
+        lines.extend(real_word_captions(speech, offset))
         offset+=speech.duration
         print(f"[VOICE] chapter {i+1}/14, seconds={speech.duration:.1f}",flush=True)
     if not 540<=offset<=660:
@@ -89,26 +132,55 @@ def srt_time(t):
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def find_stock(index,seconds,seen,work):
+def confirm_long_stock_sources(registry):
+    """Detect missing stock credentials BEFORE expensive long narration work."""
+    ready = set(getattr(registry, "enabled", [])) & {"pexels", "pixabay"}
+    if not ready:
+        raise RuntimeError(
+            "long_stock_preflight: neither Pixabay nor Pexels is configured; "
+            "video would have no genuine footage, so voice generation was skipped")
+    return sorted(ready)
+
+
+def find_stock(index, chapter_seconds, seen, work, registry=None):
+    """Find distinct, genuinely moving footage; allow 3 sources when 4 absent.
+
+    Keep one provider registry for the entire long video so provider 429
+    cooldowns are respected across chapters, not retried each chapter.
+    """
     from video_sources import ProviderRegistry
-    from media_validation import VideoDownloader,QualityValidator
-    reg=ProviderRegistry()
-    dl=VideoDownloader(cache_dir=work/"downloads",max_bytes=140*1024*1024)
-    val=QualityValidator(min_short_side=720)
-    chosen=[]
+    from media_validation import VideoDownloader, QualityValidator
+    reg = registry if registry is not None else ProviderRegistry()
+    # Long videos require more footage than Shorts; expand only the long-job
+    # cache size, preserving the downloader's DNS, license and disk safety gates.
+    dl = VideoDownloader(
+        cache_dir=work/"downloads", max_bytes=110*1024*1024,
+        max_cache_bytes=5*1024**3, min_free_bytes=2*1024**3,
+    )
+    val = QualityValidator(min_short_side=720)
+    chosen = []
+    attempts = 0
     for k in range(5):
         query=QUERIES[(index*3+k)%len(QUERIES)]
         for provider in ("pexels","pixabay"):
             for candidate in reg.search(provider,query)[:30]:
                 key=(candidate.source,str(candidate.id))
-                if key in seen: continue
-                if not any(x in candidate.text.lower() for x in ("volcan","lava","magma","eruption","crater","ash")):
+                if key in seen:
                     continue
+                # Query matches alone are not evidence of volcanic footage.
+                if not any(x in candidate.text.lower() for x in (
+                    "volcan", "lava", "magma", "eruption", "crater", "volcanic ash"
+                )):
+                    continue
+                attempts += 1
+                if attempts > 24:
+                    break
                 try:
                     path=dl.download(candidate.url)
                     q=val.validate(path)
                     duration=float(q["duration"])
-                    if int(q["width"])<1280 or int(q["height"])<720 or duration<seconds/1.5:
+                    if (int(q["width"]) < 1280 or int(q["height"]) < 720
+                            or duration < chapter_seconds / (4*1.5)):
                         continue
                     seen.add(key)
                     lic=candidate.extra["license"]
@@ -116,10 +188,24 @@ def find_stock(index,seconds,seen,work):
                                    {"source":candidate.source,"id":candidate.id,
                                     "creator":lic["creator"],"license":lic["id"],
                                     "source_page":lic["source_page"],"query":query}))
-                    if len(chosen)>=4:return chosen
+                    if len(chosen) >= 4:
+                        return chosen
                 except Exception as ex:
-                    print("[STOCK REJECT]",type(ex).__name__,flush=True)
-    raise RuntimeError(f"Chapter {index+1}: only {len(chosen)}/4 verified unique real clips")
+                    print("[LONG STOCK REJECT]",type(ex).__name__,flush=True)
+            if attempts > 24:
+                break
+        if attempts > 24:
+            break
+    # Keep three distinct live-action clips rather than failing because the
+    # fourth was unavailable. Never duplicate/loop the same media to fill time.
+    eligible = [item for item in chosen
+                if item[1]*1.5 >= chapter_seconds/3]
+    if len(eligible) >= 3:
+        return eligible[:3]
+    raise RuntimeError(
+        f"long_stock_insufficient_chapter_{index+1}: {len(eligible)} usable "
+        f"nonduplicated clips (tried={attempts}), required=3-4. "
+        "No image, unrelated stock or repeated-video substitute used.")
 
 
 def render_scene(i,audio,duration,stock,work):
@@ -169,6 +255,16 @@ def main():
     if a.self_test:
         assert srt_time(60.53)=="00:01:00,530"
         assert words("Volcanoes can erupt suddenly.")==4
+        fake_voice = SimpleNamespace(
+            duration=1.0,
+            words=[
+                SimpleNamespace(text="Volcanoes", start=.10, end=.44),
+                SimpleNamespace(text="erupt.", start=.47, end=.83),
+            ],
+        )
+        sample = real_word_captions(fake_voice, 4.0)
+        assert len(sample) == 1 and sample[0][2] == "Volcanoes erupt."
+        assert sample[0][0] == 4.1 and sample[0][1] == 4.83
         print("Static long-video tests passed")
         return
     if "volcan" not in a.topic.casefold() and "lava" not in a.topic.casefold():
@@ -182,6 +278,10 @@ def main():
     try:
         from english_reference_policy import enforce_english_reference_only
         enforce_english_reference_only("en")
+        stage="long_stock_preflight"
+        from video_sources import ProviderRegistry
+        registry = ProviderRegistry()
+        print("[LONG SOURCES READY]", confirm_long_stock_sources(registry), flush=True)
         stage="script"
         text=chapters(a.topic)
         save(output/"script.json",{"chapters":text})
@@ -193,7 +293,7 @@ def main():
         stage="real_stock"
         used,scenes,credits=set(),[],[]
         for i,(wav,seconds) in enumerate(audio):
-            clips=find_stock(i,seconds/4,used,work)
+            clips=find_stock(i,seconds,used,work,registry=registry)
             credits += [c[2] for c in clips]
             stage=f"render_chapter_{i+1}"
             scenes.append(render_scene(i+1,wav,seconds,clips,work))
