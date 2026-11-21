@@ -171,7 +171,7 @@ def test_long_visual_verifier_accepts_only_real_clip_screening():
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
                     reason="FFmpeg required for real render contract")
-def test_ffmpeg_renders_narrated_chapter_and_embedded_subtitles(tmp_path):
+def test_ffmpeg_renders_narrated_chapter_with_sidecar_only_subtitles(tmp_path):
     from long_video import run
     src = tmp_path / "test-footage.mp4"
     wav = tmp_path / "voice.wav"
@@ -202,10 +202,11 @@ def test_ffmpeg_renders_narrated_chapter_and_embedded_subtitles(tmp_path):
     assert 1.8 <= seconds <= 2.3 and (width,height)==(1920,1080) and audio
     from long_video import run
     streams=json.loads(run(["ffprobe","-v","error","-show_streams","-of","json",str(final)],60))["streams"]
-    assert any(s["codec_type"]=="subtitle" for s in streams)
-    subtitles = [s for s in streams if s["codec_type"]=="subtitle"]
-    assert subtitles[0]["disposition"]["default"] == 0
-    audio_streams = [s for s in streams if s["codec_type"] == "audio"]
+    # MP4 must not show text by default on any player; YouTube can accept
+    # the independently generated SRT when captions are desired.
+    assert captions.read_text().startswith("1\\n".replace("\\n", "\n"))
+    assert not any(stream["codec_type"] == "subtitle" for stream in streams)
+    audio_streams = [stream for stream in streams if stream["codec_type"] == "audio"]
     assert audio_streams[0]["codec_name"] == "aac"
 
 
