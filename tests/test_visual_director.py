@@ -65,6 +65,15 @@ def test_visual_contract_is_multi_frame_not_provider_title_only():
     eruption = visual_scores(contract, [[.20,.28], [.31,.19], [.25,.26]])
     assert eruption["verified"] is True
     assert eruption["sampled_scene_frames"] == 3
+    # A stock source may show the eruption at second 40 while the final
+    # short uses seconds 0-10. The opening must never pass on that late event.
+    late = [[.20, .31], [.21, .29], [.35, .19]]
+    assert visual_scores(contract, late)["verified"]
+    assert not visual_scores(contract, late, opening=True)["verified"]
+    assert visual_scores(contract, late, opening=True)[
+        "opening_action_visible"] is False
+    early = [[.34, .21], [.29, .22], [.20, .30]]
+    assert visual_scores(contract, early, opening=True)["verified"]
     with pytest.raises(RuntimeError, match="unverified_scores"):
         visual_scores(contract, [[.2, float("nan")]])
     with pytest.raises(RuntimeError, match="unverified_frames"):
@@ -164,6 +173,10 @@ def test_production_calls_science_review_before_stock_then_locked_speaker():
     assert "palette.media_map" in producer
     assert "enforce_english_reference_only" in producer
     assert "validate_result(video" in producer
+    runtime = (Path(__file__).resolve().parents[1] /
+               "scripts" / "studio_runtime.py").read_text()
+    assert "min(float(need), float(quality[\"duration\"]))" in runtime
+    assert "opening=(idx == 0)" in runtime
     assert "visual_director_unverified: at least one narrated scene" in producer
     assert "visual_director_sequence_mismatch" in producer
     assert "save_storyboard_report" in producer
