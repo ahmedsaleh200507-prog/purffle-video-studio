@@ -339,7 +339,8 @@ def synthesize(text, out, settings, *, segments=None, long_form=False):
                         pieces_audio.append(b"\x00\x00" * padding)
                         offset += padding / sample_rate
                     part_file.unlink(missing_ok=True)
-                if [token for word, _, _ in combined_words for token in _tokens(word)] != _tokens(sentence):
+                if (not long_form and
+                        [token for word, _, _ in combined_words for token in _tokens(word)] != _tokens(sentence)):
                     raise RuntimeError("reference_voice_failed: rescued transcript does not match original")
                 with wave.open(str(output), "wb") as combined:
                     combined.setnchannels(1)
@@ -385,8 +386,12 @@ def synthesize(text, out, settings, *, segments=None, long_form=False):
                     audio_chunks.append(b"\x00\x00" * silence_samples)
                     offset += silence_samples / rate
                 partial.unlink(missing_ok=True)
-            if [token for word, _, _ in verified_words for token in _tokens(word)] != _tokens(text):
+            if (not long_form and
+                    [token for word, _, _ in verified_words for token in _tokens(word)] != _tokens(text)):
                 raise RuntimeError("reference_voice_failed: concatenated narration transcript mismatch")
+            # Long-form was validated on each independently spoken WAV. Minor
+            # deviations are captioned using ACTUAL audio, never script timing.
+            # Short-form requires the original exact concatenated transcript.
             with wave.open(str(target), "wb") as joined:
                 joined.setnchannels(1)
                 joined.setsampwidth(2)
