@@ -580,8 +580,10 @@ class StrictVisuals:
                     if director_contract and isinstance(self.matcher, SceneMatcher):
                         from visual_director import inspect_action
                         event_check = inspect_action(
-                            path, quality["duration"], match.get("crop_focus_x", .5),
-                            director_contract, scorer=self.matcher._similarities)
+                            path, min(float(need), float(quality["duration"])),
+                            match.get("crop_focus_x", .5),
+                            director_contract, scorer=self.matcher._similarities,
+                            opening=(idx == 0))
                         if not event_check["verified"]:
                             raise ValueError(
                                 "visual_director_action_not_visible: "
