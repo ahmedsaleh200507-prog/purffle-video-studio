@@ -323,16 +323,19 @@ def render_scene(i,audio,duration,stock,work):
 
 
 def finish(scene_paths,subtitles,target,work):
+    # Keep original timed captions as a *separate optional SRT file*, never
+    # as a default or burned-in MP4 subtitle stream. Some FFmpeg/MP4 muxers
+    # re-enable disposition=default even when explicitly passed "0".
+    if not Path(subtitles).is_file():
+        raise RuntimeError("Long documentary SRT sidecar is missing")
     manifest=work/"all-scenes.txt"
     manifest.write_text("\n".join("file '"+str(x.resolve())+"'" for x in scene_paths)+"\n")
     stitched=work/"stitched.mp4"
     run(["ffmpeg","-hide_banner","-nostdin","-y","-loglevel","error",
          "-f","concat","-safe","0","-i",str(manifest),"-c","copy",str(stitched)],1500)
     run(["ffmpeg","-hide_banner","-nostdin","-y","-loglevel","error",
-         "-i",str(stitched),"-i",str(subtitles),"-map","0:v:0","-map","0:a:0",
-         "-map","1:s:0","-c:v","copy",
+         "-i",str(stitched),"-map","0:v:0","-map","0:a:0","-c:v","copy",
          "-af","loudnorm=I=-17:TP=-1.5:LRA=11","-c:a","aac","-b:a","192k",
-         "-c:s","mov_text","-disposition:s:0","0",
          "-movflags","+faststart",str(target)],1500)
 
 
@@ -400,7 +403,7 @@ def main():
                       clips=len(credits),narration_duration=voice_seconds,
                       audio_target_lufs=-17,
                       burnt_in_subtitles=False,
-                      subtitle_track="selectable_not_default",
+                      subtitle_track="separate_srt_sidecar_only",
                       visual_verification="local_clip_screening",
                       note="Video frames screened using local CLIP; similarity is not proof of exact event or action.")
     except Exception as e:
