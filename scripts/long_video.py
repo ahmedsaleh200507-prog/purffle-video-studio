@@ -132,26 +132,45 @@ def srt_time(t):
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def find_stock(index,seconds,seen,work):
+def find_stock(index, chapter_seconds, seen, work, registry=None):
+    """Find distinct, genuinely moving footage; allow 3 sources when 4 absent.
+
+    Keep one provider registry for the entire long video so provider 429
+    cooldowns are respected across chapters, not retried each chapter.
+    """
     from video_sources import ProviderRegistry
-    from media_validation import VideoDownloader,QualityValidator
-    reg=ProviderRegistry()
-    dl=VideoDownloader(cache_dir=work/"downloads",max_bytes=140*1024*1024)
-    val=QualityValidator(min_short_side=720)
-    chosen=[]
+    from media_validation import VideoDownloader, QualityValidator
+    reg = registry if registry is not None else ProviderRegistry()
+    # Long videos require more footage than Shorts; expand only the long-job
+    # cache size, preserving the downloader's DNS, license and disk safety gates.
+    dl = VideoDownloader(
+        cache_dir=work/"downloads", max_bytes=110*1024*1024,
+        max_cache_bytes=5*1024**3, min_free_bytes=2*1024**3,
+    )
+    val = QualityValidator(min_short_side=720)
+    chosen = []
+    attempts = 0
     for k in range(5):
         query=QUERIES[(index*3+k)%len(QUERIES)]
         for provider in ("pexels","pixabay"):
             for candidate in reg.search(provider,query)[:30]:
                 key=(candidate.source,str(candidate.id))
-                if key in seen: continue
-                if not any(x in candidate.text.lower() for x in ("volcan","lava","magma","eruption","crater","ash")):
+                if key in seen:
                     continue
+                # Query matches alone are not evidence of volcanic footage.
+                if not any(x in candidate.text.lower() for x in (
+                    "volcan", "lava", "magma", "eruption", "crater", "volcanic ash"
+                )):
+                    continue
+                attempts += 1
+                if attempts > 24:
+                    break
                 try:
                     path=dl.download(candidate.url)
                     q=val.validate(path)
                     duration=float(q["duration"])
-                    if int(q["width"])<1280 or int(q["height"])<720 or duration<seconds/1.5:
+                    if (int(q["width"]) < 1280 or int(q["height"]) < 720
+                            or duration < chapter_seconds / (4*1.5)):
                         continue
                     seen.add(key)
                     lic=candidate.extra["license"]
@@ -159,10 +178,24 @@ def find_stock(index,seconds,seen,work):
                                    {"source":candidate.source,"id":candidate.id,
                                     "creator":lic["creator"],"license":lic["id"],
                                     "source_page":lic["source_page"],"query":query}))
-                    if len(chosen)>=4:return chosen
+                    if len(chosen) >= 4:
+                        return chosen
                 except Exception as ex:
-                    print("[STOCK REJECT]",type(ex).__name__,flush=True)
-    raise RuntimeError(f"Chapter {index+1}: only {len(chosen)}/4 verified unique real clips")
+                    print("[LONG STOCK REJECT]",type(ex).__name__,flush=True)
+            if attempts > 24:
+                break
+        if attempts > 24:
+            break
+    # Keep three distinct live-action clips rather than failing because the
+    # fourth was unavailable. Never duplicate/loop the same media to fill time.
+    eligible = [item for item in chosen
+                if item[1]*1.5 >= chapter_seconds/3]
+    if len(eligible) >= 3:
+        return eligible[:3]
+    raise RuntimeError(
+        f"long_stock_insufficient_chapter_{index+1}: {len(eligible)} usable "
+        f"nonduplicated clips (tried={attempts}), required=3-4. "
+        "No image, unrelated stock or repeated-video substitute used.")
 
 
 def render_scene(i,audio,duration,stock,work):
@@ -244,9 +277,11 @@ def main():
             for j,(start,end,line) in enumerate(subs,1):
                 f.write(f"{j}\n{srt_time(start)} --> {srt_time(end)}\n{line}\n\n")
         stage="real_stock"
+        from video_sources import ProviderRegistry
+        registry = ProviderRegistry()
         used,scenes,credits=set(),[],[]
         for i,(wav,seconds) in enumerate(audio):
-            clips=find_stock(i,seconds/4,used,work)
+            clips=find_stock(i,seconds,used,work,registry=registry)
             credits += [c[2] for c in clips]
             stage=f"render_chapter_{i+1}"
             scenes.append(render_scene(i+1,wav,seconds,clips,work))
