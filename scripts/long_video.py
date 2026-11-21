@@ -176,6 +176,8 @@ def main():
         assert words("Volcanoes can erupt suddenly.")==4
         print("Static long-video tests passed")
         return
+    if "volcan" not in a.topic.casefold() and "lava" not in a.topic.casefold():
+        raise RuntimeError("The first long-video pilot supports only volcano/lava subjects")
     output,work=OUT/"result",OUT/"work"
     output.mkdir(parents=True,exist_ok=True)
     work.mkdir(parents=True,exist_ok=True)
