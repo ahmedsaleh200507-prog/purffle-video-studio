@@ -120,7 +120,6 @@ def build_documentary(topic: str, client=None, *, sleep=time.sleep):
                             "schema": CHAPTER_SCHEMA,
                         },
                     },
-                    reasoning_effort="low",
                     max_completion_tokens=4500,
                     temperature=0.3,
                 )
