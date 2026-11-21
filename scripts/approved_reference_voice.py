@@ -221,7 +221,10 @@ def verify_reference_asr(text: str, path: Path, *, long_form=False,
             else:
                 verified = check_real_word_timing(
                     text, path, model_name="small.en")
-        except RuntimeError:
+        except Exception:
+            # Fail closed if the secondary recognizer itself fails to load,
+            # align or decode. Preserve the original spoken-audio error and
+            # the existing Shorts rescue behavior (including offline mocks).
             raise base_error from None
         print("[VOICE ASR] verified actual audio and timestamps using "
               "independent small.en recognizer", flush=True)
