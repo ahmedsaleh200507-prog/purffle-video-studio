@@ -182,7 +182,13 @@ def test_ffmpeg_renders_narrated_chapter_and_embedded_subtitles(tmp_path):
         f.setnchannels(1)
         f.setsampwidth(2)
         f.setframerate(16000)
-        f.writeframes(b"\x00\x00" * 16000 * 2)
+        # A real narrator is audible; fully silent PCM makes FFmpeg loudnorm
+        # compute undefined loudness and is not a valid normalisation fixture.
+        import math, struct
+        f.writeframes(b"".join(
+            struct.pack("<h", int(1500 * math.sin(2 * math.pi * 220 * t / 16000)))
+            for t in range(16000 * 2)
+        ))
     media=[(src,2.5,{"source":"synthetic-test-only"})]
     chapter=render_scene(1,wav,2.0,media,tmp_path)
     assert chapter.is_file()
