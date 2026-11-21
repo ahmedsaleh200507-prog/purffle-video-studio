@@ -159,6 +159,8 @@ def test_production_calls_science_review_before_stock_then_locked_speaker():
     assert "palette.media_map" in producer
     assert "enforce_english_reference_only" in producer
     assert "validate_result(video" in producer
+    assert "visual_director_unverified: at least one narrated scene" in producer
+    assert "visual_director_sequence_mismatch" in producer
     assert "save_storyboard_report" in producer
 
 
