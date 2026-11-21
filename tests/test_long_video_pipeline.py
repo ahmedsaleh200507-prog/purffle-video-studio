@@ -17,7 +17,7 @@ import pytest
 
 from long_video import (
     real_word_captions, narrate, srt_time, render_scene, finish, probe,
-    find_stock,
+    find_stock, confirm_long_stock_sources,
 )
 
 
@@ -94,6 +94,14 @@ def test_all_fourteen_chapters_preserve_voice_word_contract(tmp_path, monkeypatc
     assert seconds == 602.
     assert captions[0][0] == .1
     assert captions[-1][0] > 540
+
+
+def test_long_stock_credentials_checked_before_expensive_voice():
+    with pytest.raises(RuntimeError, match="long_stock_preflight"):
+        confirm_long_stock_sources(SimpleNamespace(enabled=["wikimedia-video"]))
+    assert confirm_long_stock_sources(
+        SimpleNamespace(enabled=["pixabay", "pexels", "nasa-video"])
+    ) == ["pexels", "pixabay"]
 
 
 def test_stock_fallback_keeps_three_distinct_real_sources_without_faking(monkeypatch, tmp_path):
