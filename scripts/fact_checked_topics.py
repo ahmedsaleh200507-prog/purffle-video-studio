@@ -143,13 +143,13 @@ def ground_lightning_explainer(data: dict, topic: str, language: str,
 _DOCUMENTARY_FACTS = {
     "volcano_eruption": {
         "en": [
-            "A volcano can suddenly blast hot ash and gas high into the sky.",
+            "Hot lava flows from a volcano. But why do some eruptions explode?",
             "Deep underground, molten rock called magma contains dissolved gases under pressure.",
             "As magma rises, surrounding pressure drops and gas bubbles expand.",
             "When gases escape violently, they can fragment magma and drive an explosive eruption."
         ],
         "de": [
-            "Ein Vulkan kann plötzlich heiße Asche und Gase hoch in den Himmel schleudern.",
+            "Heiße Lava fließt aus einem Vulkan. Aber warum verlaufen manche Ausbrüche explosionsartig?",
             "Tief unter der Erde enthält geschmolzenes Gestein, das Magma, gelöste Gase.",
             "Wenn Magma aufsteigt, sinkt der Druck und Gasblasen dehnen sich aus.",
             "Entweichen die Gase heftig, können sie Magma zerreißen und explosive Ausbrüche auslösen."
@@ -555,12 +555,12 @@ _DOCUMENTARY_FACTS = {
 _THREE_SCENE_SOURCE_REVIEWED = {
     "volcano_eruption": {
         "en": [
-            "A volcano can suddenly blast ash and gas high into the sky.",
+            "Hot lava flows from a volcano. But why do some eruptions explode?",
             "Rising magma contains dissolved gases that expand as pressure decreases.",
             "When gases escape violently, they can break magma apart and drive explosive eruptions."
         ],
         "de": [
-            "Ein Vulkan kann plötzlich Asche und Gase in den Himmel schleudern.",
+            "Heiße Lava fließt aus einem Vulkan. Aber warum verlaufen manche Ausbrüche explosionsartig?",
             "Aufsteigendes Magma enthält gelöste Gase, die sich bei sinkendem Druck ausdehnen.",
             "Entweichen diese Gase heftig, können sie Magma zerteilen und explosive Ausbrüche antreiben."
         ]
