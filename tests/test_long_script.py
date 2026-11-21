@@ -10,7 +10,7 @@ def chapter(n):
     return {
         "title": f"Chapter {n}",
         "narration": ("Volcanoes reveal how Earth's underground heat and gases "
-                      "combine with rising magma to create different eruptions. " * 9).strip(),
+                      "combine with rising magma to create different eruptions. " * 7).strip(),
     }
 
 
