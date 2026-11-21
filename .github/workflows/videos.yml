@@ -93,7 +93,11 @@ jobs:
       LLM_MODEL: openai/gpt-oss-20b
       SCRIPT_REVIEW: 'off'
       SEO_KEYWORDS: 'false'
-      VISUAL_SOURCES: freenaturestock-video,coverr-video,pixabay,pexels,europeana-video,wikimedia-video,nasa-video,archive-video
+      # Stock search is deadline-bounded (75 sec/scene). Consult two broad,
+      # working video indexes before tiny fixed catalogs or slower archives.
+      # Remaining providers are still checked when the first ones have no
+      # verified, relevant HD clip; license and CLIP checks stay unchanged.
+      VISUAL_SOURCES: pexels,pixabay,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video
       # English strictly requires user-approved private reference voice; no Joe fallback.
       # German remains pinned de_DE-thorsten-medium; no female fallback.
       PURFFLE_NARRATOR_LOCK: '1'
