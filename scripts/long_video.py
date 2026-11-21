@@ -33,35 +33,8 @@ def words(s):
 
 
 def chapters(topic):
-    from groq import Groq
-    if not os.getenv("GROQ_API_KEY"):
-        raise RuntimeError("Missing GROQ_API_KEY")
-    prompt = (f"Write an English factual 10 minute documentary about {topic!r}. "
-              "Return ONLY valid JSON object with chapters array of exactly 14 objects, "
-              "each with title and narration of 100-130 spoken words. "
-              "Begin with a captivating scientific hook. No imaginary scientists, "
-              "dubious figures or made-up quotations. No subscribe request. "
-              "Chapters should build a coherent scientific explanation, ending in a conclusion.")
-    response = Groq(api_key=os.environ["GROQ_API_KEY"],timeout=120).chat.completions.create(
-        model="openai/gpt-oss-20b",max_tokens=6500,temperature=.3,
-        messages=[{"role":"user","content":prompt}])
-    text = response.choices[0].message.content.strip()
-    if text.startswith(chr(96)*3):
-        text = text.split("\n",1)[-1].rsplit(chr(96)*3,1)[0].strip()
-    try:
-        data = json.loads(text)["chapters"]
-    except (ValueError,KeyError) as e:
-        raise RuntimeError("Groq did not produce valid JSON chapters") from e
-    if len(data)!=14:
-        raise RuntimeError("Expected exactly 14 chapters")
-    for i,c in enumerate(data):
-        c["narration"]=" ".join(c["narration"].split())
-        if not 85<=words(c["narration"])<=140:
-            raise RuntimeError(f"Chapter {i+1} length incorrect: {words(c['narration'])}")
-    if not 1250<=sum(words(c["narration"]) for c in data)<=1960:
-        raise RuntimeError("Narration script too short or long for pilot")
-    return data
-
+    from long_script import build_documentary
+    return build_documentary(topic)
 
 def narrate(data,work):
     from english_reference_policy import enforce_english_reference_only
@@ -70,8 +43,13 @@ def narrate(data,work):
     audios, lines, offset=[],[],0.0
     for i,c in enumerate(data):
         text=c["narration"]
-        sentences=re.split(r"(?<=[.!?])\s+",text)
-        segments=sentences if 2<=len(sentences)<=6 and all(5<=words(s) and len(s)<=350 for s in sentences) else None
+        # Fixed approved male voice; smaller exact-text audio chunks keep
+        # full chapters within the private nano worker's utterance limit.
+        tokens = text.split()
+        parts = [" ".join(tokens[j:j+25]) for j in range(0, len(tokens), 25)]
+        if not (2 <= len(parts) <= 6 and all(10 <= len(p) <= 350 for p in parts)):
+            raise RuntimeError(f"Chapter {i+1} cannot be segmented safely")
+        segments = parts
         speech=synthesize(text,work/f"voice-{i+1}",SimpleNamespace(language="en"),segments=segments)
         if not Path(speech.audio).is_file() or not speech.words or not 20<=speech.duration<=95:
             raise RuntimeError(f"Chapter {i+1} approved voice invalid")
