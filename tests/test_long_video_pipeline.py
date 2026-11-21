@@ -149,7 +149,7 @@ def test_long_visual_verifier_rejects_wrong_frames_even_with_volcano_metadata():
         def match(self, path, spec, metadata, duration):
             assert spec.object == "volcano"
             assert spec.action == "ambient"
-            assert "volcano" in metadata
+            assert "volcano" in metadata.lower()
             raise ValidationError("CLIP rejected road or bridge footage")
     with pytest.raises(ValidationError, match="road or bridge"):
         long_visual_verifier(
