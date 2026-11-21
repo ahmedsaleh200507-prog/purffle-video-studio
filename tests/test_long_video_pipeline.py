@@ -17,7 +17,7 @@ import pytest
 
 from long_video import (
     real_word_captions, narrate, srt_time, render_scene, finish, probe,
-    find_stock, confirm_long_stock_sources,
+    find_stock, confirm_long_stock_sources, long_visual_verifier, long_visual_queries,
 )
 
 
@@ -124,11 +124,49 @@ def test_stock_fallback_keeps_three_distinct_real_sources_without_faking(monkeyp
     monkeypatch.setattr(media_validation.VideoDownloader, "download", fake_download)
     monkeypatch.setattr(media_validation.QualityValidator, "validate",
                         lambda self, path: {"width": 1920, "height": 1080, "duration": 30.0})
+    # This test isolates source selection, not the real CLIP inference.
+    import long_video
+    monkeypatch.setattr(long_video, "long_visual_verifier",
+                        lambda *args, **kwargs: {
+                            "verification":"local_clip_screening","visual_score":0.30})
     seen=set()
     selected=find_stock(0,45,seen,tmp_path,registry=FakeRegistry())
     assert len(selected)==3
     assert len(seen)==3
     assert len({x[2]["id"] for x in selected})==3
+
+
+def test_long_only_storyboard_prioritizes_correct_chapter_queries():
+    assert long_visual_queries(2)[0] == "molten lava"
+    assert long_visual_queries(9)[0] == "volcanic ash cloud"
+    assert long_visual_queries(11)[0] == "volcano crater"
+    assert len(long_visual_queries(0)) == len(set(long_visual_queries(0)))
+
+
+def test_long_visual_verifier_rejects_wrong_frames_even_with_volcano_metadata():
+    from media_validation import ValidationError
+    class FakeMatcher:
+        def match(self, path, spec, metadata, duration):
+            assert spec.object == "volcano"
+            assert spec.action == "ambient"
+            assert "volcano" in metadata.lower()
+            raise ValidationError("CLIP rejected road or bridge footage")
+    with pytest.raises(ValidationError, match="road or bridge"):
+        long_visual_verifier(
+            Path("unrelated-bridge.mp4"), "Volcano travel road bridge",
+            12.0, matcher=FakeMatcher())
+
+
+def test_long_visual_verifier_accepts_only_real_clip_screening():
+    from media_validation import ValidationError
+    class FakeMatcher:
+        def match(self, path, spec, metadata, duration):
+            assert spec.object == "lava" and "lava" in spec.visual_search_query
+            return {"verification": "metadata_only"}
+    with pytest.raises(ValidationError, match="proof missing"):
+        long_visual_verifier(
+            Path("unverified.mp4"), "molten lava flow",
+            12.0, matcher=FakeMatcher())
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
@@ -159,3 +197,8 @@ def test_ffmpeg_renders_narrated_chapter_and_embedded_subtitles(tmp_path):
     from long_video import run
     streams=json.loads(run(["ffprobe","-v","error","-show_streams","-of","json",str(final)],60))["streams"]
     assert any(s["codec_type"]=="subtitle" for s in streams)
+    subtitles = [s for s in streams if s["codec_type"]=="subtitle"]
+    assert subtitles[0]["disposition"]["default"] == 0
+    audio_streams = [s for s in streams if s["codec_type"] == "audio"]
+    assert audio_streams[0]["codec_name"] == "aac"
+

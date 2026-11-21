@@ -4,8 +4,22 @@ from pathlib import Path
 from types import SimpleNamespace
 
 OUT = Path("long_video_output")
-QUERIES = ["volcano eruption", "lava flow", "volcano smoke", "volcano aerial",
-           "volcanic ash", "volcano crater", "molten lava", "volcanic mountain"]
+# B-roll varies by the documentary chapter rather than rotating randomly.
+# Scenes must STILL pass a real-frame visual check; text metadata alone is weak.
+LONG_CHAPTER_QUERIES = (
+    "volcano eruption", "volcanic mountain tectonic plates", "molten lava",
+    "lava flowing from volcano", "volcano gas plume", "explosive volcano eruption",
+    "lava flow volcano", "volcano seismic monitoring", "volcano eruption smoke",
+    "volcanic ash cloud", "lava river", "volcano crater",
+    "volcanic landscape after eruption", "volcano aerial",
+)
+LONG_FALLBACK_QUERIES = ("volcano eruption", "lava flow", "volcano crater", "volcanic ash")
+
+
+def long_visual_queries(index):
+    """Priority footage search for a single English volcano documentary chapter."""
+    selected = LONG_CHAPTER_QUERIES[index % len(LONG_CHAPTER_QUERIES)]
+    return list(dict.fromkeys((selected, *LONG_FALLBACK_QUERIES)))
 
 
 def save(path, obj):
@@ -142,6 +156,31 @@ def confirm_long_stock_sources(registry):
     return sorted(ready)
 
 
+def long_visual_verifier(path, metadata, need, *, matcher=None):
+    """Reject mismatched real frames even when provider keywords say 'volcano'.
+
+    This screening is only for 10-minute documentaries. Shorts keep their
+    existing visual selection engine, untouched. Acceptable volcanic imagery
+    must show an observable volcano, lava or ash; a road or bridge alone is not
+    suitable footage for a volcano film.
+    """
+    from media_validation import SceneMatcher, SceneSpec, ValidationError
+    matcher = matcher if matcher is not None else SceneMatcher(threshold=.22)
+    details = str(metadata or "").casefold()
+    if "lava" in details or "magma" in details:
+        subject, query = "lava", "molten lava flowing"
+    elif "ash" in details and ("volcan" in details or "erupt" in details):
+        subject, query = "volcano", "volcanic ash eruption plume"
+    else:
+        subject, query = "volcano", "volcano mountain eruption"
+    spec = SceneSpec(main_character="", object=subject, action="ambient",
+                     visual_search_query=query)
+    result = matcher.match(path, spec, metadata=metadata, duration=need)
+    if result.get("verification") != "local_clip_screening":
+        raise ValidationError("Long documentary visual-verifier proof missing")
+    return result
+
+
 def find_stock(index, chapter_seconds, seen, work, registry=None):
     """Find distinct, genuinely moving footage; allow 3 sources when 4 absent.
 
@@ -149,7 +188,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None):
     cooldowns are respected across chapters, not retried each chapter.
     """
     from video_sources import ProviderRegistry
-    from media_validation import VideoDownloader, QualityValidator
+    from media_validation import VideoDownloader, QualityValidator, reject_offtopic_science_source
     reg = registry if registry is not None else ProviderRegistry()
     # Long videos require more footage than Shorts; expand only the long-job
     # cache size, preserving the downloader's DNS, license and disk safety gates.
@@ -160,8 +199,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None):
     val = QualityValidator(min_short_side=720)
     chosen = []
     attempts = 0
-    for k in range(5):
-        query=QUERIES[(index*3+k)%len(QUERIES)]
+    for query in long_visual_queries(index):
         for provider in ("pexels","pixabay"):
             for candidate in reg.search(provider,query)[:30]:
                 key=(candidate.source,str(candidate.id))
@@ -176,18 +214,26 @@ def find_stock(index, chapter_seconds, seen, work, registry=None):
                 if attempts > 24:
                     break
                 try:
+                    reject_offtopic_science_source("Earth volcano eruption", candidate.text)
                     path=dl.download(candidate.url)
                     q=val.validate(path)
                     duration=float(q["duration"])
                     if (int(q["width"]) < 1280 or int(q["height"]) < 720
                             or duration < chapter_seconds / (4*1.5)):
                         continue
+                    # Inspect the frames that will be used at the BEGINNING
+                    # of this source, not the entire clip (which may change scene).
+                    visual_span = min(duration, chapter_seconds / 3)
+                    visual = long_visual_verifier(
+                        path, candidate.text, visual_span)
                     seen.add(key)
                     lic=candidate.extra["license"]
                     chosen.append((path,duration,
                                    {"source":candidate.source,"id":candidate.id,
                                     "creator":lic["creator"],"license":lic["id"],
-                                    "source_page":lic["source_page"],"query":query}))
+                                    "source_page":lic["source_page"],"query":query,
+                                    "visual_check":visual["verification"],
+                                    "visual_score":visual.get("visual_score")}))
                     if len(chosen) >= 4:
                         return chosen
                 except Exception as ex:
@@ -242,7 +288,9 @@ def finish(scene_paths,subtitles,target,work):
          "-f","concat","-safe","0","-i",str(manifest),"-c","copy",str(stitched)],1500)
     run(["ffmpeg","-hide_banner","-nostdin","-y","-loglevel","error",
          "-i",str(stitched),"-i",str(subtitles),"-map","0:v:0","-map","0:a:0",
-         "-map","1:s:0","-c:v","copy","-c:a","copy","-c:s","mov_text",
+         "-map","1:s:0","-c:v","copy",
+         "-af","loudnorm=I=-17:TP=-1.5:LRA=11","-c:a","aac","-b:a","192k",
+         "-c:s","mov_text","-disposition:s:0","0",
          "-movflags","+faststart",str(target)],1500)
 
 
@@ -308,7 +356,11 @@ def main():
         save(output/"credits.json",credits)
         report.update(status="ok",mp4="long-video.mp4",duration=duration,
                       clips=len(credits),narration_duration=voice_seconds,
-                      note="Trial: stock metadata matched but independent shot-level semantic CLIP QA not available")
+                      audio_target_lufs=-17,
+                      burnt_in_subtitles=False,
+                      subtitle_track="selectable_not_default",
+                      visual_verification="local_clip_screening",
+                      note="Video frames screened using local CLIP; similarity is not proof of exact event or action.")
     except Exception as e:
         report.update(stage=stage,error=(type(e).__name__+": "+str(e))[:800])
         raise
