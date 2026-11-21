@@ -43,7 +43,7 @@ def voice_segments(text):
     25 words mid-sentence. The approved voice code validates the entire spoken
     transcript and independently validates each real audio segment.
     """
-    pieces = [part.strip() for part in re.split(r"(?<=[.!?])\\s+", text) if part.strip()]
+    pieces = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
     while len(pieces) > 6:
         index = min(range(len(pieces)-1),
                     key=lambda k: len(pieces[k]) + len(pieces[k+1]))
