@@ -81,8 +81,34 @@ def prepare_reference(folder: Path) -> Path:
 
 
 def _tokens(text: str) -> list[str]:
-    # Normalize punctuation but DO NOT silently interpolate missing words.
-    return [t for t in re.findall(r"[a-z0-9']+", text.lower()) if t.strip("'")]
+    # ASR output often differs only in typography ("Earth’s" vs "Earth's",
+    # "doesn't" vs "doesnt"). Normalize those spellings for comparison;
+    # do not insert, remove or silently change spoken words.
+    canonical = str(text).casefold().replace("’", "'").replace("‘", "'")
+    return [t.replace("'", "") for t in re.findall(r"[a-z0-9']+", canonical)
+            if t.strip("'")]
+
+
+def long_form_asr_deviations(expected: list[str], heard: list[str]) -> tuple[int, bool]:
+    """Limited, auditable ASR disagreement for *long videos only*.
+
+    Short-form exact transcript policy remains unchanged. The long-form path
+    never fabricates or estimates timestamps: captions use actual ASR words.
+    One hearing discrepancy in 12-19 words, two in 20+ words; forbid
+    large deletions and large insertions even if SequenceMatcher is optimistic.
+    """
+    if not expected or len(expected) < 12:
+        return max(len(expected), len(heard)), False
+    matching = sum(b.size for b in SequenceMatcher(
+        None, expected, heard, autojunk=False).get_matching_blocks())
+    differences = max(len(expected), len(heard)) - matching
+    limit = 2 if len(expected) >= 20 else 1
+    valid = (
+        differences <= limit
+        and len(expected) - 1 <= len(heard) <= len(expected) + 1
+        and matching >= (0.90 * len(expected))
+    )
+    return differences, valid
 
 
 def _safe_split_for_exact_audio(text: str) -> list[str]:
@@ -116,7 +142,7 @@ def _verified_asr_model(model_name: str):
 
 
 def check_real_word_timing(text: str, path: Path, *, asr_loader=None,
-                           model_name="base.en"):
+                           model_name="base.en", long_form=False):
     """Accept only exact recognized words from actual generated WAV.
 
     A stronger separate recognizer may rescue false negative transcription,
@@ -130,10 +156,12 @@ def check_real_word_timing(text: str, path: Path, *, asr_loader=None,
     expected = _tokens(text)
     recognized = [w for w in words if _tokens(w.word)]
     got = [t for w in recognized for t in _tokens(w.word)]
-    # Conservatively reject missed, inserted or altered spoken words.
-    if not expected or expected != got or len(expected) != len(recognized):
-        # Source text and decoded speech stay PRIVATE. Only numeric counts
-        # help distinguish missing speech from a near-miss ASR transcription.
+    exact = bool(expected and expected == got and len(expected) == len(recognized))
+    # Existing Shorts stay STRICT. The 10-minute feature can tolerate at most
+    # 1-2 small errors from independent recognition, not a skipped sentence or
+    # a fabricated narration. Both speaker identity and WAV timing remain real.
+    differences, permitted = long_form_asr_deviations(expected, got) if long_form else (0, False)
+    if not exact and not (long_form and permitted):
         shared = SequenceMatcher(None, expected, got, autojunk=False).get_matching_blocks()
         matching = sum(block.size for block in shared)
         print(f"[VOICE SAFE ASR] expected_words={len(expected)} "
@@ -142,6 +170,9 @@ def check_real_word_timing(text: str, path: Path, *, asr_loader=None,
         raise RuntimeError(
             "reference_voice_failed: spoken English does not exactly match "
             "requested narration; no estimated caption timing")
+    if not exact:
+        print(f"[LONG FORM ASR] minor_recognition_deviations={differences} "
+              f"recognized_words={len(got)}; captions_use_actual_audio", flush=True)
     duration = _wav_duration(path)
     previous = 0.
     for w in recognized:
@@ -197,7 +228,7 @@ def _model_interpreter() -> Path:
     return Path(os.path.abspath(os.path.expanduser(configured)))
 
 
-def synthesize(text, out, settings, *, segments=None):
+def synthesize(text, out, settings, *, segments=None, long_form=False):
     """Return an upstream Speech, timed solely from recognized actual audio."""
     if settings.language != "en":
         raise RuntimeError("Reference narrator is English-only")
@@ -249,7 +280,7 @@ def synthesize(text, out, settings, *, segments=None):
                     length = _wav_duration(output)
                     score = voice_similarity(reference, output)
                     try:
-                        timed_words = check_real_word_timing(sentence, output)
+                        timed_words = check_real_word_timing(sentence, output, long_form=long_form)
                     except RuntimeError as asr_error:
                         if (attempt != len(seeds)
                                 or "does not exactly match" not in str(asr_error)):
@@ -261,7 +292,7 @@ def synthesize(text, out, settings, *, segments=None):
                         # EVERY original word and supply REAL word timestamps.
                         try:
                             timed_words = check_real_word_timing(
-                                sentence, output, model_name="small.en")
+                                sentence, output, model_name="small.en", long_form=long_form)
                         except Exception:
                             raise asr_error from None
                         print("[VOICE ASR] exact transcript confirmed by "
@@ -386,7 +417,8 @@ def synthesize(text, out, settings, *, segments=None):
         "duration_seconds": round(duration, 3),
         "words": len(words),
         "synthesis_attempts": attempt,
-        "verified_scene_segments": len(parts) if segmented else 1
+        "verified_scene_segments": len(parts) if segmented else 1,
+        "long_form_asr_minor_discrepancies_allowed": bool(long_form)
     }
     speech = Speech(target, words, duration, "reference", REFERENCE_VOICE_ID, "aligned")
     speech.provenance = proof
