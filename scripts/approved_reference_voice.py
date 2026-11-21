@@ -186,6 +186,51 @@ def check_real_word_timing(text: str, path: Path, *, asr_loader=None,
     return [(w.word.strip(), max(0., float(w.start)), float(w.end)) for w in recognized]
 
 
+def verify_reference_asr(text: str, path: Path, *, long_form=False,
+                         attempt=1, max_attempts=3):
+    """Verify real word timestamps using an independent model when needed.
+
+    The 10-minute producer's live #44943477516 reached chapter 13 before
+    three BASE Whisper word-timing failures. Retrying identical synthesis is
+    ineffective when the recognizer's alignment is the failing component.
+
+    For long-form ONLY, after BASE rejects either transcript or timestamps,
+    consult SMALL on the *same WAV*, retaining the same verified narrator
+    and measured timings. If both reject, regenerate. Existing Shorts still
+    use strict BASE and the pre-existing final-attempt second recognizer
+    solely for word-text disagreements. No alignment repair by guesswork.
+    """
+    try:
+        if long_form:
+            return check_real_word_timing(text, path, long_form=True)
+        return check_real_word_timing(text, path)
+    except RuntimeError as base_error:
+        message = str(base_error).casefold()
+        word_error = "does not exactly match" in message
+        alignment_error = "word alignment" in message
+        secondary_allowed = (
+            (long_form and (word_error or alignment_error))
+            or (not long_form and attempt == max_attempts and word_error)
+        )
+        if not secondary_allowed:
+            raise
+        try:
+            if long_form:
+                verified = check_real_word_timing(
+                    text, path, model_name="small.en", long_form=True)
+            else:
+                verified = check_real_word_timing(
+                    text, path, model_name="small.en")
+        except Exception:
+            # Fail closed if the secondary recognizer itself fails to load,
+            # align or decode. Preserve the original spoken-audio error and
+            # the existing Shorts rescue behavior (including offline mocks).
+            raise base_error from None
+        print("[VOICE ASR] verified actual audio and timestamps using "
+              "independent small.en recognizer", flush=True)
+        return verified
+
+
 def _wav_duration(path: Path) -> float:
     with wave.open(str(path), "rb") as source:
         if (source.getnchannels() != 1 or source.getsampwidth() != 2
@@ -279,27 +324,9 @@ def synthesize(text, out, settings, *, segments=None, long_form=False):
                          timeout=300, stage="nano-reference-worker")
                     length = _wav_duration(output)
                     score = voice_similarity(reference, output)
-                    try:
-                        timed_words = (check_real_word_timing(sentence, output, long_form=True)
-                                   if long_form else check_real_word_timing(sentence, output))
-                    except RuntimeError as asr_error:
-                        if (attempt != len(seeds)
-                                or "does not exactly match" not in str(asr_error)):
-                            raise
-                        # The base Whisper recognizer can mishear a perfectly
-                        # valid Nano voice, especially short sibilant phrases.
-                        # Only the FINAL full-WAV attempt gets a second,
-                        # independent CPU ASR model. It must still recognize
-                        # EVERY original word and supply REAL word timestamps.
-                        try:
-                            timed_words = (check_real_word_timing(
-                                sentence, output, model_name="small.en", long_form=True)
-                                if long_form else check_real_word_timing(
-                                sentence, output, model_name="small.en"))
-                        except Exception:
-                            raise asr_error from None
-                        print("[VOICE ASR] exact transcript confirmed by "
-                              "independent small.en recognizer", flush=True)
+                    timed_words = verify_reference_asr(
+                        sentence, output, long_form=long_form,
+                        attempt=attempt, max_attempts=len(seeds))
                     return length, score, timed_words
                 except (RuntimeError, wave.Error) as exc:
                     output.unlink(missing_ok=True)
