@@ -1,5 +1,5 @@
 name: '02 - 10 Minute Video Maker (16:9) - Experimental'
-run-name: 'Long Video | ${{ github.event_name == 'workflow_dispatch' && inputs.topic || 'First Volcano Pilot' }}'
+run-name: "Long Video | ${{ github.event_name == 'workflow_dispatch' && inputs.topic || 'First Volcano Pilot' }}"
 
 on:
   workflow_dispatch:
