@@ -1,4 +1,4 @@
-name: Purffle V2 - 1 to 10 Videos
+name: '01 - Shorts Video Maker (9:16)'
 # Show a distinct, explicit manual production run rather than the latest PR title.
 run-name: "Purffle Shorts | Production #${{ github.run_number }}"
 on:
