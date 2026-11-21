@@ -120,7 +120,7 @@ def build_documentary(topic: str, client=None, *, sleep=time.sleep):
                             "schema": CHAPTER_SCHEMA,
                         },
                     },
-                    max_completion_tokens=4500,
+                    max_tokens=4500,
                     temperature=0.3,
                 )
                 choice = result.choices[0]
