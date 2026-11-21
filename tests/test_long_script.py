@@ -107,3 +107,30 @@ def test_fire_and_ice_trend_uses_new_14_science_chapters_without_changing_volcan
     assert "Glaciers" not in prompts[0] or len(prompts[0]) > 0
     assert "steam" in prompts[1].lower()
     assert "subscribe" not in result[0]["narration"].lower()
+
+
+def test_fire_and_ice_11th_chapter_jargon_is_spoken_plainly():
+    from long_script import accessible_science_narration, count_words
+    text = (
+        "When glaciers retreat, they leave behind cirques—amphitheater‑shaped "
+        "hollows—and sharp arêtes that expose the volcanic core."
+    )
+    result = accessible_science_narration(text)
+    assert "cirque" not in result.lower()
+    assert "arête" not in result.lower()
+    assert "arete" not in result.lower()
+    assert "bowl shaped valleys" in result
+    assert "steep mountain ridges" in result
+    assert not any(ch in result for ch in ("—", "‑", "ê"))
+    assert count_words(result) >= count_words(text)
+
+
+def test_fire_and_ice_narration_avoids_difficult_specialized_words():
+    from long_script import accessible_science_narration
+    phrase = "A jökulhlaup can become a lahar, while rhyolitic lava hardens."
+    spoken = accessible_science_narration(phrase)
+    assert "sudden glacier floods" in spoken
+    assert "volcanic mudflows" in spoken
+    assert "silica rich" in spoken
+    assert "jokulhlaup" not in spoken.lower()
+    assert "lava hardens" in spoken
