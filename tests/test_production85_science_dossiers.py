@@ -102,4 +102,6 @@ def test_production_85_two_verified_storm_clips_can_accurately_explain_lightning
     producer = (tmp_path.resolve().parent if False else
                 __import__("pathlib").Path(__file__).resolve().parents[1] /
                 "scripts" / "render_job.py").read_text()
-    assert "minimum_scenes = (2 if verified_documentary_kind(" in producer
+    assert "target_count = (3 if (" in producer
+    assert "script_scene_count = len(screenplay.scenes)" in producer
+    assert "storyboard=screenplay" in producer
