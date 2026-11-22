@@ -1,4 +1,4 @@
-name: '04 - Long Documentary Batch (10 videos, EN/DE, 16:9)'
+name: '02 - Long Video Maker (1-10 videos, EN/DE, 16:9)'
 run-name: "Purffle Long Documentaries | Batch #${{ github.run_number }}"
 
 on:
