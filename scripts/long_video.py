@@ -492,7 +492,10 @@ def main():
         report.update(status="ok",mp4="long-video.mp4",duration=duration,
                       clips=len(credits),narration_duration=voice_seconds,
                       reused_unused_segments=sum(bool(c.get("reused")) for c in credits),
-                      new_unique_sources=len(used),
+                      new_unique_sources=len({
+                          (c["source"], str(c["id"])) for c in credits
+                          if not c.get("reused")
+                      }),
                       audio_target_lufs=-17,
                       burnt_in_subtitles=False,
                       subtitle_track="separate_srt_sidecar_only",
