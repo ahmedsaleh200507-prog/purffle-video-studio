@@ -110,3 +110,65 @@ def test_shorts_fallback_keeps_narrator_and_fact_and_visual_checks():
     assert "screen_narration(" in render
     assert "validate_result(" in render
     assert "visual_director_preflight" in render
+
+
+
+def test_long_defaults_to_gemini_without_editing_github_variables():
+    cli=get_long_client(
+        groq=FakeGroq(AssertionError("Groq should be reserved")),
+        environ={"GEMINI_API_KEY":"FAKE"},
+        post=lambda *args,**kw:FakeResponse())
+    assert cli.chat.completions.prefer == "gemini"
+    assert cli.chat.completions.create(**prompt()).choices[0].finish_reason=="stop"
+
+
+def test_gemini_429_switches_to_groq_and_stops_retrying_gemini_for_later_chapters():
+    good=SimpleNamespace(choices=[SimpleNamespace(
+        finish_reason="stop",message=SimpleNamespace(content='{"chapters":[]}'))])
+    groq=FakeGroq(good)
+    seen=[]
+    def post(*args,**kwargs):
+        seen.append(kwargs)
+        return FakeResponse(status=429)
+    cli=LongLLM(groq=groq,gemini_key="FAKE",post=post,prefer="gemini")
+    assert cli.chat.completions.create(**prompt()) is good
+    assert cli.chat.completions.create(**prompt()) is good
+    assert len(seen)==1 and groq.calls==2
+
+
+def test_gemini_invalid_auth_does_not_silently_fall_back_to_groq():
+    groq=FakeGroq(AssertionError("Never mask invalid Gemini credentials"))
+    cli=LongLLM(groq=groq,gemini_key="FAKE",
+                post=lambda *a,**kw:FakeResponse(status=401),
+                prefer="gemini")
+    with pytest.raises(LongLLMResponseError,match="Gemini: HTTP 401"):
+        cli.chat.completions.create(**prompt())
+    assert groq.calls==0
+
+
+def test_gemini_schema_400_uses_one_json_mode_attempt_and_keeps_local_contract():
+    payloads=[]
+    def post(*args,**kwargs):
+        payloads.append(kwargs["json"])
+        return FakeResponse(status=400) if len(payloads)==1 else FakeResponse()
+    cli=LongLLM(gemini_key="FAKE",post=post,prefer="gemini")
+    assert cli.chat.completions.create(**prompt()).choices[0].finish_reason=="stop"
+    assert len(payloads)==2
+    assert payloads[0]["response_format"]["type"]=="json_schema"
+    assert payloads[1]["response_format"]=={"type":"json_object"}
+
+
+def test_long_variant_only_prefers_native_1080p_under_oversized_4k(monkeypatch):
+    from video_sources import ProviderRegistry
+    files=[
+        {"url":"https://example.org/4k.mp4","file_type":"video/mp4",
+         "width":3840,"height":2160,"file_size":245000000},
+        {"url":"https://example.org/1080.mp4","file_type":"video/mp4",
+         "width":1920,"height":1080,"file_size":64000000},
+        {"url":"https://example.org/720.mp4","file_type":"video/mp4",
+         "width":1280,"height":720,"file_size":25000000},
+    ]
+    monkeypatch.setenv("PURFFLE_LONG_STOCK_HD_VARIANTS","1")
+    assert ProviderRegistry._files(files)["url"].endswith("/1080.mp4")
+    monkeypatch.delenv("PURFFLE_LONG_STOCK_HD_VARIANTS",raising=False)
+    assert ProviderRegistry._files(files)["url"].endswith("/4k.mp4")
