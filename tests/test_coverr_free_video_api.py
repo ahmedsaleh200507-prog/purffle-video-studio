@@ -168,9 +168,9 @@ def test_final_source_artifact_never_contains_signed_coverr_url():
     runtime=(repo/"scripts"/"studio_runtime.py").read_text()
     assert 'self.registry.track_download(item)' in runtime
     assert 'item.url = license_info["source_page"]' in runtime
-    for name in ("videos.yml","one-german-bathroom-mirror-20261118.yml",
-                 "one-video-volcanic-island-20261118.yml",
-                 "daily-life-five-20261118.yml"):
+    # Coverr is part of the user-facing Shorts workflow. Generic long-form
+    # videos use licensed Pixabay/Pexels instead of this signed-URL provider.
+    for name in ("videos.yml",):
         text=(repo/".github"/"workflows"/name).read_text()
         sources = next(line for line in text.splitlines() if "VISUAL_SOURCES:" in line)
         assert "coverr-video" in sources and "freenaturestock-video" in sources
