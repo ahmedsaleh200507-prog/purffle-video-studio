@@ -30,9 +30,10 @@ are unchanged.
 429 or the specific generated-invalid-JSON error, Gemini receives the
 SAME JSON requirements and the accepted response still passes the original
 local length and chapter validators. If Groq is unavailable/missing,
-Gemini is used directly. Set repository environment variable
-`PURFFLE_LONG_LLM_PRIMARY=gemini` to prioritize Gemini when both secrets
-are present; setting this is optional.
+Gemini is used directly. To prioritize Gemini when both secrets are present,
+open GitHub **Settings → Secrets and variables → Actions → Variables** and
+create a repository variable named `PURFFLE_LONG_LLM_PRIMARY` with value
+`gemini`. The long-batch workflow reads this variable. This setting is optional.
 
 This is a **script/outline API**, NOT stock footage, text-to-speech, or
 unlimited video generation. Existing licensed footage availability may
