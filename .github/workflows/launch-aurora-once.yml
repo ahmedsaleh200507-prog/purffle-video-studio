@@ -1,0 +1,26 @@
+name: One-time Aurora Shorts Launch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/launch-aurora-once.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  launch:
+    if: github.event.head_commit.message == 'Launch one-time aurora Shorts production'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Request one actual Shorts production
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/workflows/videos.yml/dispatches" \
+            -f ref=main \
+            -f 'inputs[video_1]=de|Warum leuchten Polarlichter?'
+          echo 'Requested the single German Aurora Shorts production using videos.yml on main.'
