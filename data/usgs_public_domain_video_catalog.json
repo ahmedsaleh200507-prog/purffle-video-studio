@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "source": "US Geological Survey Multimedia Gallery",
+  "policy": "Only USGS-authored official pages explicitly marked Public Domain. Static official file links, not crawling, scraping or a general USGS API.",
+  "license_id": "PDM-1.0",
+  "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+  "clips": [
+    {
+      "id": "usgs-kilauea-ocean-entry-laze-20180609",
+      "title": "Kilauea Volcano — Ocean Entry and Laze",
+      "description": "Lava ocean entry, lava channel meets the sea, white steam laze plume, Hawaii volcano overflight",
+      "tags": [
+        "lava",
+        "ocean",
+        "sea",
+        "volcano",
+        "steam",
+        "plume",
+        "coast",
+        "eruption"
+      ],
+      "duration": 36,
+      "source_page": "https://www.usgs.gov/media/videos/kilauea-volcano-ocean-entry-and-laze",
+      "video_url": "https://usgs-ocapsv2-public-input-media.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/video/multimediaFile-2214.mp4",
+      "rights_statement": "Public Domain",
+      "creator": "USGS Volcano Hazards Program"
+    },
+    {
+      "id": "usgs-kilauea-active-ocean-entry-20180521",
+      "title": "Kilauea Volcano — Active Ocean Entry",
+      "description": "Real helicopter footage of active lava entering the ocean, laze steam and fragments, volcano Hawaii",
+      "tags": [
+        "lava",
+        "ocean",
+        "sea",
+        "volcano",
+        "steam",
+        "coast",
+        "eruption"
+      ],
+      "duration": 53,
+      "source_page": "https://www.usgs.gov/media/videos/kilauea-volcano-active-ocean-entry",
+      "video_url": "https://usgs-ocapsv2-public-input-media.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/video/multimediaFile-2091.mp4",
+      "rights_statement": "Public Domain",
+      "creator": "USGS Volcano Hazards Program"
+    },
+    {
+      "id": "usgs-kilauea-kapoho-bay-20180612",
+      "title": "Kilauea Volcano — Kapoho Bay",
+      "description": "Actual streams of molten lava entering ocean near the coastal lava delta, aerial volcano overflight and laze steam plume",
+      "tags": [
+        "lava",
+        "ocean",
+        "sea",
+        "volcano",
+        "coast",
+        "steam",
+        "eruption"
+      ],
+      "duration": 72,
+      "source_page": "https://www.usgs.gov/media/videos/kilauea-volcano-kapoho-bay",
+      "video_url": "https://usgs-ocapsv2-public-input-media.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/video/multimediaFile-2238.mp4",
+      "rights_statement": "Public Domain",
+      "creator": "USGS Hawaiian Volcano Observatory"
+    },
+    {
+      "id": "usgs-kilauea-kapoho-ocean-entry-compilation-20180604",
+      "title": "Kilauea Volcano — Kapoho Bay Ocean Entry Compilation",
+      "description": "Real helicopter video compilation of lava flow front entering sea at Kapoho Bay, aerial ocean coast and white steam laze plume",
+      "tags": [
+        "lava",
+        "ocean",
+        "sea",
+        "volcano",
+        "coast",
+        "steam",
+        "plume",
+        "eruption"
+      ],
+      "duration": 68,
+      "source_page": "https://www.usgs.gov/media/videos/kilauea-volcano-video-compilation-kapoho-bay-ocean-entry",
+      "video_url": "https://usgs-ocapsv2-public-input-media.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/video/compilation.mp4",
+      "rights_statement": "Public Domain",
+      "creator": "USGS Hawaiian Volcano Observatory"
+    }
+  ]
+}
