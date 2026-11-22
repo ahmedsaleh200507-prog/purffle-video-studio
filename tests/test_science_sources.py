@@ -345,3 +345,24 @@ def test_retrieval_with_only_irrelevant_titles_fails_closed():
         discover_evidence(
             "How Do People Survive a Freezing Night in the Wild?",
             "en", session=client)
+
+
+def test_frost_search_retries_third_query_when_second_article_title_differs():
+    """A valid Raureif article may not lexically match 'Reif (Niederschlag)'."""
+    client = Mock()
+    client.get.side_effect = [
+        FakeResponse({"query": {"pages": []}}),
+        FakeResponse({"query": {"pages": [
+            {"title": "Raureif",
+             "extract": "Raureif bildet sich bei Feuchte und Kälte. " * 12},
+        ]}}),
+        FakeResponse({"query": {"pages": [
+            {"title": "Raureif",
+             "extract": "Raureif bildet sich bei Feuchte und Kälte. " * 12},
+        ]}}),
+    ]
+    result = discover_evidence(
+        "Warum frieren Autoscheiben über Nacht zu?", "de", session=client)
+    assert result.sources[0]["title"] == "Raureif"
+    assert client.get.call_count == 3
+    assert client.get.call_args.kwargs["params"]["gsrsearch"] == "Raureif"
