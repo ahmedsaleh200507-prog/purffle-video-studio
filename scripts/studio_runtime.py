@@ -597,6 +597,24 @@ class StrictVisuals:
                     item.extra.update({"quality": quality, "match": match, "start": 0.0,
                                        "strict_validated": True, "sha256": digest})
                     license_info = item.extra.get("license", {})
+                    # #91 lava failure: selecting the first on-topic 4K clip
+                    # and checking the opening only AFTER all three scenes
+                    # wasted the whole production. Reject dark/late-action
+                    # intros here, then try the next genuine moving clip.
+                    # Use the exact same scoring/semantic/lava gate as the
+                    # final preflight; never lower the editorial threshold.
+                    if idx == 0 and isinstance(self.matcher, SceneMatcher):
+                        from opening_impact import prioritize_opening
+                        opening_candidate = prioritize_opening(
+                            topic, [item], [data], [{
+                                "match": match,
+                                "license": license_info,
+                                "source_url": item.url,
+                            }])
+                        match["opening_preflight"] = {
+                            "state": opening_candidate["state"],
+                            "chosen_score": opening_candidate["chosen_score"],
+                        }
                     attribution = license_info.get("attribution") or item.credit
                     if not attribution:
                         raise ValueError("Missing license provenance/attribution")
