@@ -10,9 +10,18 @@ Konu → senaryo → yapılandırılmış sahneler → lisanslı gerçek video a
 
 GitHub standart Linux runner, Edge TTS, ücretsiz yerel Piper ses yedeği ve CPU CLIP kullanılır; kota/süre/hizmet erişilebilirliği sınırlıdır. Ücretsiz kota biterse iş hata verir; ücretli sağlayıcıya geçmez. Anahtar oluşturma veya ücretli plan kaydı otomatik yapılmaz.
 
+## Secrets ve kaynak belirtmesiz yayın
+`NPS_API_KEY` resmî National Park Service video API'sine yalnız `X-Api-Key` başlığıyla gönderilir. NPS'de yalnız özgün NPS kredili, telif işareti olmayan B-roll/video-only dosyalar ve en az 720p MP4 sürümler değerlendirilir; indirme sonrası kaynak/kalite/hareket kontrolleri ayrıca zorunludur.
+
+`COVER2`, `COVERR_API_KEY` bulunmadığında kullanılan yedek bir **Coverr anahtarı adıdır**; ayrı video kaynağı veya kota aşma yöntemi değildir. İlk anahtar 401/429 alınca diğerine otomatik geçilmez.
+
+`VECTEEZY_API_KEY` Secrets'dan workflow'a geçer, ancak ücretsiz Vecteezy lisansı atıf gerektirdiğinden otomatik seçime kapalıdır. Ücretli indirme, Pro yükseltme ve manuel açıklama oluşturma yapılmaz.
+
+Shorts workflow'unda `PURFFLE_NO_ATTRIBUTION=1` geçerlidir. CC BY/Coverr gibi atıf gerektiren videolar kullanılmaz; tüm hakların uygun olduğu ayrıca doğrulanmalıdır. Bu kısıt daha az klibin bulunmasına yol açabilir. Anahtarlar rapora veya depoya yazılmaz.
+
 ## Kabul politikası
 
-- Altı resmî API bağdaştırıcısı: Pixabay, Pexels, Wikimedia Commons, NASA, Internet Archive, Europeana. [29 kaynak araştırması ve resmî belgeler](docs/SOURCE_RESEARCH_V2.md).
+- Video araması: Pixabay, Pexels, Wikimedia Commons, NASA, Internet Archive, Europeana, NPS, Free Nature Stock, Coverr. Vecteezy anahtarı workflow'a bağlıdır ama **Free atıf zorunluluğu nedeniyle lisans engeliyle devre dışıdır**. [Kaynak/lisans araştırması](docs/SOURCE_RESEARCH_V2.md).
 - Her sahne karakter, nesne, eylem, mekân, zaman ve İngilizce görsel sorgusu taşır. Genel konuya genişletme ve rastgele stok yedeği yoktur.
 - Metadata nesne/eylem kontrolü ve örnek karelerde yerel CLIP doğrulaması zorunludur. Model yüklenemezse sahne kabul edilmez. Model; aynı kişinin kimliğini, tam para kupürünü veya tüm eylem ayrıntılarını kesin ispatlayamaz. Bu sınırlama raporda bulunur; kaynaklarla birebir anlatım her konuda garanti edilmez.
 - FFprobe gerçek boyut/FPS/süre/codec ölçer; kaynak kısa kenarı en az 720 pikseldir ve 9:16 kırpma sonrası 720×1280 yerel ayrıntı korunmalıdır. Siyah/boş/hareketsiz dosyalar ve kısa klip döngüsü reddedilir. Yatay1080p'nin dikey kırpılması büyütme gerektirebilir; `portrait_crop_scale` ve `upscaled_after_crop` bunu açıkça bildirir. Native1080p dikey veya4K kaynak tercih edilir.
