@@ -2,7 +2,7 @@
 
 ## iPhone / GitHub Actions usage
 
-Open **Actions** → **04 - Long Documentary Batch (10 videos, EN/DE, 16:9)** → **Run workflow** on the `main` branch.
+Open **Actions** → **02 - Long Video Maker (1-10 videos, EN/DE, 16:9)** → **Run workflow** on the `main` branch.
 
 Enter **one topic per field** with an explicit language prefix:
 
@@ -35,3 +35,13 @@ The ten jobs run **one at a time** to reduce API rate-limit errors. A failed slo
 ## Scope
 
 This batch workflow uses only `scripts/long_batch_slot.py`, `scripts/long_generic.py` and the isolated `scripts/long_video.py` long-documentary path. The 9:16 Shorts `scripts/batch.py`, `.github/workflows/videos.yml` and their locked narrator behavior remain unchanged.
+
+
+## Workflow menu cleanup (22 November 2026)
+
+The user-facing Actions menu has two production workflows only:
+
+- `01 - Shorts Video Maker (9:16)` — 1–10 short vertical videos
+- `02 - Long Video Maker (1-10 videos, EN/DE, 16:9)` — 1–10 long videos, independently English or German
+
+`90 - INTERNAL | Automatic code tests` and `91 - INTERNAL | Pull request validation` are automatic safety tests, not video makers. Old test and single-topic production workflows were removed from `.github/workflows/` to eliminate confusion; recoverable copies remain in the `archive/workflows-before-cleanup-20261122` Git branch and ordinary Git history.
