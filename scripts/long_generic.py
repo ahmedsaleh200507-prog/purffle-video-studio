@@ -39,9 +39,12 @@ OUTLINE_SCHEMA = {
 LANGUAGES = {"en": "English", "de": "German"}
 # German Piper Thorsten and approved-reference English speak at different rates.
 # Measure the FINAL real narration and fail if not 9–11 minutes; no silent filler.
-SPOKEN_TARGET = {"en": (105, 120), "de": (135, 155)}
-SPOKEN_BOUNDS = {"en": (90, 135), "de": (120, 175)}
-SPOKEN_TOTAL = {"en": (1250, 1890), "de": (1680, 2450)}
+# Calibrated from audited CC0 Thorsten live voice: six German words in
+# 2.252 seconds (~160 wpm), so 14*~113 words targets ~594 seconds.
+# Actual WAV duration remains the source of truth; never pad/speed falsify.
+SPOKEN_TARGET = {"en": (105, 120), "de": (108, 118)}
+SPOKEN_BOUNDS = {"en": (90, 135), "de": (95, 135)}
+SPOKEN_TOTAL = {"en": (1250, 1890), "de": (1300, 1890)}
 
 
 def check_long_topic(raw: str, language: str) -> str:
