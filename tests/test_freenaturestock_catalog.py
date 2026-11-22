@@ -109,9 +109,9 @@ def test_no_host_spoofing_from_edited_manifest(monkeypatch):
 
 def test_real_video_workflows_include_fns_and_do_not_change_locked_english_voice():
     root = Path(__file__).resolve().parents[1] / ".github" / "workflows"
-    for name in ("videos.yml", "one-german-bathroom-mirror-20261118.yml",
-                 "daily-life-five-20261118.yml",
-                 "one-video-volcanic-island-20261118.yml"):
+    # The clean menu retains one Shorts workflow. Long documentaries use
+    # separately verified Pixabay/Pexels sources, not Free Nature Stock.
+    for name in ("videos.yml",):
         yml = (root / name).read_text()
         assert "freenaturestock-video" in next(line for line in yml.splitlines() if "VISUAL_SOURCES:" in line)
         assert "PURFFLE_NARRATOR_LOCK: '1'" in yml
