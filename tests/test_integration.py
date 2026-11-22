@@ -102,7 +102,7 @@ def test_fallback_checks_next_source_without_broadening(strict_env):
                 "euro banknote picking up", "euro banknote sidewalk"]
     assert registry.queries == [(source, query) for source in ("first", "second") for query in expected]
     assert all("euro banknote" in query for _, query in registry.queries)
-    assert len(down.urls) == 1 and quality.calls == [4.1]
+    assert len(down.urls) == 1 and quality.calls == [4]  # exact unlooped scene length; no artificial 100ms
     report = json.loads((strict_env / "report.json").read_text())
     assert report["scenes"][0]["status"] == "selected"
     assert report["scenes"][0]["quality"]["width"] == 1080
