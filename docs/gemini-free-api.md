@@ -19,10 +19,9 @@ both user-facing Actions workflows:
 
 ## Routing behavior
 
-**Shorts:** Groq is the original primary. If the Gemini key is present,
-the pinned upstream LLM engine tries Gemini 3.1 Flash-Lite as a secondary
-provider after a Groq request fails (including 429). If only Gemini has a
-key, Shorts uses Gemini directly. The English approved-reference and German
+**Shorts:** Gemini 3.1 Flash-Lite is the primary whenever its key is
+present. Groq GPT-OSS-20B is automatically available as a secondary
+provider if both keys exist. If only Groq has a key, it is used directly. The English approved-reference and German
 Thorsten voices are still mandatory; video source, science and CLIP guards
 are unchanged.
 
