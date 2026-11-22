@@ -80,7 +80,9 @@ def test_never_returns_partial_script_after_three_bad_responses():
     client = FakeGroq(invalid_always=True)
     with pytest.raises(RuntimeError, match="script_batch_1_invalid_after_3_attempts"):
         build_documentary("Why do volcanoes erupt?", client=client, sleep=lambda _: None)
-    assert client.calls == 3
+    # The adaptive verifier splits 4 -> 2 -> 1; every attempted response
+    # remains invalid, so no partial script may escape.
+    assert client.calls == 9
 
 
 def test_wrong_chapter_count_not_accepted():
@@ -134,3 +136,117 @@ def test_fire_and_ice_narration_avoids_difficult_specialized_words():
     assert "silica rich" in spoken
     assert "jokulhlaup" not in spoken.lower()
     assert "lava hardens" in spoken
+
+
+class SimulatedGroqJSONRejected(Exception):
+    status_code = 400
+    body = {"error": {"code": "json_validate_failed"}}
+
+
+def test_recover_one_transient_groq_json_400_without_splitting():
+    from long_script import is_groq_json_validation_error
+    assert is_groq_json_validation_error(SimulatedGroqJSONRejected("invalid JSON"))
+    class Client:
+        def __init__(self):
+            self.calls = 0
+            self.requests = []
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(create=self.create))
+        def create(self, **kwargs):
+            self.calls += 1
+            self.requests.append(kwargs)
+            if self.calls == 1:
+                raise SimulatedGroqJSONRejected("json_validate_failed")
+            length = [4,4,4,2][self.calls-2]
+            return SimpleNamespace(choices=[SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content=__import__("json").dumps({
+                    "chapters":[chapter(n) for n in range(length)]
+                })))])
+    client=Client()
+    result=build_documentary("Why do volcanoes erupt?",client=client,
+                             sleep=lambda _:None)
+    assert len(result)==14
+    assert client.calls==5
+    assert all(c["response_format"]["type"]=="json_schema"
+               for c in client.requests)
+
+
+def test_recover_permanently_broken_four_chapter_json_by_verified_2_plus_2():
+    """One bad Groq group must not discard valid other chapters or entire film."""
+    import re
+    class Client:
+        def __init__(self):
+            self.sizes=[]
+            self.chat=SimpleNamespace(
+                completions=SimpleNamespace(create=self.create))
+        def create(self,**kwargs):
+            prompt=kwargs["messages"][-1]["content"]
+            match=re.search(r"Write section (\d+) through (\d+)",prompt)
+            assert match is not None
+            start,end=map(int,match.groups())
+            size=end-start+1
+            self.sizes.append(size)
+            if size==4 and start==1:
+                raise SimulatedGroqJSONRejected("json_validate_failed")
+            return SimpleNamespace(choices=[SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content=__import__("json").dumps({
+                    "chapters":[chapter(n) for n in range(start,end+1)]
+                })))])
+    client=Client()
+    result=build_documentary(
+        "Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?",
+        client=client,sleep=lambda _:None)
+    assert len(result)==14
+    assert [x["title"] for x in result] == [
+        f"Chapter {n}" for n in range(1,15)]
+    assert client.sizes == [4,4,4,2,2,4,4,2]
+
+
+def test_unrecoverable_groq_401_is_never_retried():
+    class Unauthorized(Exception):
+        status_code = 401
+        body = {"error": {"code": "invalid_api_key"}}
+    class Client:
+        def __init__(self):
+            self.calls=0
+            self.chat=SimpleNamespace(
+                completions=SimpleNamespace(create=self.create))
+        def create(self, **kwargs):
+            self.calls+=1
+            raise Unauthorized("Authentication failed")
+    c=Client()
+    with pytest.raises(Unauthorized,match="Authentication failed"):
+        build_documentary("Why do volcanoes erupt?",client=c,
+                          sleep=lambda _:None)
+    assert c.calls==1
+
+
+def test_single_chapter_json_fallback_has_local_strict_validation():
+    """Even in JSON object mode a fabricated, shortened paragraph is rejected."""
+    class Client:
+        def __init__(self):
+            self.calls=[]
+            self.chat=SimpleNamespace(
+                completions=SimpleNamespace(create=self.create))
+        def create(self,**kwargs):
+            import re
+            prompt=kwargs["messages"][-1]["content"]
+            start,end=map(int,re.search(
+                r"Write section (\d+) through (\d+)",prompt).groups())
+            size=end-start+1
+            mode=kwargs["response_format"]["type"]
+            self.calls.append((size,mode))
+            if size>1 or mode!="json_object":
+                raise SimulatedGroqJSONRejected("json_validate_failed")
+            return SimpleNamespace(choices=[SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content=__import__("json").dumps({
+                    "chapters":[{"title":"One", "narration":"Too short."}]
+                })))])
+    c=Client()
+    with pytest.raises(RuntimeError,match="script_batch_1_invalid_after_3_attempts"):
+        build_documentary("Why do volcanoes erupt?",client=c,
+                          sleep=lambda _:None)
+    assert (1,"json_object") in c.calls
