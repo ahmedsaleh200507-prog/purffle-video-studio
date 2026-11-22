@@ -1,0 +1,34 @@
+# Temporary replay of six failed Production #91 jobs after visual fixes.
+name: One-time Shorts Batch Launcher
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/launch-aurora-once.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  replay-six:
+    if: github.event.head_commit.message == 'Launch six Production 91 footage retests'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Start six genuine HD Shorts production jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/workflows/videos.yml/dispatches" \
+            -f 'inputs[video_1]=de|Was passiert, wenn Lava ins Meer fließt?' \
+            -f 'inputs[video_2]=de|Warum beschlägt der Badezimmerspiegel?' \
+            -f 'inputs[video_3]=de|Warum leuchtet das Meer nachts blau?' \
+            -f 'inputs[video_4]=en|Why Do Icebergs Break Apart?' \
+            -f 'inputs[video_5]=en|Why Do Whales Jump?' \
+            -f 'inputs[video_6]=en|Why Do We See Lightning Before Hearing Thunder?' \
+            -f ref=main
+          echo '[DISPATCH OK] Submitted six previously failed topics for real stock-video production.'
+          gh run list --repo "${GITHUB_REPOSITORY}" --workflow videos.yml --limit 3 --json databaseId,status,conclusion,displayTitle
