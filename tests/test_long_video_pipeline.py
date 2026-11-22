@@ -98,10 +98,15 @@ def test_all_fourteen_chapters_preserve_voice_word_contract(tmp_path, monkeypatc
 
 def test_long_stock_credentials_checked_before_expensive_voice():
     with pytest.raises(RuntimeError, match="long_stock_preflight"):
-        confirm_long_stock_sources(SimpleNamespace(enabled=["wikimedia-video"]))
+        confirm_long_stock_sources(SimpleNamespace(enabled=[]))
+    # Wikimedia and NASA catalog APIs are open; Pexels has stopped issuing
+    # new keys, so it cannot be a required dependency for long films.
+    assert confirm_long_stock_sources(
+        SimpleNamespace(enabled=["wikimedia-video"])
+    ) == ["wikimedia-video"]
     assert confirm_long_stock_sources(
         SimpleNamespace(enabled=["pixabay", "pexels", "nasa-video"])
-    ) == ["pexels", "pixabay"]
+    ) == ["nasa-video", "pexels", "pixabay"]
 
 
 def test_stock_fallback_keeps_three_distinct_real_sources_without_faking(monkeypatch, tmp_path):
@@ -380,3 +385,59 @@ def test_renderer_respects_separate_real_source_offset(monkeypatch,tmp_path):
     assert "-ss" in observed[0]
     assert float(observed[0][observed[0].index("-ss")+1]) == 8.0
     assert credit["source_end_seconds"] == 20.0
+
+
+
+def test_long_stock_can_complete_with_real_wikimedia_video_without_pexels(monkeypatch,tmp_path):
+    """Pexels registration freeze must not block licensed HD real video."""
+    import media_validation
+    import long_video
+    items=[
+        SimpleNamespace(
+            source="wikimedia-video",id=800+i,
+            text=f"Octopus swimming underwater ocean close up animal {i}",
+            url=f"https://upload.wikimedia.org/fake-test-clip-{i}.webm",
+            extra={"license":{
+                "id":"CC-BY-4.0","creator":"Documented contributor",
+                "source_page":f"https://commons.wikimedia.org/wiki/File:Octopus_{i}.webm"
+            }})
+        for i in range(3)
+    ]
+    seen_searches=[]
+    class Registry:
+        enabled=["pixabay","wikimedia-video"]
+        def search(self, provider, query):
+            seen_searches.append(provider)
+            if provider == "wikimedia-video":
+                return items
+            return []
+    monkeypatch.setattr(media_validation.VideoDownloader,"download",
+                        lambda self,url:tmp_path/url.rsplit("/",1)[-1])
+    monkeypatch.setattr(media_validation.QualityValidator,"validate",
+                        lambda self,path:{"width":1920,"height":1080,
+                                          "duration":32.0})
+    monkeypatch.setattr(long_video,"long_visual_verifier",
+                        lambda *a,**kw:{
+                            "verification":"local_clip_screening",
+                            "visual_score":.33,
+                            "visual_role":"direct_chapter_match"})
+    chapter={"title":"Life of octopuses",
+             "visual_subject":"octopus",
+             "visual_search_query":"octopus swimming underwater"}
+    clips=long_video.find_stock(
+        0,45.0,set(),tmp_path,registry=Registry(),
+        topic="Why do octopuses have three hearts?",chapter=chapter)
+    assert len(clips)==3
+    assert all(credit["source"]=="wikimedia-video" for _,_,credit in clips)
+    assert all(credit["license"]=="CC-BY-4.0" for _,_,credit in clips)
+    assert "pexels" in seen_searches and "wikimedia-video" in seen_searches
+    assert all(credit["visual_check"]=="local_clip_screening" for _,_,credit in clips)
+
+
+def test_long_stock_source_list_never_includes_unlicensed_or_image_only_websites():
+    from long_video import LONG_STOCK_PROVIDERS
+    assert set(LONG_STOCK_PROVIDERS) == {
+        "pixabay","pexels","wikimedia-video",
+        "nasa-video","coverr-video","archive-video"}
+    assert len(LONG_STOCK_PROVIDERS)==len(set(LONG_STOCK_PROVIDERS))
+    assert LONG_STOCK_PROVIDERS.index("pixabay") < LONG_STOCK_PROVIDERS.index("coverr-video")
