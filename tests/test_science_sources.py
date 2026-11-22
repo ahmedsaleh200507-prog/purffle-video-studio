@@ -242,3 +242,106 @@ def test_factual_failure_labels_precede_unrelated_groq_limit_logs():
     assert classify_failure(
         "Missing structured scene fields: action",
         other) == "script_visual_schema_invalid"
+
+
+# Regression coverage for production ZIP purffle-videos-88 (2026-11-22).
+# All HTTP results here are mocked; these tests do not claim live MP4 success.
+@pytest.mark.parametrize("topic,language,article", [
+    ("Wie wird aus Kuhmist Strom erzeugt?", "de", "Biogas"),
+    ("Warum frieren Autoscheiben über Nacht zu?", "de", "Raureif"),
+    ("How Do People Survive a Freezing Night in the Wild?", "en", "Hypothermia"),
+    ("Why Do Rocket Launches Create Huge Smoke Clouds?", "en", "Rocket engine"),
+])
+def test_failed_batch_topics_recover_relevant_existing_articles(topic, language, article):
+    client = Mock()
+    title = article
+    explain = (f"{title} is a subject described by an encyclopedia entry. "
+               "The result is reference context, not independent scientific verification. ") * 6
+    client.get.side_effect = [
+        FakeResponse({"query": {"pages": []}}),
+        FakeResponse({"query": {"pages": [
+            {"title": title, "pageid": 101, "extract": explain}
+        ]}}),
+    ]
+    result = discover_evidence(topic, language, session=client)
+    assert result.method == "model_screened_reference"
+    assert result.sources[0]["title"] == title
+    assert client.get.call_count == 2
+    assert client.get.call_args.kwargs["params"]["gsrsearch"] in (
+        "Biogas", "Reif (Niederschlag)", "Hypothermia", "Rocket engine"
+    )
+
+
+def test_distractor_wild_tv_episode_not_accepted_as_survival_advice():
+    client = Mock()
+    client.get.side_effect = [
+        FakeResponse({"query": {"pages": [
+            {"title": "List of Man vs. Wild episodes",
+             "extract": "A television series with multiple seasons and episodes. " * 8},
+            {"title": "Wild China",
+             "extract": "A television nature documentary series. " * 8},
+        ]}}),
+        FakeResponse({"query": {"pages": [
+            {"title": "Hypothermia",
+             "extract": "Hypothermia occurs as the body's core temperature falls. " * 8},
+        ]}}),
+    ]
+    result = discover_evidence(
+        "How Do People Survive a Freezing Night in the Wild?",
+        "en", session=client)
+    assert [s["title"] for s in result.sources] == ["Hypothermia"]
+    assert client.get.call_count == 2
+
+
+def test_science_reference_transient_http_failure_uses_real_backup_query():
+    client = Mock()
+    client.get.side_effect = [
+        TimeoutError("transient timeout"),
+        FakeResponse({"query": {"pages": [
+            {"title": "Biogas",
+             "extract": "Biogas entsteht durch mikrobielle Zersetzung von Biomasse. " * 8},
+        ]}}),
+    ]
+    bundle = discover_evidence(
+        "Wie wird aus Kuhmist Strom erzeugt?", "de", session=client)
+    assert bundle.sources[0]["title"] == "Biogas"
+    assert client.get.call_count == 2
+
+
+def test_german_aurora_glow_uses_approved_noaa_nasa_dossier_no_network(tmp_path):
+    from fact_checked_topics import (
+        verified_documentary_kind, ground_verified_documentary)
+    topic = "Warum leuchten Polarlichter?"
+    assert verified_documentary_kind(topic) == "northern_lights_glow"
+    client = Mock()
+    bundle = discover_evidence(topic, "de", session=client)
+    assert bundle.method == "curated_editor_reviewed"
+    assert len(bundle.sources) >= 2
+    client.get.assert_not_called()
+
+    approved = ground_verified_documentary({}, topic, "de", scene_count=3)
+    script = SimpleNamespace(scenes=[
+        SimpleNamespace(narration=s["narration"])
+        for s in approved["scenes"]
+    ])
+    out = tmp_path / "science-report.json"
+    screen_narration(script, bundle, None, path=out)
+    assert json.loads(out.read_text())["state"] == "curated_editor_reviewed"
+
+    # Curated status must never let arbitrary, unsupported narration through.
+    invented = scene("NASA confirmed auroras always predict tomorrow's weather.")
+    with pytest.raises(RuntimeError, match="science_claim_unverified"):
+        screen_narration(invented, bundle, None, path=out)
+    assert json.loads(out.read_text())["state"] == "failed"
+
+
+def test_retrieval_with_only_irrelevant_titles_fails_closed():
+    client = Mock()
+    client.get.return_value = FakeResponse({"query": {"pages": [
+        {"title": "Wild China",
+         "extract": "A television nature documentary series. " * 12},
+    ]}})
+    with pytest.raises(RuntimeError, match="science_sources_unavailable"):
+        discover_evidence(
+            "How Do People Survive a Freezing Night in the Wild?",
+            "en", session=client)
