@@ -310,6 +310,8 @@ def test_nps_only_approved_broll_with_original_4k_video(monkeypatch):
     monkeypatch.setenv("NPS_API_KEY", "fake-key")
     monkeypatch.setenv("PURFFLE_NO_ATTRIBUTION", "1")
     reg = registry({"data": [nps_record()]})
+    assert ProviderRegistry._nps_public_domain_credit("NPS/Staff", nps_record())
+    assert len(reg._nps("ocean waves")) == 1, "NPS schema/rights gate filtered approved fixture"
     clips = reg.search("nps-video", "ocean waves")
     assert len(clips) == 1
     assert clips[0].source == "nps-video"
