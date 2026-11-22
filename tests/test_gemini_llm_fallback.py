@@ -104,7 +104,7 @@ def test_shorts_fallback_keeps_narrator_and_fact_and_visual_checks():
     root=Path(__file__).resolve().parents[1]
     render=(root/"scripts"/"render_job.py").read_text()
     runtime=(root/"scripts"/"studio_runtime.py").read_text()
-    assert "fallbacks = ['gemini']" in render and "llm_fallbacks=fallbacks" in render
+    assert "fallbacks = ['groq']" in render and "llm_fallbacks=fallbacks" in render
     assert "gemini-3.1-flash-lite" in runtime
     assert "PURFFLE_NARRATOR_LOCK" in render
     assert "screen_narration(" in render
