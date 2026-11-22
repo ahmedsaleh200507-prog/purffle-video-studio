@@ -296,7 +296,7 @@ def test_stock_search_fairly_reaches_broad_query_after_initial_rejections(monkey
                         lambda self,path:{"width":1920,"height":1080,"duration":30})
     seen_paths=[]
     def verify(path, meta, length, *, expected_subject="volcano"):
-        seen_paths.append(path.name)
+        seen_paths.append(path.stem)
         if int(path.stem) < 100:
             raise ValidationError("Visual scene mismatch")
         assert expected_subject == "glacier"
