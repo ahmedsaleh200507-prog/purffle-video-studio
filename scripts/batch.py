@@ -18,7 +18,7 @@ def write_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix('.tmp')
     content = json.dumps(value, ensure_ascii=False, indent=2)
-    for name in ('GROQ_API_KEY', 'PIXABAY_API_KEY', 'PEXELS_API_KEY', 'COVERR_API_KEY', 'EUROPEANA_API_KEY', 'GITHUB_TOKEN', 'GH_TOKEN', 'HF_TOKEN'):
+    for name in ('GROQ_API_KEY', 'PIXABAY_API_KEY', 'PEXELS_API_KEY', 'COVERR_API_KEY', 'COVER2', 'NPS_API_KEY', 'VECTEEZY_API_KEY', 'EUROPEANA_API_KEY', 'GITHUB_TOKEN', 'GH_TOKEN', 'HF_TOKEN'):
         secret = os.environ.get(name, '')
         if secret:
             content = content.replace(secret, '[REDACTED]')
@@ -250,7 +250,7 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
                                     cwd=ROOT, start_new_session=True)
             def relay():
                 for line in proc.stdout:
-                    for name in ('GROQ_API_KEY', 'PIXABAY_API_KEY', 'PEXELS_API_KEY', 'COVERR_API_KEY', 'EUROPEANA_API_KEY', 'GITHUB_TOKEN', 'GH_TOKEN', 'HF_TOKEN'):
+                    for name in ('GROQ_API_KEY', 'PIXABAY_API_KEY', 'PEXELS_API_KEY', 'COVERR_API_KEY', 'COVER2', 'NPS_API_KEY', 'VECTEEZY_API_KEY', 'EUROPEANA_API_KEY', 'GITHUB_TOKEN', 'GH_TOKEN', 'HF_TOKEN'):
                         secret = env.get(name, '')
                         if secret:
                             line = line.replace(secret, '[REDACTED]')
@@ -363,7 +363,7 @@ def write_consolidated_diagnostics(out: Path, results: list):
     destination = ROOT / 'PURFFLE_DIAGNOSTICS.txt'
     content = "\n".join(lines) + "\n"
     for key in ('GROQ_API_KEY', 'PIXABAY_API_KEY', 'PEXELS_API_KEY',
-                'COVERR_API_KEY', 'EUROPEANA_API_KEY', 'GITHUB_TOKEN',
+                'COVERR_API_KEY', 'COVER2', 'NPS_API_KEY', 'VECTEEZY_API_KEY', 'EUROPEANA_API_KEY', 'GITHUB_TOKEN',
                 'GH_TOKEN', 'HF_TOKEN'):
         secret = os.environ.get(key, '')
         if secret:

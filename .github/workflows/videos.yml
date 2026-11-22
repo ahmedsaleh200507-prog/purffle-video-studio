@@ -88,6 +88,9 @@ jobs:
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
       COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
+      COVER2: ${{ secrets.COVER2 }}
+      NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
+      VECTEEZY_API_KEY: ${{ secrets.VECTEEZY_API_KEY }}
       PURFFLE_COVERR_MAX_CALLS: '5'
       EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
       LLM_PROVIDER: groq
@@ -98,7 +101,7 @@ jobs:
       # working video indexes before tiny fixed catalogs or slower archives.
       # Remaining providers are still checked when the first ones have no
       # verified, relevant HD clip; license and CLIP checks stay unchanged.
-      VISUAL_SOURCES: pexels,pixabay,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video
+      VISUAL_SOURCES: pexels,pixabay,nps-video,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video,vecteezy-video
       # English strictly requires user-approved private reference voice; no Joe fallback.
       # German remains pinned de_DE-thorsten-medium; no female fallback.
       PURFFLE_NARRATOR_LOCK: '1'
@@ -121,6 +124,8 @@ jobs:
       TOKENIZERS_PARALLELISM: 'false'
       MAX_SHOT_SECONDS: '0'
       CREDIT_FOOTAGE: 'true'
+      # Do not select assets that require a manual YouTube attribution.
+      PURFFLE_NO_ATTRIBUTION: '1'
       UPLOAD: 'false'
       PURFFLE_API_INTERVAL_SECONDS: '1.6'
       INPUT_1: ${{ matrix.slot == 1 && inputs.video_1 || '' }}

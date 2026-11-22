@@ -28,7 +28,7 @@ class Item:
 
 @pytest.fixture(autouse=True)
 def no_keys(monkeypatch):
-    for name in ("PIXABAY_API_KEY", "PEXELS_API_KEY", "EUROPEANA_API_KEY", "COVERR_API_KEY"):
+    for name in ("PIXABAY_API_KEY", "PEXELS_API_KEY", "EUROPEANA_API_KEY", "COVERR_API_KEY", "COVER2", "NPS_API_KEY", "VECTEEZY_API_KEY", "PURFFLE_NO_ATTRIBUTION"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -277,3 +277,133 @@ def test_remaining_zero_still_serves_cached_search(tmp_path):
     with pytest.raises(ProviderError, match="http_429"):
         client.get("https://example.org/api", {"q": "uncached"})
     assert session.get.call_count == 1
+
+
+# NPS/Vecteezy/COVER2 contracts. No account keys are ever printed.
+NPS_ID = "CA91ADBF-BCE3-4434-B3D6-7691D7347758"
+
+
+def nps_record(**updates):
+    row = {
+        "id": NPS_ID,
+        "permalinkUrl": f"https://www.nps.gov/media/video/view.htm?id={NPS_ID}",
+        "title": "Waves on a rocky shore",
+        "description": "Moving ocean waves hit a rocky coast",
+        "credit": "NPS/Staff",
+        "isBRoll": True,
+        "isVideoOnly": False,
+        "durationMs": 9000,
+        "versions": [
+            {"url": "https://www.nps.gov/nps-audiovideo/audiovideo/low.mp4",
+             "fileType": "video/mp4", "widthPixels": 640, "heightPixels": 360},
+            {"url": "https://www.nps.gov/nps-audiovideo/audiovideo/hd.mp4",
+             "fileType": "video/mp4", "widthPixels": 1920, "heightPixels": 1080},
+            {"url": "https://www.nps.gov/nps-audiovideo/audiovideo/4k.mp4",
+             "fileType": "video/mp4", "widthPixels": 3840, "heightPixels": 2160},
+        ],
+    }
+    row.update(updates)
+    return row
+
+
+def test_nps_only_approved_broll_with_original_4k_video(monkeypatch):
+    monkeypatch.setenv("NPS_API_KEY", "fake-key")
+    monkeypatch.setenv("PURFFLE_NO_ATTRIBUTION", "1")
+    reg = registry({"data": [nps_record()]})
+    assert ProviderRegistry._nps_public_domain_credit("NPS/Staff", nps_record())
+    assert len(reg._nps("ocean waves")) == 1, "NPS schema/rights gate filtered approved fixture"
+    clips = reg.search("nps-video", "ocean waves")
+    assert len(clips) == 1
+    assert clips[0].source == "nps-video"
+    assert clips[0].url.endswith("/4k.mp4")
+    assert clips[0].duration == 9
+    assert clips[0].extra["license"]["id"] == "PDM-1.0"
+    assert clips[0].extra["license"]["attribution_required"] is False
+    args, kwargs = reg.client.get.call_args
+    assert args == ("https://developer.nps.gov/api/v1/multimedia/videos",)
+    assert kwargs["headers"] == {"X-Api-Key": "fake-key"}
+    assert kwargs["params"]["q"] == "ocean waves"
+    assert kwargs["params"]["limit"] <= 20
+
+
+@pytest.mark.parametrize("overrides", [
+    {"credit": ""},
+    {"credit": "© NPS"},
+    {"credit": "Getty Images"},
+    {"credit": "NPS, footage courtesy partner"},
+    {"credit": "NPS/Staff", "copyright": "All rights reserved"},
+    {"credit": "NPS/Staff", "isBRoll": False, "isVideoOnly": False},
+    {"credit": "NPS/Staff", "permalinkUrl": "https://evil.example.com/video"},
+    {"credit": "NPS/Staff", "versions": [{
+        "url": "https://www.nps.gov/nps-audiovideo/audiovideo/low.mp4",
+        "fileType": "video/mp4", "widthPixels": 640, "heightPixels": 360}]},
+    {"credit": "NPS/Staff", "versions": [{
+        "url": "https://attacker.example/nps-audiovideo/audiovideo/hd.mp4",
+        "fileType": "video/mp4", "widthPixels": 1920, "heightPixels": 1080}]},
+])
+def test_nps_rejects_unproved_rights_or_bad_media(monkeypatch, overrides):
+    monkeypatch.setenv("NPS_API_KEY", "fake-key")
+    reg = registry({"data": [nps_record(**overrides)]})
+    assert reg.search("nps-video", "ocean") == []
+
+
+def test_nps_missing_key_skips_without_api_call(monkeypatch):
+    monkeypatch.delenv("NPS_API_KEY", raising=False)
+    reg = registry({"data": [nps_record()]})
+    assert not reg.search("nps-video", "ocean")
+    reg.client.get.assert_not_called()
+
+
+def test_cover2_is_alias_if_primary_missing_not_a_new_provider(monkeypatch):
+    monkeypatch.setenv("COVER2", "second-coverr-key")
+    reg = registry({"hits": []})
+    assert "coverr-video" in reg.enabled
+    assert reg.search("coverr-video", "ocean") == []
+    assert reg.client.get.call_args.kwargs["headers"] == {
+        "x-api-key": "second-coverr-key"}
+    assert "cover2-video" not in reg.providers
+    monkeypatch.setenv("COVERR_API_KEY", "primary-key")
+    assert reg.search("coverr-video", "ocean") == []
+    assert reg.client.get.call_args.kwargs["headers"] == {
+        "x-api-key": "primary-key"}
+
+
+def test_coverr_unauthorized_never_tries_cover2(monkeypatch):
+    monkeypatch.setenv("COVERR_API_KEY", "primary-key")
+    monkeypatch.setenv("COVER2", "secondary-key")
+    reg = registry()
+    reg.client.get.side_effect = ProviderError("http_429", "quota")
+    assert reg.search("coverr-video", "waves") == []
+    assert reg.search("coverr-video", "other") == []
+    assert reg.client.get.call_count == 1
+    assert reg.client.get.call_args.kwargs["headers"] == {
+        "x-api-key": "primary-key"}
+
+
+def test_vecteezy_free_key_will_not_burn_downloads_or_require_description(monkeypatch):
+    monkeypatch.setenv("VECTEEZY_API_KEY", "account-key")
+    reg = registry({"resources": [{"id": "v1"}]})
+    assert "vecteezy-video" not in reg.enabled
+    assert reg.search("vecteezy-video", "waves") == []
+    assert reg.events[-1]["status"] == "skipped"
+    assert "attribution" in reg.events[-1]["detail"]
+    reg.client.get.assert_not_called()
+
+
+def test_no_manual_credit_rejects_licenses_requiring_attribution(monkeypatch):
+    reg = registry()
+    cc = Item("wikimedia-video", "cc", "video",
+              "https://upload.wikimedia.org/one.webm", text="ocean wave")
+    cc.extra["license"] = ProviderRegistry.license(
+        "CC-BY-4.0", "https://creativecommons.org/licenses/by/4.0/",
+        "A filmmaker", "https://commons.wikimedia.org/wiki/File:wave")
+    free = Item("wikimedia-video", "free", "video",
+                "https://upload.wikimedia.org/two.webm", text="ocean wave")
+    free.extra["license"] = ProviderRegistry.license(
+        "CC0-1.0", "https://creativecommons.org/publicdomain/zero/1.0/",
+        "Public domain", "https://commons.wikimedia.org/wiki/File:free")
+    reg._wikimedia = lambda query: [cc, free]
+    monkeypatch.setenv("PURFFLE_NO_ATTRIBUTION", "1")
+    assert [x.id for x in reg.search("wikimedia-video", "waves")] == ["free"]
+    monkeypatch.setenv("PURFFLE_NO_ATTRIBUTION", "0")
+    assert [x.id for x in reg.search("wikimedia-video", "waves")] == ["cc", "free"]

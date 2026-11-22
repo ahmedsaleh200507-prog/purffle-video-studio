@@ -14,7 +14,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlparse, parse_qs
 
 import requests
 
@@ -215,12 +215,17 @@ class VideoProvider:
     name: str
     key_env: str = ""
     policy_block: str = ""
+    alternate_key_env: str = ""
 
     def unavailable_reason(self):
         if self.policy_block:
             return self.policy_block
-        if self.key_env and not os.environ.get(self.key_env, "").strip():
-            return "missing " + self.key_env
+        if self.key_env and not (
+                os.environ.get(self.key_env, "").strip()
+                or (self.alternate_key_env and
+                    os.environ.get(self.alternate_key_env, "").strip())):
+            return "missing " + self.key_env + (
+                " or " + self.alternate_key_env if self.alternate_key_env else "")
         return ""
 
 
@@ -237,11 +242,18 @@ PROVIDERS = [
     VideoProvider("pexels", "PEXELS_API_KEY"),
     VideoProvider("wikimedia-video"), VideoProvider("nasa-video"),
     VideoProvider("archive-video"), VideoProvider("europeana-video", "EUROPEANA_API_KEY"),
+    VideoProvider("nps-video", "NPS_API_KEY"),
+    # Vecteezy Free requires attribution; the owner explicitly requests no
+    # YouTube description/manual credits. Do not burn downloads or silently
+    # assume a Pro license from the presence of an API key.
+    VideoProvider("vecteezy-video", "VECTEEZY_API_KEY",
+                  "free_license_requires_attribution_paid_license_unverified"),
     # No external API or website parsing. Offline allowlist of official CC0 MP4 URLs.
     VideoProvider("freenaturestock-video"),
     # Coverr Nov 4 2026: free commercial API use requires attribution and
     # tracking. We reject premium, sponsored, AI-generated stock media.
-    VideoProvider("coverr-video", "COVERR_API_KEY"),
+    VideoProvider("coverr-video", "COVERR_API_KEY",
+                  alternate_key_env="COVER2"),
 ]
 
 
@@ -291,8 +303,14 @@ class ProviderRegistry:
         try:
             found = getattr(self, "_" + source.replace("-video", ""))(query.strip())
             synthetic = re.compile(r"\banimat(?:ion|ions|ed)\b|\bCGI\b|computer[- ]generated|\bsimulation\b|\bAI[- ]generated\b|\bvisuali[sz]ation\b", re.I)
+            # User publishes without writing a YouTube source description.
+            # When set, reject CC-BY/Coverr and other credit-requiring content
+            # BEFORE download; source discovery is not publication permission.
+            no_credit = os.environ.get("PURFFLE_NO_ATTRIBUTION") == "1"
             items = [x for x in found if x.kind == "video" and secure_url(x.url)
-                     and LicenseValidator.validate(x.extra.get("license")) and not synthetic.search(x.text)]
+                     and LicenseValidator.validate(x.extra.get("license"))
+                     and not (no_credit and x.extra["license"].get("attribution_required"))
+                     and not synthetic.search(x.text)]
             self.event(source, "ok" if items else "empty", query, len(items))
             return items
         except ProviderError as exc:
@@ -374,13 +392,20 @@ class ProviderRegistry:
         except (TypeError, ValueError):
             return False
 
+    @staticmethod
+    def _coverr_key():
+        # COVER2 is a compatibility alias only if the original key is absent.
+        # Never switch keys after a 401/429 or to bypass Coverr rate limits.
+        return (os.environ.get("COVERR_API_KEY", "").strip()
+                or os.environ.get("COVER2", "").strip())
+
     def _coverr(self, query):
         """Free API: original filmed clips only; reject unknown origin."""
         self._coverr_budget()
         data = self.client.get("https://api.coverr.co/videos",
             params={"query": query[:90], "page": 0, "page_size": 12,
                     "urls": "true", "filter": "is_ai_generated:false"},
-            headers={"x-api-key": os.environ["COVERR_API_KEY"]})
+            headers={"x-api-key": self._coverr_key()})
         hits = data.get("hits", [])
         if not isinstance(hits, list):
             raise ProviderError("invalid_schema", "Coverr hits list missing")
@@ -461,7 +486,117 @@ class ProviderRegistry:
         self._coverr_budget()
         self.client.patch(
             "https://api.coverr.co/videos/" + item.id + "/stats/downloads",
-            headers={"x-api-key": os.environ["COVERR_API_KEY"]})
+            headers={"x-api-key": self._coverr_key()})
+
+
+    @staticmethod
+    def _nps_public_domain_credit(credit, record):
+        """NPS PD rule: official NPS credit without copyright marking.
+
+        NPS expressly warns that third-party / copyright-credited assets
+        are NOT necessarily public domain. Reject missing/ambiguous credits.
+        """
+        text = clean(credit).strip()
+        if not text or re.search(
+                r"©|\u00a9|\(c\)|copyright|courtesy|permission|"
+                r"licensed|third.party|contractor|partner|Getty|Shutterstock",
+                text, re.I):
+            return False
+        if not (re.fullmatch(r"NPS(?: Video)?|National Park Service", text, re.I)
+                or re.fullmatch(r"NPS\s*/\s*[A-Za-z][A-Za-z .'-]{1,80}", text)):
+            return False
+        rights = clean([record.get("copyright"), record.get("rights"),
+                        record.get("license"), record.get("usage")]).strip()
+        return not rights or (
+            bool(re.search(r"public domain|no copyright", rights, re.I))
+            and not re.search(r"©|all rights reserved|permissions required",
+                              rights, re.I))
+
+    def _nps(self, query):
+        """Official NPS multimedia/videos API, real downloadable MP4 only.
+
+        NPS documents public-domain status for NPS-credited works without
+        copyright symbols. No third-party, uncredited or unclear assets.
+        Real pixels, crop, motion and scene match are checked downstream.
+        """
+        data = self.client.get("https://developer.nps.gov/api/v1/multimedia/videos",
+            params={"q": query[:100], "limit": 16, "start": 0},
+            headers={"X-Api-Key": os.environ["NPS_API_KEY"]})
+        records = data.get("data")
+        if not isinstance(records, list):
+            raise ProviderError("invalid_schema", "NPS video data list missing")
+        result = []
+        for rank, row in enumerate(records[:16]):
+            if not isinstance(row, dict):
+                continue
+            if not self._nps_public_domain_credit(row.get("credit"), row):
+                continue
+            # Prefer unscored raw footage to documentaries with third-party
+            # footage, music and talent rights mixed into the final edit.
+            if row.get("isBRoll") is not True and row.get("isVideoOnly") is not True:
+                continue
+            identity = str(row.get("id") or "").strip()
+            if not re.fullmatch(
+                    r"[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}",
+                    identity):
+                continue
+            page = str(row.get("permalinkUrl") or "").strip()
+            try:
+                parsed = urlparse(page)
+                page_ok = (parsed.scheme == "https"
+                           and parsed.hostname in ("www.nps.gov", "nps.gov")
+                           and parsed.path == "/media/video/view.htm"
+                           and parse_qs(parsed.query).get("id", [""])[0].lower()
+                               == identity.lower())
+            except (ValueError, TypeError):
+                page_ok = False
+            if not page_ok:
+                continue
+            versions = row.get("versions")
+            if not isinstance(versions, list):
+                continue
+            candidates = []
+            for variant in versions:
+                if not isinstance(variant, dict):
+                    continue
+                url = str(variant.get("url") or "")
+                try:
+                    loc = urlparse(url)
+                    width = int(variant.get("widthPixels") or 0)
+                    height = int(variant.get("heightPixels") or 0)
+                except (ValueError, TypeError):
+                    continue
+                if (loc.scheme != "https"
+                        or loc.hostname not in ("www.nps.gov", "nps.gov")
+                        or not loc.path.startswith("/nps-audiovideo/audiovideo/")
+                        or not video_url(url)
+                        or not loc.path.lower().endswith(".mp4")
+                        or str(variant.get("fileType") or "").lower() != "video/mp4"
+                        or min(width, height) < 720):
+                    continue
+                candidates.append((width * height, width, height, url))
+            if not candidates:
+                continue
+            _, width, height, url = max(candidates)
+            lic = self.license(
+                "PDM-1.0",
+                "https://creativecommons.org/publicdomain/mark/1.0/",
+                row.get("credit"), page)
+            lic["rights_basis"] = "NPS-only credit, no copyright mark"
+            lic["attribution_required"] = False
+            try:
+                duration = max(0.0, float(row.get("durationMs") or 0) / 1000)
+            except (TypeError, ValueError):
+                continue
+            item = self._item("nps-video", identity, url, query, rank,
+                              clean([row.get("title"), row.get("description"),
+                                     row.get("descriptiveTranscript"),
+                                     row.get("tags")])[:3500],
+                              lic, width, height,
+                              duration)
+            if item:
+                result.append(item)
+        return result
 
     def _freenaturestock(self, query):
         """Search a finite manually verified CC0 video manifest, not the website.
