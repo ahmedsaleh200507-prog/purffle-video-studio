@@ -25,7 +25,7 @@ FIRE_AND_ICE_QUERIES = (
     "glacier mountain aerial", "glacier ice sheet",
     "volcano crater aerial", "iceland volcanic mountain",
 )
-GLACIER_VISUAL_CHAPTERS = frozenset((1, 5, 6, 10, 11))
+GLACIER_VISUAL_CHAPTERS = frozenset((1, 5, 6, 10, 11, 12))
 GLACIER_FALLBACK_QUERIES = (
     "glacier ice mountain", "glacier aerial", "ice glacier",
     "snow glacier mountains", "glacier ice cave",
@@ -219,81 +219,166 @@ def long_visual_verifier(path, metadata, need, *, matcher=None,
     return result
 
 
-def find_stock(index, chapter_seconds, seen, work, registry=None, topic=""):
-    """Find distinct, genuinely moving footage; allow 3 sources when 4 absent.
+def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
+               bank=None, reused=None):
+    """Pick real licensed HD footage: new sources first, verified unused spans last.
 
-    Keep one provider registry for the entire long video so provider 429
-    cooldowns are respected across chapters, not retried each chapter.
+    A prior 10-minute Fire and Ice run failed at chapter 13 despite 12 fully
+    rendered chapters: only Pixabay was enabled, 21 real-frame CLIP rejections
+    occurred during 25 download attempts for the chapter, and the hard cap
+    exhausted one query before testing the broader fallback terms.
+
+    Spread a fixed candidate budget fairly across distinct search queries.
+    After exhausting NEW clips, a source from another chapter may be reused
+    ONCE, but only from a not-yet-played part of that same real video, and
+    only after local CLIP re-verifies frames from that exact later segment.
+    Reuse is explicitly recorded in credits. No static filler or blind reuse.
     """
-    from video_sources import ProviderRegistry
     from media_validation import VideoDownloader, QualityValidator, reject_offtopic_science_source
+    from video_sources import ProviderRegistry
     reg = registry if registry is not None else ProviderRegistry()
-    # Long videos require more footage than Shorts; expand only the long-job
-    # cache size, preserving the downloader's DNS, license and disk safety gates.
     dl = VideoDownloader(
         cache_dir=work/"downloads", max_bytes=110*1024*1024,
         max_cache_bytes=5*1024**3, min_free_bytes=2*1024**3,
     )
     val = QualityValidator(min_short_side=720)
-    chosen = []
-    attempts = 0
+    chosen, attempted = [], set()
+    attempts, max_attempts, max_per_query = 0, 60, 12
     expected_subject = long_expected_subject(index, topic)
     for query in long_visual_queries(index, topic):
-        for provider in ("pexels","pixabay"):
-            for candidate in reg.search(provider,query)[:30]:
-                key=(candidate.source,str(candidate.id))
-                if key in seen:
+        query_attempts = 0
+        for provider in ("pexels", "pixabay"):
+            for candidate in reg.search(provider, query)[:40]:
+                key = (candidate.source, str(candidate.id))
+                if key in seen or key in attempted:
                     continue
-                # Query matches alone are not evidence of volcanic footage.
                 labels = candidate.text.lower()
                 terms = (("glacier", "glacial", "ice sheet")
                          if expected_subject == "glacier"
                          else ("volcan", "lava", "magma", "eruption", "crater"))
                 if not any(term in labels for term in terms):
                     continue
-                attempts += 1
-                if attempts > 24:
+                if query_attempts >= max_per_query or attempts >= max_attempts:
                     break
+                attempted.add(key)
+                query_attempts += 1
+                attempts += 1
                 try:
                     reject_offtopic_science_source("Earth volcano eruption", candidate.text)
-                    path=dl.download(candidate.url)
-                    q=val.validate(path)
-                    duration=float(q["duration"])
+                    path = dl.download(candidate.url)
+                    q = val.validate(path)
+                    duration = float(q["duration"])
                     if (int(q["width"]) < 1280 or int(q["height"]) < 720
-                            or duration < chapter_seconds / (4*1.5)):
+                            or duration * 1.5 < chapter_seconds / 4):
                         continue
-                    # Inspect the frames that will be used at the BEGINNING
-                    # of this source, not the entire clip (which may change scene).
                     visual_span = min(duration, chapter_seconds / 3)
                     visual = long_visual_verifier(
                         path, candidate.text, visual_span,
                         expected_subject=expected_subject)
+                    lic = candidate.extra["license"]
+                    credit = {
+                        "source": candidate.source, "id": candidate.id,
+                        "creator": lic["creator"], "license": lic["id"],
+                        "source_page": lic["source_page"], "query": query,
+                        "metadata_text": str(candidate.text)[:400],
+                        "subject": expected_subject, "chapter": index+1,
+                        "visual_check": visual["verification"],
+                        "visual_score": visual.get("visual_score"),
+                        "reused": False, "source_offset_seconds": 0.0,
+                    }
                     seen.add(key)
-                    lic=candidate.extra["license"]
-                    chosen.append((path,duration,
-                                   {"source":candidate.source,"id":candidate.id,
-                                    "creator":lic["creator"],"license":lic["id"],
-                                    "source_page":lic["source_page"],"query":query,
-                                    "visual_check":visual["verification"],
-                                    "visual_score":visual.get("visual_score")}))
+                    chosen.append((path, duration, credit))
                     if len(chosen) >= 4:
                         return chosen
                 except Exception as ex:
-                    print("[LONG STOCK REJECT]",type(ex).__name__,flush=True)
-            if attempts > 24:
+                    # Include bounded diagnostic reason, not provider tokens/URLs.
+                    print("[LONG STOCK REJECT]", type(ex).__name__,
+                          str(ex).splitlines()[0][:160], flush=True)
+            if query_attempts >= max_per_query or attempts >= max_attempts:
                 break
-        if attempts > 24:
+        if attempts >= max_attempts:
             break
-    # Keep three distinct live-action clips rather than failing because the
-    # fourth was unavailable. Never duplicate/loop the same media to fill time.
-    eligible = [item for item in chosen
-                if item[1]*1.5 >= chapter_seconds/3]
-    if len(eligible) >= 3:
-        return eligible[:3]
+    # 3 clips each need enough unique motion for their chapter share.
+    usable = [c for c in chosen
+              if c[1] * 1.5 >= chapter_seconds / 3]
+    if len(usable) >= 3:
+        return usable[:3]
+
+    # The previously validated source bank is restricted to the same visual
+    # subject, distinct clips, and UNUSED footage from each original source.
+    # This fallback must not silently weaken local CLIP image matching.
+    bank = bank if bank is not None else []
+    reused = reused if reused is not None else set()
+    recoveries = []
+    for old_path, old_duration, old_credit in reversed(bank):
+        if len(usable) + len(recoveries) >= 3:
+            break
+        if old_credit.get("subject") != expected_subject:
+            continue
+        key = (old_credit["source"], str(old_credit["id"]))
+        if key in reused or any(
+                (c[2]["source"], str(c[2]["id"])) == key for c in usable):
+            continue
+        offset = float(old_credit.get("source_end_seconds", old_duration))
+        remaining = float(old_duration) - offset
+        if remaining * 1.5 < chapter_seconds / 3 or remaining <= 0:
+            continue
+        preview = work/"reuse_previews"/(
+            f"chapter-{index+1:02d}-{len(recoveries)}.mp4")
+        preview.parent.mkdir(parents=True, exist_ok=True)
+        segment_length = min(remaining, chapter_seconds / 3)
+        try:
+            run(["ffmpeg", "-hide_banner", "-nostdin", "-y", "-loglevel", "error",
+                 "-ss", f"{offset:.3f}", "-i", str(old_path),
+                 "-t", f"{segment_length:.3f}", "-an",
+                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                 str(preview)], 180)
+            # The unused section must itself still contain genuine moving HD
+            # frames. Validating the entire original source is not sufficient.
+            preview_quality = val.validate(preview)
+            if (int(preview_quality["width"]) < 1280
+                    or int(preview_quality["height"]) < 720
+                    or float(preview_quality["duration"]) < segment_length - .5):
+                raise RuntimeError("Unused stock portion lacks required HD motion or duration")
+            proof = long_visual_verifier(
+                preview, old_credit["metadata_text"], segment_length,
+                expected_subject=expected_subject)
+            credit = {
+                **old_credit,
+                "chapter": index+1, "reused": True,
+                "reused_from_chapter": old_credit["chapter"],
+                "source_offset_seconds": round(offset, 3),
+                "visual_check": proof["verification"],
+                "visual_score": proof.get("visual_score"),
+            }
+            recoveries.append((old_path, old_duration, credit))
+        except Exception as ex:
+            print("[LONG STOCK UNUSED SPAN REJECT]", type(ex).__name__,
+                  str(ex).splitlines()[0][:160], flush=True)
+        finally:
+            preview.unlink(missing_ok=True)
+    if len(usable) + len(recoveries) >= 3:
+        selected = (usable + recoveries)[:3]
+        for item in selected:
+            if item[2].get("reused"):
+                reused.add((item[2]["source"], str(item[2]["id"])))
+        print(f"[LONG STOCK SELECT] chapter={index+1} new="
+              f"{sum(not x[2]['reused'] for x in selected)} "
+              f"verified_unused_spans={sum(x[2]['reused'] for x in selected)} "
+              f"tried={attempts}", flush=True)
+        return selected
+
+    # A last alternative is two distinct new sources, but never slow them
+    # more than 1.5x and never fill missing footage by freezing frames.
+    pairs = [c for c in usable if c[1] * 1.5 >= chapter_seconds / 2]
+    if len(pairs) >= 2:
+        return pairs[:2]
     raise RuntimeError(
-        f"long_stock_insufficient_chapter_{index+1}: {len(eligible)} usable "
-        f"nonduplicated clips (tried={attempts}), required=3-4. "
-        "No image, unrelated stock or repeated-video substitute used.")
+        f"long_stock_insufficient_chapter_{index+1}: "
+        f"{len(usable)} new usable clips, {len(recoveries)} independently "
+        f"verified unused stock spans (tried={attempts}); need 3 distinct "
+        "usable segments or 2 long distinct clips. "
+        "No off-topic or unverified clips accepted.")
 
 
 def render_scene(i,audio,duration,stock,work):
@@ -302,15 +387,23 @@ def render_scene(i,audio,duration,stock,work):
     files=[]
     wanted=duration/len(stock)
     for j,(path,srcdur,credit) in enumerate(stock):
-        factor=max(1.0,wanted/srcdur)
-        if factor>1.5:raise RuntimeError("Insufficient real motion for scene")
+        offset=float(credit.get("source_offset_seconds", 0))
+        available=srcdur-offset
+        if available <= 0:
+            raise RuntimeError("Verified footage has no unused motion")
+        factor=max(1.0,wanted/available)
+        if factor>1.5:
+            raise RuntimeError("Insufficient real motion for scene")
         dest=shotdir/f"shot-{j:02d}.mp4"
         vf=(f"setpts={factor:.6f}*(PTS-STARTPTS),"
             "scale=1920:1080:force_original_aspect_ratio=increase,"
             "crop=1920:1080,fps=30,format=yuv420p")
         run(["ffmpeg","-hide_banner","-nostdin","-y","-loglevel","error",
-             "-i",str(path),"-t",f"{wanted:.3f}","-an","-vf",vf,
+             "-ss",f"{offset:.3f}","-i",str(path),"-t",f"{wanted:.3f}",
+             "-an","-vf",vf,
              "-c:v","libx264","-preset","veryfast","-crf","25",str(dest)],900)
+        # Keep precise source ranges for safe later B-roll reuse.
+        credit["source_end_seconds"]=round(min(srcdur,offset+wanted/factor),3)
         files.append(dest)
     manifest=shotdir/"concat.txt"
     manifest.write_text("\n".join("file '"+str(x.resolve())+"'" for x in files)+"\n")
@@ -385,11 +478,15 @@ def main():
                 f.write(f"{j}\n{srt_time(start)} --> {srt_time(end)}\n{line}\n\n")
         stage="real_stock"
         used,scenes,credits=set(),[],[]
+        stock_bank, reused_source_ids = [], set()
         for i,(wav,seconds) in enumerate(audio):
-            clips=find_stock(i,seconds,used,work,registry=registry,topic=a.topic)
-            credits += [c[2] for c in clips]
+            clips=find_stock(i,seconds,used,work,registry=registry,topic=a.topic,
+                             bank=stock_bank,reused=reused_source_ids)
             stage=f"render_chapter_{i+1}"
             scenes.append(render_scene(i+1,wav,seconds,clips,work))
+            # Store only completed, independently screened, unique originals.
+            stock_bank.extend(c for c in clips if not c[2].get("reused"))
+            credits.extend(c[2] for c in clips)
             print(f"[RENDER] {i+1}/14",flush=True)
             stage="real_stock"
         stage="final_mp4"
@@ -401,6 +498,11 @@ def main():
         save(output/"credits.json",credits)
         report.update(status="ok",mp4="long-video.mp4",duration=duration,
                       clips=len(credits),narration_duration=voice_seconds,
+                      reused_unused_segments=sum(bool(c.get("reused")) for c in credits),
+                      new_unique_sources=len({
+                          (c["source"], str(c["id"])) for c in credits
+                          if not c.get("reused")
+                      }),
                       audio_target_lufs=-17,
                       burnt_in_subtitles=False,
                       subtitle_track="separate_srt_sidecar_only",
