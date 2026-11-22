@@ -67,7 +67,7 @@ class FakeLongGroq:
         if "outline" in kwargs["response_format"].get("json_schema",{}).get("name",""):
             obj=example_outline()
         else:
-            n=115 if self.language=="en" else 145
+            n=115 if self.language=="en" else 112
             phrase=("The sea reveals remarkable life beneath the ocean waves."
                     if self.language=="en" else
                     "Das Meer zeigt erstaunliches Leben unter den Wellen.")
