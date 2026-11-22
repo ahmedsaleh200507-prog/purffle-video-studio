@@ -534,7 +534,12 @@ class StrictVisuals:
                     digest = self.downloader.digest(path)
                     if digest in self.used_hashes:
                         raise ValueError("duplicate content hash")
-                    quality = self.quality.validate(path, need=need + 0.1)
+                    # Source durations are measured by FFprobe. A 10.060s
+                    # genuine clip covers a 10.000s narration scene; the old
+                    # arbitrary +0.100s margin wrongly discarded it.
+                    # Requiring the ACTUAL scene duration still forbids
+                    # looping, frozen tail frames or insufficient footage.
+                    quality = self.quality.validate(path, need=need)
                     # Source HD is not enough: portrait cropping of 1920x1080
                     # leaves only ~608x1080 native pixels for a 720x1280 output.
                     # Reject upscaling rather than reporting false native 720p.
@@ -578,17 +583,13 @@ class StrictVisuals:
                                 "shows scenery rather than the main topic subject")
                         match["subject_screen"] = subject_result
                     if director_contract and isinstance(self.matcher, SceneMatcher):
-                        from visual_director import inspect_action
-                        event_check = inspect_action(
+                        from visual_director import verify_visible_event_or_illustrative_subject
+                        event_check = verify_visible_event_or_illustrative_subject(
                             path, min(float(need), float(quality["duration"])),
                             match.get("crop_focus_x", .5),
-                            director_contract, scorer=self.matcher._similarities,
+                            director_contract, match,
+                            scorer=self.matcher._similarities,
                             opening=(idx == 0))
-                        if not event_check["verified"]:
-                            raise ValueError(
-                                "visual_director_action_not_visible: "
-                                "real 9:16 frames do not demonstrate "
-                                + str(director_contract["family"]))
                         match["director_check"] = event_check
                     item.path = path
                     item.width, item.height = int(quality["width"]), int(quality["height"])

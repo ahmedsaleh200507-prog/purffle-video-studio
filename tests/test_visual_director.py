@@ -188,3 +188,72 @@ def test_production_never_reorders_reviewed_narration_to_win_visual_impact():
     assert "prioritize_opening(topic, items[:1]" in source
     assert "if director_mode" in source
     assert "if director_mode and len(items) != len(options)" in source
+
+
+
+def test_wave_intro_uses_independent_subject_proof_not_unshown_action():
+    """Reported ocean-wave footage passed CLIP but was rejected as 'illustrative_subject'.
+
+    A generic ocean-waves scene makes no claim of an exact breaking event.
+    Source metadata, physical motion, vertical crop, license and local CLIP
+    have ALREADY been checked before this helper. Do not manufacture action.
+    """
+    from visual_director import verify_visible_event_or_illustrative_subject
+    scene=SimpleNamespace(
+        narration="Wind transfers energy across the ocean surface.",
+        object="wave",action="ambient",
+        visual_search_query="ocean waves")
+    contract=build_contract(scene,"Warum entstehen Meereswellen?",1)
+    assert contract["family"]=="illustrative_subject"
+    assert contract["event_required"] is False
+    calls=[]
+    proof=verify_visible_event_or_illustrative_subject(
+        "real-ocean-waves.mp4",10,.5,contract,
+        {"verification":"local_clip_screening","visual_score":.30},
+        event_inspector=lambda *a,**k:calls.append(1))
+    assert proof["verified"]
+    assert not proof["event_required"]
+    assert proof["method"]=="local_clip_subject_match_no_specific_event_claim"
+    assert not calls
+
+
+def test_illustrative_scene_rejects_missing_real_frame_verification():
+    from visual_director import verify_visible_event_or_illustrative_subject
+    scene=SimpleNamespace(
+        narration="Die Wellen entstehen durch Wind.",
+        object="wave",action="ambient",visual_search_query="ocean waves")
+    contract=build_contract(scene,"Warum entstehen Meereswellen?",1)
+    for proof in ({}, {"verification":"metadata_only"},
+                  {"verification":"claimed_clip_proof"}):
+        with pytest.raises(RuntimeError,match="missing_independent_clip_match"):
+            verify_visible_event_or_illustrative_subject(
+                "unverified.mp4",10,.5,contract,proof)
+
+
+def test_true_event_scene_keeps_original_multiframe_action_gate():
+    from visual_director import verify_visible_event_or_illustrative_subject
+    scene=SimpleNamespace(
+        narration="In Küstennähe brechen Wellen gegen das Ufer.",
+        object="wave",action="ambient",
+        visual_search_query="wave breaking waves")
+    contract=build_contract(scene,"Warum entstehen Meereswellen?",2)
+    assert contract["event_required"] is True
+    calls=[]
+    def failed_inspector(*args,**kwargs):
+        calls.append(kwargs.get("opening"))
+        return {"verified":False,"family":"water_motion"}
+    with pytest.raises(ValueError,match="action_not_visible"):
+        verify_visible_event_or_illustrative_subject(
+            "still-sea.mp4",10,.5,contract,
+            {"verification":"local_clip_screening"},
+            event_inspector=failed_inspector,opening=True)
+    assert calls==[True]
+
+
+def test_no_arbitrary_100ms_source_duration_overrequirement():
+    """The verified 10.060s video can cover 10.000s without looping."""
+    src=(Path(__file__).resolve().parents[1] /
+         "scripts" / "studio_runtime.py").read_text()
+    assert "quality = self.quality.validate(path, need=need)" in src
+    assert "quality = self.quality.validate(path, need=need + 0.1)" not in src
+    assert "verify_visible_event_or_illustrative_subject(" in src

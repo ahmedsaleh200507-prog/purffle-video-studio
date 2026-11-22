@@ -304,3 +304,40 @@ def inspect_action(path, duration, crop_focus, contract, *,
         scorer = SceneMatcher()._similarities
     matrix = scorer(frames, [contract["positive"], contract["negative"]])
     return visual_scores(contract, matrix, opening=opening)
+
+
+
+def verify_visible_event_or_illustrative_subject(
+        path, duration, crop_focus, contract, matched_scene, *,
+        scorer=None, opening=False, event_inspector=None):
+    """Independently verified subject footage need not depict a fictional action.
+
+    A context shot of real ocean waves may validly illustrate invisible wind
+    dynamics without proving one precise event. The preceding SceneMatcher
+    must still verify the actual topic subject in real frames, provider
+    metadata, and portrait crop; QualityValidator separately verifies moving
+    video and native HD. Event-required speech keeps every prior strict
+    multi-frame action check, including the first 2 seconds of its hook.
+    """
+    if not isinstance(matched_scene, dict) or (
+            matched_scene.get("verification") != "local_clip_screening"):
+        raise RuntimeError("visual_director_missing_independent_clip_match")
+    if not contract.get("event_required"):
+        return {
+            "verified": True,
+            "event_required": False,
+            "family": contract["family"],
+            "opening_action_visible": None,
+            "method": "local_clip_subject_match_no_specific_event_claim",
+            "limitations": (
+                "Subject-relevant real video, not proof of a narrated "
+                "invisible mechanism or unshown action."),
+        }
+    inspect = event_inspector or inspect_action
+    result = inspect(
+        path, duration, crop_focus, contract, scorer=scorer, opening=opening)
+    if not result.get("verified"):
+        raise ValueError(
+            "visual_director_action_not_visible: real 9:16 frames do not "
+            "demonstrate " + str(contract["family"]))
+    return result
