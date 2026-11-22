@@ -197,7 +197,18 @@ def main():
                 # When the approved source facts fit two short scenes, do
                 # not insist on a third unrelated filler clip. Production
                 # #89 found two genuine HD aurora clips and failed at 2/3.
+                # #91: the five scarce-footage dossiers have complete
+                # concise two-scene factual variants, not a truncated 3-shot
+                # story. Requiring a third stock clip needlessly failed 4/5
+                # of those scenes. Never shorten a topic without an approved
+                # full explanatory script.
+                concise_kinds = {
+                    "mirror_condensation", "iceberg_breakup",
+                    "whale_breaching", "lightning_thunder_delay",
+                    "ocean_glow_bioluminescence",
+                }
                 target_count = (2 if verified_kind == "northern_lights_glow"
+                                else 2 if verified_kind in concise_kinds
                                 else 3 if (verified_kind or
                                            _lightning_repeated_topic(topic))
                                 else None)

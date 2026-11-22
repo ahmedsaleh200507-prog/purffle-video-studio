@@ -722,6 +722,71 @@ def verified_documentary_kind(topic: str) -> str | None:
     return None
 
 
+# Production #91: these approved facts form complete concise two-shot
+# explanations. A shorter narration is permitted only if ALL essential facts
+# remain accurate and pass the same source-dossier integrity checks.
+_TWO_SCENE_SOURCE_REVIEWED = {
+    "mirror_condensation": {
+        "en": (
+            "A bathroom mirror can fog up quickly after a hot shower.",
+            "Warm moist air meets cooler glass. Water vapor condenses into tiny droplets that blur the reflection.",
+        ),
+        "de": (
+            "Ein Badezimmerspiegel kann nach einer heißen Dusche schnell beschlagen.",
+            "Feuchte warme Luft trifft auf kühles Glas. Wasserdampf kondensiert zu winzigen Tropfen.",
+        ),
+    },
+    "iceberg_breakup": {
+        "en": (
+            "Huge icebergs drift through the ocean. Some suddenly split apart.",
+            "Ocean waves, stress and melting can widen cracks in the ice. Eventually, large chunks break away.",
+        ),
+        "de": (
+            "Riesige Eisberge treiben durch das Meer. Manche zerbrechen plötzlich.",
+            "Meereswellen, Spannungen und Schmelzen vergrößern Risse im Eis. Schließlich brechen große Stücke ab.",
+        ),
+    },
+    "whale_breaching": {
+        "en": (
+            "Humpback whales sometimes leap out of the sea and make an enormous splash.",
+            "Scientists do not know every reason why. Communication may be one possible explanation.",
+        ),
+        "de": (
+            "Buckelwale springen manchmal aus dem Meer und verursachen eine riesige Wasserfontäne.",
+            "Forschende kennen nicht alle Gründe. Kommunikation könnte eine mögliche Erklärung sein.",
+        ),
+    },
+    "lightning_thunder_delay": {
+        "en": (
+            "Lightning flashes across the stormy sky before the thunder reaches us.",
+            "Light travels faster than sound. That is why we hear thunder after seeing the flash.",
+        ),
+        "de": (
+            "Wir sehen den Blitz am Gewitterhimmel, bevor wir den Donner hören.",
+            "Licht bewegt sich schneller als Schall. Deshalb kommt der Donner später bei uns an.",
+        ),
+    },
+    "ocean_glow_bioluminescence": {
+        "en": (
+            "Some ocean waves glow blue at night because tiny marine organisms emit light.",
+            "Moving water can trigger flashes in plankton. That light comes from a chemical reaction.",
+        ),
+        "de": (
+            "Manche Meereswellen leuchten nachts blau, weil winzige Meeresorganismen Licht erzeugen.",
+            "Bewegtes Wasser kann Plankton zum Leuchten bringen. Dahinter steckt eine chemische Reaktion.",
+        ),
+    },
+}
+
+_TWO_SCENE_VISUAL_QUERIES = {
+    "mirror_condensation": ("foggy bathroom mirror", "bathroom mirror condensation"),
+    "iceberg_breakup": ("iceberg floating ocean", "iceberg drifting sea"),
+    "whale_breaching": ("humpback whale breaching ocean", "humpback whale swimming ocean"),
+    "lightning_thunder_delay": ("lightning storm sky", "lightning clouds storm"),
+    "ocean_glow_bioluminescence": ("bioluminescent ocean waves", "glowing plankton ocean"),
+}
+
+
 def ground_verified_documentary(data: dict, topic: str, language: str,
                                 scene_count: int | None = None) -> dict:
     """Use source-reviewed narration for the known #71 science topics.
@@ -735,7 +800,9 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
     info = _DOCUMENTARY_FACTS[kind]
     language = "de" if str(language).startswith("de") else "en"
     narration = list(info[language])
-    if scene_count == 2 and kind == "northern_lights_glow":
+    if scene_count == 2 and kind in _TWO_SCENE_SOURCE_REVIEWED:
+        narration = list(_TWO_SCENE_SOURCE_REVIEWED[kind][language])
+    elif scene_count == 2 and kind == "northern_lights_glow":
         # #89 had two independently checked HD aurora clips. Avoid demanding
         # three filler shots when two source-reviewed scenes cover the cause.
         narration = (
@@ -897,6 +964,9 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
                                    "aurora borealis"),
         "emphasis": [], "emoji": "",
     } for sentence in narration]
+    if scene_count == 2 and kind in _TWO_SCENE_VISUAL_QUERIES:
+        for scene, query in zip(scenes, _TWO_SCENE_VISUAL_QUERIES[kind]):
+            scene["visual_search_query"] = query
     return {
         **data,
         "title": info["title"][language],
