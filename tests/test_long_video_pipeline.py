@@ -312,10 +312,13 @@ def test_stock_search_fairly_reaches_broad_query_after_initial_rejections(monkey
 def test_stock_bank_only_uses_newly_reverified_unplayed_spans(monkeypatch, tmp_path):
     """A last-resort repeat must be a DIFFERENT offset, verified as a real clip."""
     import long_video
+    import media_validation
     topic = "Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?"
     class Registry:
         def search(self, provider, query):
             return []
+    monkeypatch.setattr(media_validation.QualityValidator, "validate",
+                        lambda self,path:{"width":1920,"height":1080,"duration":21.0})
     bank=[]
     for i in range(3):
         path = tmp_path/f"original-{i}.mp4"
