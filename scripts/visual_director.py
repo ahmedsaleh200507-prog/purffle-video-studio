@@ -176,7 +176,7 @@ def build_contract(scene, topic, index):
             negative = ("A sunset, unrelated glowing water or artificial "
                         "light without visible aurora curtains.")
             keywords = ("aurora", "borealis", "northern lights",
-                        "polarlicht", "nordlicht", "glow", "glowing")
+                        "polarlicht", "nordlicht")
         elif family == "glowing" and "wave" in subject:
             search = ["bioluminescent ocean waves", "glowing ocean blue night",
                       "glowing plankton sea"]
