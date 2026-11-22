@@ -248,7 +248,7 @@ def test_factual_failure_labels_precede_unrelated_groq_limit_logs():
 # All HTTP results here are mocked; these tests do not claim live MP4 success.
 @pytest.mark.parametrize("topic,language,article", [
     ("Wie wird aus Kuhmist Strom erzeugt?", "de", "Biogas"),
-    ("Warum frieren Autoscheiben über Nacht zu?", "de", "Raureif"),
+    ("Warum frieren Autoscheiben über Nacht zu?", "de", "Reif (Niederschlag)"),
     ("How Do People Survive a Freezing Night in the Wild?", "en", "Hypothermia"),
     ("Why Do Rocket Launches Create Huge Smoke Clouds?", "en", "Rocket engine"),
 ])
