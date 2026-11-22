@@ -32,7 +32,9 @@ GLACIER_FALLBACK_QUERIES = (
 )
 
 
-def long_expected_subject(index, topic):
+def long_expected_subject(index, topic, chapter=None):
+    if isinstance(chapter, dict) and chapter.get("visual_subject"):
+        return str(chapter["visual_subject"]).strip().lower()
     from long_script import is_fire_and_ice
     return ("glacier" if is_fire_and_ice(topic)
             and index % 14 in GLACIER_VISUAL_CHAPTERS else "volcano")
@@ -41,8 +43,12 @@ def long_expected_subject(index, topic):
 
 
 
-def long_visual_queries(index, topic=""):
-    """Priority search for the requested chapter in an original documentary."""
+def long_visual_queries(index, topic="", chapter=None):
+    """Language-neutral English stock keywords for the actual chapter subject."""
+    if isinstance(chapter, dict) and chapter.get("visual_search_query"):
+        requested = str(chapter["visual_search_query"]).strip()
+        subject = str(chapter.get("visual_subject") or "").strip()
+        return list(dict.fromkeys((requested, subject)))
     from long_script import is_fire_and_ice
     if is_fire_and_ice(topic):
         selected = FIRE_AND_ICE_QUERIES[index % len(FIRE_AND_ICE_QUERIES)]
@@ -79,9 +85,15 @@ def words(s):
     return len(re.findall(r"\b[\w'-]+\b",s))
 
 
-def chapters(topic):
+def chapters(topic, language="en"):
     from long_script import build_documentary
-    return build_documentary(topic)
+    # Preserve the proven English volcano workflow. Mixed-language jobs and
+    # other documentary subjects receive genuinely topic-specific outlines.
+    if language == "en" and any(
+            term in topic.casefold() for term in ("volcano", "volcan", "lava")):
+        return build_documentary(topic)
+    from long_generic import build_multilingual_documentary
+    return build_multilingual_documentary(topic, language)
 
 def voice_segments(text):
     """Preserve narration exactly, while keeping 2-6 natural speech segments.
@@ -148,26 +160,40 @@ def real_word_captions(speech, chapter_start):
     return captions
 
 
-def narrate(data,work):
-    from english_reference_policy import enforce_english_reference_only
-    from approved_reference_voice import synthesize
-    enforce_english_reference_only("en")
+def narrate(data,work,language="en"):
+    if language not in ("en","de"):
+        raise RuntimeError("Only English or German long documentaries are supported")
+    if language == "en":
+        from english_reference_policy import enforce_english_reference_only
+        from approved_reference_voice import synthesize as reference_synthesize
+        enforce_english_reference_only("en")
+    else:
+        # Audited free German Thorsten Piper narrator, already used by Shorts.
+        # Never replace a failed German narrator with an English/female one.
+        from local_voice import synthesize as german_synthesize
     audios, lines, offset=[],[],0.0
     for i,c in enumerate(data):
         text=c["narration"]
-        # Real sentence boundaries help the approved TTS worker avoid clipped
-        # speech; the old fixed 25-word slices cut clauses in mid-sentence.
-        segments = voice_segments(text)
-        speech=synthesize(text,work/f"voice-{i+1}",SimpleNamespace(language="en"),
-                          segments=segments, long_form=True)
-        if not Path(speech.audio).is_file() or not speech.words or not 20<=speech.duration<=95:
-            raise RuntimeError(f"Chapter {i+1} approved voice invalid")
+        if language == "en":
+            segments=voice_segments(text)
+            speech=reference_synthesize(
+                text,work/f"voice-{i+1}",SimpleNamespace(language="en"),
+                segments=segments,long_form=True)
+        else:
+            speech=german_synthesize(
+                text,work/f"voice-{i+1}",SimpleNamespace(language="de"))
+        if (not Path(speech.audio).is_file() or not speech.words
+                or not 20<=speech.duration<=110):
+            raise RuntimeError(f"Chapter {i+1} {language} voice invalid")
         audios.append((Path(speech.audio),float(speech.duration)))
-        lines.extend(real_word_captions(speech, offset))
+        lines.extend(real_word_captions(speech,offset))
         offset+=speech.duration
-        print(f"[VOICE] chapter {i+1}/14, seconds={speech.duration:.1f}",flush=True)
+        print(f"[VOICE] language={language} chapter={i+1}/14 "
+              f"seconds={speech.duration:.1f}",flush=True)
     if not 540<=offset<=660:
-        raise RuntimeError(f"Real narration duration={offset:.1f}s outside 9-11 min; no padding")
+        raise RuntimeError(
+            f"Real {language} narration duration={offset:.1f}s "
+            "outside 9-11 min; no silent padding")
     return audios,lines,offset
 
 
@@ -190,7 +216,7 @@ def confirm_long_stock_sources(registry):
 
 
 def long_visual_verifier(path, metadata, need, *, matcher=None,
-                         expected_subject="volcano"):
+                         expected_subject="volcano", visual_query=None):
     """Reject mismatched real frames even when provider keywords say 'volcano'.
 
     This screening is only for 10-minute documentaries. Shorts keep their
@@ -201,7 +227,9 @@ def long_visual_verifier(path, metadata, need, *, matcher=None,
     from media_validation import SceneMatcher, SceneSpec, ValidationError
     matcher = matcher if matcher is not None else SceneMatcher(threshold=.22)
     details = str(metadata or "").casefold()
-    if expected_subject == "glacier":
+    if visual_query:
+        subject, query = expected_subject, str(visual_query)
+    elif expected_subject == "glacier":
         # Only real glacier footage; do not confuse general snow or a mountain
         # roadway with a continental ice sheet.
         subject, query = "glacier", "glacier ice mountain"
@@ -220,7 +248,7 @@ def long_visual_verifier(path, metadata, need, *, matcher=None,
 
 
 def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
-               bank=None, reused=None):
+               bank=None, reused=None, chapter=None):
     """Pick real licensed HD footage: new sources first, verified unused spans last.
 
     A prior 10-minute Fire and Ice run failed at chapter 13 despite 12 fully
@@ -244,8 +272,8 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     val = QualityValidator(min_short_side=720)
     chosen, attempted = [], set()
     attempts, max_attempts, max_per_query = 0, 60, 12
-    expected_subject = long_expected_subject(index, topic)
-    for query in long_visual_queries(index, topic):
+    expected_subject = long_expected_subject(index, topic, chapter)
+    for query in long_visual_queries(index, topic, chapter):
         query_attempts = 0
         for provider in ("pexels", "pixabay"):
             for candidate in reg.search(provider, query)[:40]:
@@ -253,9 +281,13 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                 if key in seen or key in attempted:
                     continue
                 labels = candidate.text.lower()
-                terms = (("glacier", "glacial", "ice sheet")
-                         if expected_subject == "glacier"
-                         else ("volcan", "lava", "magma", "eruption", "crater"))
+                if chapter and chapter.get("visual_subject"):
+                    terms = tuple(x for x in expected_subject.split()
+                                  if len(x) >= 3)
+                else:
+                    terms = (("glacier", "glacial", "ice sheet")
+                             if expected_subject == "glacier"
+                             else ("volcan", "lava", "magma", "eruption", "crater"))
                 if not any(term in labels for term in terms):
                     continue
                 if query_attempts >= max_per_query or attempts >= max_attempts:
@@ -264,7 +296,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                 query_attempts += 1
                 attempts += 1
                 try:
-                    reject_offtopic_science_source("Earth volcano eruption", candidate.text)
+                    reject_offtopic_science_source(topic, candidate.text)
                     path = dl.download(candidate.url)
                     q = val.validate(path)
                     duration = float(q["duration"])
@@ -272,9 +304,15 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                             or duration * 1.5 < chapter_seconds / 4):
                         continue
                     visual_span = min(duration, chapter_seconds / 3)
-                    visual = long_visual_verifier(
-                        path, candidate.text, visual_span,
-                        expected_subject=expected_subject)
+                    if chapter and chapter.get("visual_search_query"):
+                        visual = long_visual_verifier(
+                            path,candidate.text,visual_span,
+                            expected_subject=expected_subject,
+                            visual_query=chapter["visual_search_query"])
+                    else:
+                        visual = long_visual_verifier(
+                            path,candidate.text,visual_span,
+                            expected_subject=expected_subject)
                     lic = candidate.extra["license"]
                     credit = {
                         "source": candidate.source, "id": candidate.id,
@@ -340,9 +378,15 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                     or int(preview_quality["height"]) < 720
                     or float(preview_quality["duration"]) < segment_length - .5):
                 raise RuntimeError("Unused stock portion lacks required HD motion or duration")
-            proof = long_visual_verifier(
-                preview, old_credit["metadata_text"], segment_length,
-                expected_subject=expected_subject)
+            if chapter and chapter.get("visual_search_query"):
+                proof = long_visual_verifier(
+                    preview,old_credit["metadata_text"],segment_length,
+                    expected_subject=expected_subject,
+                    visual_query=chapter["visual_search_query"])
+            else:
+                proof = long_visual_verifier(
+                    preview,old_credit["metadata_text"],segment_length,
+                    expected_subject=expected_subject)
             credit = {
                 **old_credit,
                 "chapter": index+1, "reused": True,
@@ -435,7 +479,7 @@ def finish(scene_paths,subtitles,target,work):
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--topic",default="Why do volcanoes erupt?")
-    p.add_argument("--language",choices=("en",),default="en")
+    p.add_argument("--language",choices=("en","de"),default="en")
     p.add_argument("--self-test",action="store_true")
     a=p.parse_args()
     if a.self_test:
@@ -453,26 +497,27 @@ def main():
         assert sample[0][0] == 4.1 and sample[0][1] == 4.83
         print("Static long-video tests passed")
         return
-    if "volcan" not in a.topic.casefold() and "lava" not in a.topic.casefold():
-        raise RuntimeError("The first long-video pilot supports only volcano/lava subjects")
+    from long_generic import check_long_topic
+    a.topic = check_long_topic(a.topic, a.language)
     output,work=OUT/"result",OUT/"work"
     output.mkdir(parents=True,exist_ok=True)
     work.mkdir(parents=True,exist_ok=True)
     report={"mode":"long_video","status":"failed","mp4":None,"topic":a.topic,
-            "target_duration":600,"resolution":"1920x1080"}
+            "language":a.language,"target_duration":600,"resolution":"1920x1080"}
     stage="preflight"
     try:
         from english_reference_policy import enforce_english_reference_only
-        enforce_english_reference_only("en")
+        if a.language == "en":
+            enforce_english_reference_only("en")
         stage="long_stock_preflight"
         from video_sources import ProviderRegistry
         registry = ProviderRegistry()
         print("[LONG SOURCES READY]", confirm_long_stock_sources(registry), flush=True)
         stage="script"
-        text=chapters(a.topic)
-        save(output/"script.json",{"chapters":text})
-        stage="reference_voice"
-        audio,subs,voice_seconds=narrate(text,work)
+        text=chapters(a.topic,a.language)
+        save(output/"script.json",{"language":a.language,"chapters":text})
+        stage="reference_voice" if a.language == "en" else "german_piper_voice"
+        audio,subs,voice_seconds=narrate(text,work,a.language)
         with (output/"captions.srt").open("w",encoding="utf8") as f:
             for j,(start,end,line) in enumerate(subs,1):
                 f.write(f"{j}\n{srt_time(start)} --> {srt_time(end)}\n{line}\n\n")
@@ -481,7 +526,7 @@ def main():
         stock_bank, reused_source_ids = [], set()
         for i,(wav,seconds) in enumerate(audio):
             clips=find_stock(i,seconds,used,work,registry=registry,topic=a.topic,
-                             bank=stock_bank,reused=reused_source_ids)
+                             bank=stock_bank,reused=reused_source_ids,chapter=text[i])
             stage=f"render_chapter_{i+1}"
             scenes.append(render_scene(i+1,wav,seconds,clips,work))
             # Store only completed, independently screened, unique originals.
