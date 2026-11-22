@@ -95,15 +95,22 @@ def test_english_has_no_generic_voice_models_or_production_fallback():
 
 def test_all_workflows_keep_reference_secret_private():
     root=Path(__file__).resolve().parents[1]/".github"/"workflows"
-    workflows=["videos.yml","daily-life-five-20261118.yml",
-               "one-german-bathroom-mirror-20261118.yml",
-               "one-video-volcanic-island-20261118.yml"]
+    workflows=["videos.yml"]
     for name in workflows:
         content=(root/name).read_text()
         assert "secrets.PURFFLE_REFERENCE_OPUS_B64" in content
         assert "scripts/reference_voice_smoke.py" in content
         assert "PURFFLE_NARRATOR_LOCK: '1'" in content
         assert "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217" in content
+    long_batch=(root/"long-batch.yml").read_text()
+    # The long-form English job also uses only the private approved speaker.
+    # Long German jobs choose their own audited CC0 narrator.
+    assert "secrets.PURFFLE_REFERENCE_OPUS_B64" in long_batch
+    assert "scripts/english_reference_policy.py" in long_batch
+    assert "steps.selected.outputs.language == 'en'" in long_batch
+    assert "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217" in long_batch
+    assert "long_video_output/result/long-video.mp4" in long_batch
+    assert "voice-reference.wav" not in long_batch
     assert not list(root.rglob("*approved-reference*.wav"))
 
 

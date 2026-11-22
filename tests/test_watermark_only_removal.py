@@ -7,12 +7,9 @@ import ast
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOWS = (
-    "videos.yml",
-    "daily-life-five-20261118.yml",
-    "one-german-bathroom-mirror-20261118.yml",
-    "one-video-volcanic-island-20261118.yml",
-)
+# Word-highlight captions belong to Shorts. Long videos intentionally have
+# no embedded or burned-in subtitles and provide SRT as a sidecar instead.
+WORKFLOWS = ("videos.yml",)
 
 
 def test_watermark_and_opening_title_disabled_without_touching_word_captions():

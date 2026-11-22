@@ -72,16 +72,19 @@ def test_render_job_preflights_reference_before_media_and_voice():
     assert source.count("enforce_english_reference_only(") >= 2
 
 
-@pytest.mark.parametrize("workflow", [
-    "videos.yml", "daily-life-five-20261118.yml",
-    "one-video-volcanic-island-20261118.yml",
-])
+@pytest.mark.parametrize("workflow", ["videos.yml", "long-batch.yml"])
 def test_github_workflows_block_wrong_voice_before_downloads(workflow):
     root = Path(__file__).resolve().parents[1]
     yaml = (root / ".github" / "workflows" / workflow).read_text()
     assert "scripts/english_reference_policy.py" in yaml
-    assert yaml.index("scripts/english_reference_policy.py") < yaml.index("Install video tools") if "Install video tools" in yaml else yaml.index("scripts/english_reference_policy.py") < yaml.index("Install production tools")
-    assert "PURFFLE_NARRATOR_LOCK: '1'" in yaml
+    setup = ("Install video tools" if workflow == "videos.yml"
+             else "Install FFmpeg if absent")
+    assert yaml.index("scripts/english_reference_policy.py") < yaml.index(setup)
+    if workflow == "videos.yml":
+        assert "PURFFLE_NARRATOR_LOCK: '1'" in yaml
+    else:
+        assert "steps.selected.outputs.language == 'en'" in yaml
+        assert "secrets.PURFFLE_REFERENCE_OPUS_B64" in yaml
 
 
 def test_reference_audio_never_committed_to_public_repo():

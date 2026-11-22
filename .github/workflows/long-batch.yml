@@ -1,4 +1,4 @@
-name: '04 - Long Documentary Batch (10 videos, EN/DE, 16:9)'
+name: '02 - Long Video Maker (1-10 videos, EN/DE, 16:9)'
 run-name: "Purffle Long Documentaries | Batch #${{ github.run_number }}"
 
 on:
@@ -150,6 +150,7 @@ jobs:
           python -m pip install 'torch==2.6.0+cpu' --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r requirements-dev.txt
           python -m pip install --no-cache-dir 'faster-whisper==1.2.1' 'resemblyzer==0.1.4' 'av==18.1.0'
+          python -c "import av; assert av.__version__ == '18.1.0', 'Incompatible PyAV decoder'; print('[VOICE DEPENDENCY] PyAV 18.1.0 pinned')"
 
       - name: Install English private-reference narrator only when selected
         if: steps.selected.outputs.render == 'true' && steps.selected.outputs.language == 'en'

@@ -1,21 +1,12 @@
-"""Regression: avoid Python 3.12 PyAV 19 metadata_errors incompatibility.
+"""Keep private English voice decoder pinned in both active video makers.
 
-Live voice-only smoke #6 used PyAV 18.1.0 and succeeded;
-English ocean-wave render #1 resolved PyAV 19.0.2 and crashed
-inside faster-whisper's av.open(..., metadata_errors="ignore").
-These assertions ensure every real production entrypoint pins the
-same working decoder, without exposing private voice recordings.
+The old one-off English ocean workflow was archived. These contract tests now
+guard the two actively selectable production workflows, not deleted jobs.
 """
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOWS = (
-    "videos.yml",
-    "daily-life-five-20261118.yml",
-    "one-german-bathroom-mirror-20261118.yml",
-    "one-video-volcanic-island-20261118.yml",
-    "one-english-ocean-waves-20261119.yml",
-)
+WORKFLOWS = ("videos.yml", "long-batch.yml")
 
 
 def test_all_english_production_workflows_pin_compatible_pyav():
@@ -24,15 +15,25 @@ def test_all_english_production_workflows_pin_compatible_pyav():
         assert "'faster-whisper==1.2.1' 'resemblyzer==0.1.4' 'av==18.1.0'" in body, filename
         assert "assert av.__version__ == '18.1.0'" in body, filename
         assert "secrets.PURFFLE_REFERENCE_OPUS_B64" in body, filename
-        assert "WATERMARK: none" in body, filename
+        assert "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217" in body, filename
 
 
-def test_single_english_ocean_video_must_be_real_and_failed_runs_fail():
-    body=(ROOT / ".github" / "workflows" / "one-english-ocean-waves-20261119.yml").read_text()
-    assert "INPUT_1: 'en|Why Do Ocean Waves Form?'" in body
-    assert "name: create-videos | One English ocean waves video" in body
-    assert "python scripts/reference_voice_smoke.py" in body
+def test_active_shorts_workflow_keeps_real_success_checks():
+    body = (ROOT / ".github" / "workflows" / "videos.yml").read_text()
     assert "python scripts/batch.py" in body
-    assert "if row.get('status') != 'ok':" in body
     assert "WATERMARK: none" in body
     assert "RESOLUTION: 720x1280" in body
+    assert "max-parallel: 1" in body
+    assert "fail-fast: false" in body
+
+
+def test_active_long_documentaries_are_verified_and_not_automatically_published():
+    body = (ROOT / ".github" / "workflows" / "long-batch.yml").read_text()
+    assert "python scripts/long_video.py" in body
+    assert "Verify real 9" in body
+    assert "'codec_name']=='h264'" in body
+    assert "'codec_name']=='aac'" in body
+    assert "long_video_output/result/long-video.mp4" in body
+    assert "fail-fast: false" in body
+    assert "max-parallel: 1" in body
+    assert "youtube-upload" not in body.lower()
