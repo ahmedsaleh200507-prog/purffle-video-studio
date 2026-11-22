@@ -210,13 +210,26 @@ def srt_time(t):
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+# Only pre-existing, permission-screened real MP4 sources. No scraping,
+# premium/synthetic material, bypassing missing Pexels credentials, or fake
+# stock. Try Pixabay first; Wikimedia and NASA require no API keys.
+LONG_STOCK_PROVIDERS = (
+    "pixabay", "pexels", "wikimedia-video", "nasa-video",
+    "coverr-video", "archive-video",
+)
+
+
 def confirm_long_stock_sources(registry):
-    """Detect missing stock credentials BEFORE expensive long narration work."""
-    ready = set(getattr(registry, "enabled", [])) & {"pexels", "pixabay"}
+    """Fail before narration if no known real-video provider is enabled.
+
+    Pexels paused issuing new API keys in November 2026. A working Pixabay
+    credential or an existing open public video catalog is sufficient.
+    """
+    ready = set(getattr(registry, "enabled", [])) & set(LONG_STOCK_PROVIDERS)
     if not ready:
         raise RuntimeError(
-            "long_stock_preflight: neither Pixabay nor Pexels is configured; "
-            "video would have no genuine footage, so voice generation was skipped")
+            "long_stock_preflight: no licensed real-video source available; "
+            "enable Pixabay or public Wikimedia/NASA video catalogs")
     return sorted(ready)
 
 
@@ -296,7 +309,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     expected_subject = long_expected_subject(index, topic, chapter)
     for query in long_visual_queries(index, topic, chapter):
         query_attempts = 0
-        for provider in ("pexels", "pixabay"):
+        for provider in LONG_STOCK_PROVIDERS:
             for candidate in reg.search(provider, query)[:40]:
                 key = (candidate.source, str(candidate.id))
                 if key in seen or key in attempted:
