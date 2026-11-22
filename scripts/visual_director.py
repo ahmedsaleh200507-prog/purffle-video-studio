@@ -162,6 +162,21 @@ def build_contract(scene, topic, index):
         elif family == "lightning":
             search = ["lightning bolt storm sky", "lightning striking clouds",
                       "thunderstorm lightning"]
+        elif family == "glowing" and subject.casefold() in (
+                "aurora", "northern lights", "polarlicht", "polarlichter",
+                "nordlicht", "nordlichter"):
+            # Production #89: the generic glowing family searched "aurora
+            # bioluminescent ocean", exhausted the shot budget and missed
+            # already available aurora footage. Keep EVERY query anchored to
+            # the actual visible aurora rather than some other glowing object.
+            search = ["aurora borealis", "northern lights timelapse",
+                      "aurora night sky", "green northern lights"]
+            positive = ("Real moving footage of luminous aurora borealis "
+                        "curtains and bands glowing in the night sky.")
+            negative = ("A sunset, unrelated glowing water or artificial "
+                        "light without visible aurora curtains.")
+            keywords = ("aurora", "borealis", "northern lights",
+                        "polarlicht", "nordlicht", "glow", "glowing")
         elif family == "glowing" and "wave" in subject:
             search = ["bioluminescent ocean waves", "glowing ocean blue night",
                       "glowing plankton sea"]
