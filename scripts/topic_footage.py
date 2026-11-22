@@ -258,6 +258,21 @@ def opening_subject_prompts(topic: str):
     The caller must check the actually rendered 9:16 crop, not full landscape.
     """
     t = words(topic)
+    # Production #92: the middle mirror scene passed because the original
+    # topic-level subject classifier had no bathroom/mirror rule. A palm tree
+    # is NOT a fogged mirror; compare real portrait frames for every scene.
+    if t & {"mirror", "mirrors", "spiegel", "badezimmerspiegel"}:
+        return {
+            "subject": "bathroom_mirror",
+            "positive": (
+                "A real bathroom mirror made of reflective glass, fogged "
+                "with water droplets or condensation, visibly filling the frame."),
+            "negatives": (
+                "Palm trees and a sunny tropical beach outdoors.",
+                "A forest with green plants and a sunny landscape.",
+                "An empty bathroom with a shower but no visible mirror.",
+            ),
+        }
     if t & {"ocean", "sea"} and t & {"glow", "glowing", "blue", "bioluminescence"} and t & {"glow", "glowing", "bioluminescence"}:
         return {
             "subject": "blue_bioluminescent_water",
@@ -294,7 +309,7 @@ def opening_subject_prompts(topic: str):
          "An ordinary rocky mountain landscape with blue sky."),
         ({"iceberg"}, "iceberg",
          "An enormous white iceberg floating clearly visible in dark blue seawater.",
-         "A wide seascape with distant mountains and open water."),
+         "A ship or boat in the foreground with water but no clearly visible iceberg."),
         ({"meteor", "meteorite"}, "meteor",
          "A bright meteor fireball with a glowing trail in the night sky.",
          "A dark starry sky with no visible moving fireball."),
