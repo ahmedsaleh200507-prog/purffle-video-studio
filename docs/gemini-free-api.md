@@ -15,7 +15,7 @@ both user-facing Actions workflows:
    secret **Value**, then save it. **Do not paste the key into chat, workflow
    inputs, files, logs, or a Git commit.**
 4. Use existing **01** or **02** from the Actions tab; no separate workflow
-   button is needed. Keep `GROQ_API_KEY` if you want it as the first model.
+   button is needed. Keep `GROQ_API_KEY` as an automatic backup.
 
 ## Routing behavior
 
@@ -25,14 +25,17 @@ provider if both keys exist. If only Groq has a key, it is used directly. The En
 Thorsten voices are still mandatory; video source, science and CLIP guards
 are unchanged.
 
-**Long video:** Groq writes the 14-section JSON script as usual. On Groq
-429 or the specific generated-invalid-JSON error, Gemini receives the
-SAME JSON requirements and the accepted response still passes the original
-local length and chapter validators. If Groq is unavailable/missing,
-Gemini is used directly. To prioritize Gemini when both secrets are present,
-open GitHub **Settings → Secrets and variables → Actions → Variables** and
-create a repository variable named `PURFFLE_LONG_LLM_PRIMARY` with value
-`gemini`. The long-batch workflow reads this variable. This setting is optional.
+**Long video:** Gemini is the primary by default when its API key is
+configured. If Gemini reaches its per-minute/day quota (HTTP 429), the
+system automatically uses the existing Groq GPT-OSS model for the SAME
+request and does not keep hammering an exhausted provider during that
+job. A generated-JSON 400, transient server 502/503/504, or Groq JSON
+failure can also trigger the other provider. 401/403 invalid credentials
+fail clearly; neither provider can bypass strict local chapter-count,
+word-length, factual caution and visual verification.
+
+To opt back into Groq first, set the optional GitHub repository
+variable `PURFFLE_LONG_LLM_PRIMARY=groq`. Without it, Gemini is first.
 
 This is a **script/outline API**, NOT stock footage, text-to-speech, or
 unlimited video generation. Existing licensed footage availability may
@@ -51,8 +54,25 @@ Google discloses that Free-tier content may be used to improve its products.
 Before starting ten videos, keep the project on the **Free** tier without
 linked billing if you want to prevent paid usage.
 
-**Testing status:** Automated regression tests check that the key is never
-written to reports or artifacts and that API failover does not bypass any
-local validators. An actual Gemini inference run is only possible once the
-repository's own `GEMINI_API_KEY` is present. Do not claim production
-success before a real MP4 is rendered and inspected.
+**Testing status:** The GitHub real API test #45040106903 confirmed the
+user's `GEMINI_API_KEY` works, and the Gemini-only real Short #45040220668
+reached media verification but did not complete its MP4 (2/3 required
+clips). Do not claim a fully verified Gemini video until its MP4 passes
+the exact existing checks. Never expose the key or any source secret.
+
+## Real footage is the remaining bottleneck
+
+The last Gemini-only Short selected two of three strict 720p real-motion shots.
+Pexels API was **not configured on that run**, so most candidates came from
+Pixabay plus unrelated open catalogs. Pexels officially offers a free video
+search API (default **200 requests/hour, 20,000/month**) which is recommended
+alongside Pixabay. The Pexels key belongs in GitHub Secrets as
+`PEXELS_API_KEY` (never paste it into chat); the workflows already support
+it. Source: https://www.pexels.com/api/ and https://help.pexels.com/hc/en-us/articles/47677890260761-Is-the-Pexels-API-free-to-use
+
+Long-film stock selection now prefers verified native 1080p media versions
+rather than oversized 4K downloads when both are offered. It may accept
+**illustrative_subject_only** clips if their actual filmed subject is verified
+in **both** provider metadata and the original independent CLIP frame check;
+those are labeled honestly in credits as *context*, not literal footage of an
+event or invisible scientific mechanism. No synthetic or static filler is used.
