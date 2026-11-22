@@ -191,11 +191,9 @@ def _validate_group(data, names, language):
 def build_multilingual_documentary(topic: str, language: str, client=None,
                                    *, sleep=time.sleep):
     topic = check_long_topic(topic, language)
-    if not os.environ.get("GROQ_API_KEY") and client is None:
-        raise RuntimeError("GROQ_API_KEY missing")
     if client is None:
-        from groq import Groq
-        client = Groq(api_key=os.environ["GROQ_API_KEY"], timeout=120)
+        from long_llm import get_long_client
+        client = get_long_client()
 
     outline = generate_outline(topic, language, client, sleep=sleep)
     low, high = SPOKEN_TARGET[language]
