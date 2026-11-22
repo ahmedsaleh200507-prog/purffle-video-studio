@@ -266,7 +266,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     from video_sources import ProviderRegistry
     reg = registry if registry is not None else ProviderRegistry()
     dl = VideoDownloader(
-        cache_dir=work/"downloads", max_bytes=110*1024*1024,
+        cache_dir=work/"downloads", max_bytes=175*1024*1024,
         max_cache_bytes=5*1024**3, min_free_bytes=2*1024**3,
     )
     val = QualityValidator(min_short_side=720)
