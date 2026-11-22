@@ -137,18 +137,58 @@ def validate_batch(data, requested_titles):
     return clean
 
 
+def is_groq_json_validation_error(exc: Exception) -> bool:
+    """Recognize exactly the invalid generated-JSON error returned by Groq.
+
+    This 400 is a model-output generation failure, not a request/schema bug.
+    Do NOT retry authentication errors, rate limits, unavailable models, or
+    network problems under the same broad handler.
+    """
+    body = getattr(exc, "body", None)
+    code = getattr(exc, "code", None)
+    if isinstance(body, dict):
+        details = body.get("error", body)
+        if isinstance(details, dict):
+            code = code or details.get("code")
+    return (code == "json_validate_failed" or
+            ("json_validate_failed" in str(exc) and
+             "Failed to validate JSON" in str(exc)))
+
+
+def _validate_spoken_batch(batch, topic: str):
+    if not is_fire_and_ice(topic):
+        return batch
+    result = [
+        {**chapter, "narration": accessible_science_narration(
+            chapter["narration"])}
+        for chapter in batch
+    ]
+    # Saved script, real audio and word-aligned SRT must all use the same text.
+    if any(not 90 <= count_words(item["narration"]) <= 135
+           for item in result):
+        raise ValueError("spoken_language_simplification_bad_length")
+    return result
+
+
 def build_documentary(topic: str, client=None, *, sleep=time.sleep):
     if not os.environ.get("GROQ_API_KEY") and client is None:
         raise RuntimeError("GROQ_API_KEY missing")
     if client is None:
         from groq import Groq
         client = Groq(api_key=os.environ["GROQ_API_KEY"], timeout=120)
+
     subjects = FIRE_AND_ICE_TOPICS if is_fire_and_ice(topic) else TOPICS
-    finished = []
-    at = 0
-    for batch_number, size in enumerate(BATCH_SIZES, 1):
-        requested = subjects[at:at+size]
-        start = at + 1
+
+    def request_verified_group(requested, start, batch_number, depth=0):
+        """Validate actual model output, then adaptively split only on failure.
+
+        Four 100+ word sections can intermittently trigger Groq's
+        json_validate_failed 400 with an empty failed_generation. Splitting
+        the same sequence into 2+2 or single-chapter requests uses fewer
+        output tokens, preserving every heading and the full 14 chapters.
+        No fabricated text or unverified partial script is ever returned.
+        """
+        size = len(requested)
         instruction = (
             ("Use accessible spoken English and short, natural clauses. "
              "AVOID obscure specialist terms, accented spellings, em dashes, "
@@ -163,74 +203,100 @@ def build_documentary(topic: str, client=None, *, sleep=time.sleep):
              "of video footage. Do not claim a global ice age can happen overnight. "
              "Modern glacier stock cannot depict actual prehistoric history. "
              if is_fire_and_ice(topic) else "") + (
-            f"Write section {start} through {at + size} of a coherent English "
+            f"Write section {start} through {start+size-1} of a coherent English "
             f"10-minute educational documentary called {topic!r}. "
             f"Return a JSON object with exactly {size} chapters in the order of "
             f"these numbered subject headings: "
-            + "; ".join(f"{start + j}. {name}" for j, name in enumerate(requested))
+            + "; ".join(f"{start+j}. {name}" for j, name in enumerate(requested))
             + ". Each chapter MUST contain 105-120 NEW spoken English words in "
               "the narration field. Do not abbreviate. Use clear verified general "
               "scientific explanations. No fabricated quotes, sources, numerical "
               "statistics, stage directions or requests to subscribe. "
               "Chapters should explain causal mechanisms and transition naturally. "
-              "The FIRST chapter must start with an immediate intriguing hook. "
-              "Last chapter concludes the film. Output JSON only."
+              "The FIRST chapter must start with an immediate intriguing hook "
+              "only if this is section 1 of the whole film. "
+              "The last chapter must conclude the film only if this is section 14. "
+              "Output JSON only."
         ))
         failure_reason = "no_valid_response"
-        for attempt in range(3):
+        for attempt in range(1, 4):
+            # For a very small group, if strict JSON Schema is repeatedly
+            # rejected, use the provider's JSON object mode. Local validation
+            # still enforces the exact same schema, chapter count and length.
+            response_format = (
+                {"type": "json_object"}
+                if size <= 2 and attempt == 3
+                else {"type": "json_schema", "json_schema": {
+                    "name": "documentary_chapters", "strict": True,
+                    "schema": CHAPTER_SCHEMA,
+                }}
+            )
             try:
                 result = client.chat.completions.create(
                     model="openai/gpt-oss-20b",
                     messages=[
                         {"role": "system", "content": (
                             "You are a careful science documentary writer. "
-                            "Output JSON strictly conforming to the schema; do not shorten chapters."
+                            "Return ONLY one JSON object with a chapters array. "
+                            "Every array element must contain only title and narration. "
+                            "Keep the required number of sections and spoken word count."
                         )},
                         {"role": "user", "content": instruction},
                     ],
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "documentary_chapters",
-                            "strict": True,
-                            "schema": CHAPTER_SCHEMA,
-                        },
-                    },
-                    max_tokens=4500,
-                    temperature=0.3,
+                    response_format=response_format,
+                    max_tokens=4500 if size >= 3 else 2300,
+                    temperature=0.2 if attempt > 1 else 0.3,
                 )
                 choice = result.choices[0]
                 if choice.finish_reason != "stop":
                     raise ValueError("script_response_truncated")
-                raw = choice.message.content or ""
-                parsed = json.loads(raw)
-                batch = validate_batch(parsed, requested)
-                if is_fire_and_ice(topic):
-                    batch = [
-                        {**chapter, "narration": accessible_science_narration(
-                            chapter["narration"])}
-                        for chapter in batch
-                    ]
-                    # Final saved narration is what both the private voice
-                    # and actual word-aligned subtitles will speak.
-                    if any(not 90 <= count_words(item["narration"]) <= 135
-                           for item in batch):
-                        raise ValueError("spoken_language_simplification_bad_length")
-                finished.extend(batch)
-                failure_reason = ""
-                print(f"[SCRIPT] verified batch={batch_number}/4 chapters={len(batch)}", flush=True)
-                break
+                parsed = json.loads(choice.message.content or "")
+                verified = _validate_spoken_batch(
+                    validate_batch(parsed, requested), topic)
+                print(f"[SCRIPT] verified group={start}-{start+size-1} "
+                      f"batch={batch_number}/4 depth={depth} "
+                      f"chapters={len(verified)}", flush=True)
+                return verified
             except (ValueError, IndexError, KeyError, TypeError) as exc:
                 failure_reason = str(exc)[:100] or type(exc).__name__
-                print(f"[SCRIPT] batch={batch_number}/4 validation retry={attempt+1}/3 "
-                      f"reason={failure_reason}", flush=True)
-            if attempt < 2:
+            except Exception as exc:
+                if not is_groq_json_validation_error(exc):
+                    # A 400 invalid model JSON is recoverable. All other API
+                    # exceptions must retain their own error semantics.
+                    raise
+                failure_reason = "groq_json_validate_failed"
+            print(f"[SCRIPT RETRY] batch={batch_number}/4 "
+                  f"group={start}-{start+size-1} attempt={attempt}/3 "
+                  f"reason={failure_reason}", flush=True)
+            if attempt < 3:
                 sleep(5)
-        if failure_reason:
-            raise RuntimeError(f"script_batch_{batch_number}_invalid_after_3_attempts: {failure_reason}")
+        if size > 1:
+            cut = size // 2
+            print(f"[SCRIPT SPLIT] batch={batch_number}/4 "
+                  f"range={start}-{start+size-1} "
+                  f"into={len(requested[:cut])}+{len(requested[cut:])} "
+                  f"last_error={failure_reason}", flush=True)
+            left = request_verified_group(
+                requested[:cut], start, batch_number, depth+1)
+            sleep(5)
+            right = request_verified_group(
+                requested[cut:], start+cut, batch_number, depth+1)
+            return left + right
+        raise RuntimeError(
+            f"script_batch_{batch_number}_invalid_after_3_attempts: "
+            f"section={start} reason={failure_reason}")
+
+    finished = []
+    at = 0
+    for batch_number, size in enumerate(BATCH_SIZES, 1):
+        requested = subjects[at:at+size]
+        group = request_verified_group(requested, at+1, batch_number)
+        if len(group) != size:
+            raise RuntimeError(f"script_batch_{batch_number}_incomplete")
+        finished.extend(group)
         at += size
         if batch_number < len(BATCH_SIZES):
-            sleep(5)  # Keep free-tier requests spaced; no parallel API flood.
+            sleep(5)  # Avoid parallel/free-tier API flooding.
     if len(finished) != 14:
         raise RuntimeError("Expected 14 verified chapters, never claim a complete script")
     total = sum(count_words(c["narration"]) for c in finished)
