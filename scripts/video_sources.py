@@ -498,12 +498,12 @@ class ProviderRegistry:
         """
         text = clean(credit).strip()
         if not text or re.search(
-                r"©|\\u00a9|\\(c\\)|copyright|courtesy|permission|"
+                r"©|\u00a9|\(c\)|copyright|courtesy|permission|"
                 r"licensed|third.party|contractor|partner|Getty|Shutterstock",
                 text, re.I):
             return False
         if not (re.fullmatch(r"NPS(?: Video)?|National Park Service", text, re.I)
-                or re.fullmatch(r"NPS\\s*/\\s*[A-Za-z][A-Za-z .'-]{1,80}", text)):
+                or re.fullmatch(r"NPS\s*/\s*[A-Za-z][A-Za-z .'-]{1,80}", text)):
             return False
         rights = clean([record.get("copyright"), record.get("rights"),
                         record.get("license"), record.get("usage")])
@@ -584,12 +584,16 @@ class ProviderRegistry:
                 row.get("credit"), page)
             lic["rights_basis"] = "NPS-only credit, no copyright mark"
             lic["attribution_required"] = False
+            try:
+                duration = max(0.0, float(row.get("durationMs") or 0) / 1000)
+            except (TypeError, ValueError):
+                continue
             item = self._item("nps-video", identity, url, query, rank,
                               clean([row.get("title"), row.get("description"),
                                      row.get("descriptiveTranscript"),
                                      row.get("tags")])[:3500],
                               lic, width, height,
-                              float(row.get("durationMs") or 0) / 1000)
+                              duration)
             if item:
                 result.append(item)
         return result
