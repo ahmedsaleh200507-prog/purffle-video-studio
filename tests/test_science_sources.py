@@ -171,3 +171,62 @@ def test_batch_reports_science_root_causes_not_false_provider_errors():
     assert classify_failure(
         "science_claim_unverified: unsupported narration scene",
         "other source said invalid video") == "science_claim_unsupported"
+
+
+
+def test_octopus_plural_alias_finds_real_singular_encyclopedia_article():
+    """The trending octopuses topic previously returned zero source extracts."""
+    client = Mock()
+    client.get.side_effect = [
+        FakeResponse({"query":{"pages":[]}}),
+        FakeResponse({"query":{"pages":[{
+            "title":"Octopus", "pageid":11,
+            "extract":("An octopus is an eight-armed marine mollusc in the "
+                       "cephalopod class. It has three hearts and uses gills. " * 6)
+        }]}}),
+    ]
+    bundle = discover_evidence("Why Do Octopuses Have Three Hearts?",
+                               "en",session=client)
+    assert bundle.method == "model_screened_reference"
+    assert bundle.sources[0]["title"] == "Octopus"
+    assert bundle.sources[0]["url"] == "https://en.wikipedia.org/wiki/Octopus"
+    assert "three hearts" in bundle.sources[0]["excerpt"]
+    assert client.get.call_count == 2
+    assert client.get.call_args.kwargs["params"]["gsrsearch"] == "octopus"
+
+
+def test_german_crocodile_compound_alias_is_source_verified_not_invented():
+    client = Mock()
+    client.get.side_effect = [
+        FakeResponse({"query":{"pages":[{"title":"Unrelated bridge",
+            "extract":"A bridge can carry traffic over a river. " * 15}]}}),
+        FakeResponse({"query":{"pages":[{"title":"Nilkrokodil",
+            "extract":"Das Nilkrokodil gehört zur Familie der Krokodile. " * 11}]}}),
+    ]
+    bundle = discover_evidence(
+        "Was unterscheidet Nilkrokodile von Salzwasserkrokodilen?",
+        "de",session=client)
+    assert bundle.sources[0]["title"] == "Nilkrokodil"
+    assert all(s["tier"] == "community_edited_reference" for s in bundle.sources)
+    assert client.get.call_count == 2
+
+
+def test_winter_animal_reference_fallback_does_not_create_fake_sources():
+    client = Mock()
+    client.get.return_value = FakeResponse({"query":{"pages":[]}})
+    with pytest.raises(RuntimeError,match="science_sources_unavailable"):
+        discover_evidence("Wie überleben Tiere im Winterwald?",
+                          "de",session=client)
+    assert client.get.call_count >= 2
+
+
+def test_structure_failures_redraft_before_voice_but_do_not_fill_missing_action():
+    from pathlib import Path
+    repo = Path(__file__).resolve().parents[1]
+    render=(repo/"scripts"/"render_job.py").read_text()
+    runtime=(repo/"scripts"/"studio_runtime.py").read_text()
+    assert "except (ValueError, TypeError) as draft_error:" in render
+    assert "continue" in render[render.index("except (ValueError, TypeError) as draft_error:"):
+                                render.index("from science_fact_guard import validate_unsourced_quantities")]
+    assert 'raise ValueError("Missing structured scene fields: "' in runtime
+    assert 'if not data["visual_search_query"] or not data["action"]' in runtime
