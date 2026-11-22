@@ -1084,7 +1084,16 @@ def install():
         system, user = original_prompt(*args, **kwargs)
         user += """\n\nSTRICT REAL-FOOTAGE PLAN (these rules replace earlier visual-query/image instructions):
 Every scene MUST additionally contain strings main_character, object, action, location,
-time, visual_search_query. These values are ALWAYS English. Use empty main_character if
+time, visual_search_query. These values are ALWAYS English.
+CRITICAL OUTPUT SCHEMA: Do NOT omit 'action' or any of these six fields.
+For a filmed subject that has no specific activity, use action='ambient'
+as a STRING, rather than omitting the field; object and English
+visual_search_query MUST remain concrete and searchable. Every narration
+line must have a complete associated plan, and any missing key will be
+rejected and cause a full redraft. Do not invent a visible event to fill a key.
+When sources are encyclopedia excerpts, avoid unsourced percentages,
+numbers, dates and exact measurements. Only state claims supported by the
+independent extracts, without adding unsupported detail. Use empty main_character if
 there is no human/animal character; use empty time when irrelevant. A visible subject
 in object (including a natural subject such as ocean), and a concrete action are required. search_query MUST equal visual_search_query. Set
 image_prompt to an empty string: images and synthetic imagery are not permitted.

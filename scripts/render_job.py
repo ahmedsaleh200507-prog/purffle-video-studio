@@ -180,9 +180,22 @@ def main():
                 target_count = (3 if (
                     verified_documentary_kind(topic) or
                     _lightning_repeated_topic(topic)) else None)
-                with use_story_scene_target(target_count), use_evidence(evidence):
-                    screenplay, pick, writer = studio.draft(
-                        topic, style='facts')
+                try:
+                    with use_story_scene_target(target_count), use_evidence(evidence):
+                        screenplay, pick, writer = studio.draft(
+                            topic, style='facts')
+                except (ValueError, TypeError) as draft_error:
+                    # The Groq JSON generator sometimes omits a mandatory
+                    # scene action/key. Never fabricate one or waive the
+                    # six-field visual schema; redraft inside the same
+                    # bounded three-attempt factual/storyboard loop.
+                    if attempt >= 2:
+                        raise
+                    logging.warning(
+                        'Structured script rejected; requesting complete '
+                        'scene fields (%s)', str(draft_error)[:180])
+                    stage = 'grounded_script'
+                    continue
                 try:
                     from science_fact_guard import validate_unsourced_quantities
                     validate_unsourced_quantities(

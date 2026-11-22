@@ -136,6 +136,34 @@ def _search_text(topic: str) -> str:
     return " ".join(terms[:7])[:130]
 
 
+def _fallback_search_queries(topic: str, language: str) -> tuple[str, ...]:
+    """Bounded real-source lookups for inflected educational subjects.
+
+    These are only SEARCH WORDS, never citations or made-up scientific facts.
+    Every result must still return a real Wikipedia excerpt and pass the
+    original independent paragraph-level scientific review.
+    """
+    text = str(topic).casefold()
+    queries = []
+    if language == "en":
+        if "octopus" in text or "octopuses" in text:
+            queries += ["octopus", "octopus anatomy"]
+        if "humpback" in text or "whale" in text:
+            queries += ["humpback whale"]
+    else:
+        if "nilkrokodil" in text or "salzwasserkrokodil" in text:
+            queries += ["Nilkrokodil", "Leistenkrokodil", "Krokodile"]
+        if "bergzieg" in text:
+            queries += ["Schneeziege", "Alpensteinbock"]
+        if "winterwald" in text or "wintertiere" in text:
+            queries += ["Winterschlaf", "Winterruhe"]
+        if "pinguin" in text:
+            queries += ["Pinguine"]
+        if "robben" in text or "robbe" in text:
+            queries += ["Robben"]
+    return tuple(dict.fromkeys(queries))[:4]
+
+
 def _official_kind(topic):
     from fact_checked_topics import _lightning_repeated_topic, verified_documentary_kind
     if _lightning_repeated_topic(topic):
@@ -163,55 +191,77 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
     lang = "de" if str(language).lower().startswith("de") else "en"
     endpoint = f"https://{lang}.wikipedia.org/w/api.php"
     client = session or requests.Session()
-    try:
-        response = client.get(
-            endpoint,
-            params={"action": "query", "generator": "search",
-                    "gsrsearch": search, "gsrnamespace": 0, "gsrlimit": 5,
-                    "prop": "extracts", "exintro": 1, "explaintext": 1,
-                    "exchars": 3200, "format": "json", "formatversion": 2},
-            headers={"User-Agent": "PurffleVideoStudio/3.0 (+https://github.com/ahmedsaleh200507-prog/purffle-video-studio)",
-                     "Accept": "application/json"},
-            timeout=(6, 14), allow_redirects=False, stream=True)
-        with response:
-            if response.status_code != 200:
-                raise RuntimeError(f"science_source_http_{response.status_code}")
-            if int(response.headers.get("Content-Length", "0")) > 180000:
-                raise RuntimeError("science_source_oversized")
-            chunks, count = [], 0
-            for chunk in response.iter_content(16384):
-                count += len(chunk)
-                if count > 180000:
+    queries = tuple(dict.fromkeys((
+        search, *_fallback_search_queries(topic, lang)
+    )))
+    # Exact lexical overlap with the actual query prevents collecting a
+    # loosely related encyclopedia article and pretending it proves the user
+    # question. A plural/compound synonym can now reach the real article.
+    collected = []
+    saw_responsive_page = False
+    for search_query in queries:
+        try:
+            response = client.get(
+                endpoint,
+                params={"action": "query", "generator": "search",
+                        "gsrsearch": search_query, "gsrnamespace": 0, "gsrlimit": 5,
+                        "prop": "extracts", "exintro": 1, "explaintext": 1,
+                        "exchars": 3200, "format": "json", "formatversion": 2},
+                headers={"User-Agent": "PurffleVideoStudio/3.0 (+https://github.com/ahmedsaleh200507-prog/purffle-video-studio)",
+                         "Accept": "application/json"},
+                timeout=(6, 14), allow_redirects=False, stream=True)
+            with response:
+                if response.status_code != 200:
+                    raise RuntimeError(f"science_source_http_{response.status_code}")
+                if int(response.headers.get("Content-Length", "0")) > 180000:
                     raise RuntimeError("science_source_oversized")
-                chunks.append(chunk)
-        document = json.loads(b"".join(chunks))
-    except (requests.RequestException, OSError, ValueError) as exc:
-        raise RuntimeError(f"science_sources_unavailable: {type(exc).__name__}") from None
-    if not isinstance(document, dict):
-        raise RuntimeError("science_sources_unavailable: invalid response")
-    pages = (document.get("query") or {}).get("pages") or []
-    if not isinstance(pages, list):
-        pages = []
-    topic_terms = words(search) - _STOP
+                chunks, count = [], 0
+                for chunk in response.iter_content(16384):
+                    count += len(chunk)
+                    if count > 180000:
+                        raise RuntimeError("science_source_oversized")
+                    chunks.append(chunk)
+            document = json.loads(b"".join(chunks))
+        except (requests.RequestException, OSError, ValueError) as exc:
+            raise RuntimeError(
+                f"science_sources_unavailable: {type(exc).__name__}") from None
+        if not isinstance(document, dict):
+            raise RuntimeError("science_sources_unavailable: invalid response")
+        pages = (document.get("query") or {}).get("pages") or []
+        if not isinstance(pages, list):
+            pages = []
+        search_terms = words(search_query) - _STOP
+        for page in pages:
+            title = str(page.get("title") or "").strip()
+            extract = re.sub(r"\s+", " ", str(page.get("extract") or "")).strip()
+            if (not title or page.get("missing") or len(extract) < 180
+                    or "may refer to:" in extract[:150].casefold()):
+                continue
+            title_terms = words(title)
+            overlap = title_terms & search_terms
+            if lang == "de" and not overlap:
+                overlap = {t for t in title_terms for q in search_terms
+                           if len(t) >= 4 and (q.startswith(t) or t.startswith(q))
+                           and abs(len(t) - len(q)) <= 3}
+            if lang == "en" and not overlap:
+                overlap = {t for t in title_terms for q in search_terms
+                           if len(t) >= 5 and (q.startswith(t) or t.startswith(q))
+                           and abs(len(t) - len(q)) <= 3}
+            if not overlap:
+                continue
+            saw_responsive_page = True
+            collected.append((len(overlap), title, extract[:3100]))
+        # One directly relevant source is enough to get a screenable draft.
+        # No broad search fan-out once a real independent reference is present.
+        if collected:
+            break
+    collected.sort(key=lambda p: (-p[0], p[1]))
+    seen_titles = set()
     ranked = []
-    for page in pages:
-        title = str(page.get("title") or "").strip()
-        extract = re.sub(r"\s+", " ", str(page.get("extract") or "")).strip()
-        if (not title or page.get("missing") or len(extract) < 180
-                or "may refer to:" in extract[:150].casefold()):
-            continue
-        title_terms = words(title)
-        overlap = title_terms & topic_terms
-        if lang == "de" and not overlap:
-            # German plural/case inflections: Insel / Inseln, Berg / Bergen.
-            # Only tiny suffix differences count; broad semantic pivots do not.
-            overlap = {t for t in title_terms for q in topic_terms
-                       if len(t) >= 4 and (q.startswith(t) or t.startswith(q))
-                       and abs(len(t) - len(q)) <= 3}
-        if not overlap:
-            continue
-        ranked.append((len(overlap), title, extract[:3100]))
-    ranked.sort(key=lambda p: (-p[0], p[1]))
+    for score, title, extract in collected:
+        if title.casefold() not in seen_titles:
+            ranked.append((score,title,extract))
+            seen_titles.add(title.casefold())
     sources = tuple({
         "id": f"wiki-{i}", "title": title,
         "url": f"https://{lang}.wikipedia.org/wiki/{quote(title.replace(' ', '_'), safe='()')}",
