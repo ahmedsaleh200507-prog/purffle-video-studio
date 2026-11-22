@@ -143,10 +143,14 @@ def main():
                 'Missing free narration API: configure GROQ_API_KEY or GEMINI_API_KEY')
         # Existing approved narrator, scientific source screening and actual
         # video quality checks remain unchanged. This selects TEXT only.
-        main_llm = 'groq' if groq_ready else 'gemini'
+        # Gemini 3.1 Flash-Lite has a higher request allowance on the
+        # user's configured free project. Reserve Groq as a live secondary.
+        # The pinned upstream retries the same JSON schema with the fallback.
+        main_llm = 'gemini' if gemini_ready else 'groq'
         selected_model = (
-            'openai/gpt-oss-20b' if groq_ready else 'gemini-3.1-flash-lite')
-        fallbacks = ['gemini'] if groq_ready and gemini_ready else []
+            'gemini-3.1-flash-lite' if gemini_ready
+            else 'openai/gpt-oss-20b')
+        fallbacks = ['groq'] if gemini_ready and groq_ready else []
         print(f"[SHORTS LLM] primary={main_llm} "
               f"fallback={'gemini' if fallbacks else 'none'}",flush=True)
         s = replace(Settings.from_env(), language=os.environ['LANGUAGE'],
