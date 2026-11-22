@@ -83,6 +83,8 @@ def classify_failure(message: str, log_text: str = "", details=None) -> str:
         ("media_preflight_no_topic_palette", "topic_palette_empty"),
         ("media_preflight_insufficient_footage", "insufficient_verified_clips"),
         ("unverified_quantitative_claim", "unverified_factual_claim"),
+        ("retention_storyboard_invalid", "storyboard_quality_rejected"),
+        ("missing structured scene fields", "script_visual_schema_invalid"),
         ("science_sources_unavailable", "science_reference_unavailable"),
         ("science_claim_unverified", "science_claim_unsupported"),
         ("reference_voice_not_ready", "approved_english_voice_unavailable"),
