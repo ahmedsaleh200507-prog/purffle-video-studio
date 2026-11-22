@@ -573,7 +573,17 @@ class StrictVisuals:
                     if subject_specification and isinstance(self.matcher, SceneMatcher):
                         from opening_impact import _first_frames, _semantic_subject_screen
                         focus = float(match.get("crop_focus_x", .5))
-                        cropped_frames = _first_frames(path, focus=focus)
+                        # The hook uses its actual first second; later
+                        # narrated scenes must also show the topic subject
+                        # around the middle, not only an unrelated transition.
+                        # #92's bathroom mirror clip showed PALMS in scene 2.
+                        if idx == 0:
+                            cropped_frames = _first_frames(path, focus=focus)
+                        else:
+                            mid = max(1.15, min(float(need) * .6,
+                                                float(quality["duration"]) * .7))
+                            cropped_frames = _first_frames(
+                                path, focus=focus, seconds=(.15, mid))
                         subject_result = _semantic_subject_screen(
                             cropped_frames, subject_specification,
                             scorer=self.matcher._similarities)

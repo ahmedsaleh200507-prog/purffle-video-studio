@@ -243,6 +243,8 @@ PROVIDERS = [
     VideoProvider("wikimedia-video"), VideoProvider("nasa-video"),
     VideoProvider("archive-video"), VideoProvider("europeana-video", "EUROPEANA_API_KEY"),
     VideoProvider("nps-video", "NPS_API_KEY"),
+    # Source-reviewed official USGS public-domain MP4 URLs: no scraping, no key.
+    VideoProvider("usgs-video"),
     # Vecteezy Free requires attribution; the owner explicitly requests no
     # YouTube description/manual credits. Do not burn downloads or silently
     # assume a Pro license from the presence of an API key.
@@ -598,6 +600,89 @@ class ProviderRegistry:
                 result.append(item)
         return result
 
+    def _usgs(self, query):
+        """Search a tightly curated catalog of official public-domain USGS MP4s.
+
+        The general USGS site has no verified stock-video search API. We use
+        manually reviewed official gallery download links, never scrape HTML,
+        and never treat every ScienceBase upload as public domain.
+        Resolution, action, motion, license and 9:16 framing are still checked
+        on the ACTUAL downloaded file by StrictVisuals.
+        """
+        path = (Path(__file__).resolve().parent.parent /
+                "data" / "usgs_public_domain_video_catalog.json")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ProviderError("catalog_invalid", "Official USGS manifest unavailable") from exc
+        if (data.get("schema_version") != 1
+                or data.get("license_id") != "PDM-1.0"
+                or data.get("license_url") !=
+                    "https://creativecommons.org/publicdomain/mark/1.0/"
+                or not isinstance(data.get("clips"), list)):
+            raise ProviderError("catalog_invalid", "Unapproved USGS license or schema")
+        # Don't propose lava for generic ocean footage, whales, mirrors, etc.
+        qwords = set(re.findall(r"[a-z]+", query.casefold()))
+        if not qwords.intersection({"lava", "volcano", "volcanic",
+                                   "magma", "eruption", "laze", "kilauea"}):
+            return []
+        result = []
+        for rank, row in enumerate(data["clips"][:48]):
+            if not isinstance(row, dict):
+                continue
+            page = str(row.get("source_page") or "")
+            url = str(row.get("video_url") or "")
+            p, u = urlparse(page), urlparse(url)
+            # This hostname and path are the official USGS "Download Video"
+            # links, manually verified on the cited USGS multimedia pages.
+            if (p.scheme != "https" or p.hostname != "www.usgs.gov"
+                    or not p.path.startswith("/media/videos/")
+                    or p.query or p.fragment
+                    or u.scheme != "https"
+                    or u.hostname !=
+                      "usgs-ocapsv2-public-input-media.s3.us-west-2.amazonaws.com"
+                    or not u.path.startswith(
+                        "/assets/palladium/production/s3fs-public/atoms/video/")
+                    or not u.path.lower().endswith(".mp4")
+                    or u.query or u.fragment
+                    or u.username or u.password):
+                continue
+            if str(row.get("rights_statement") or "").strip() != "Public Domain":
+                continue
+            creator = str(row.get("creator") or "").strip()
+            if not re.match(r"^USGS(?:\s|$)", creator):
+                continue
+            title = clean(row.get("title"))
+            description = clean(row.get("description"))
+            tags = clean(row.get("tags"))
+            if not title or not description or len(description) > 700:
+                continue
+            listed = set(re.findall(r"[a-z]+", (title + " " + description +
+                                                  " " + tags).casefold()))
+            # Require both topic specificity and a source-specific tag.
+            if not qwords.intersection(listed):
+                continue
+            try:
+                duration = float(row.get("duration"))
+            except (TypeError, ValueError):
+                continue
+            if not 3 <= duration <= 600:
+                continue
+            lic = self.license("PDM-1.0",
+                               "https://creativecommons.org/publicdomain/mark/1.0/",
+                               creator, page)
+            lic["rights_basis"] = "Official USGS page explicitly says Public Domain"
+            lic["attribution_required"] = False
+            item = self._item(
+                "usgs-video", row.get("id"), url, query, rank,
+                " ".join([title, description, tags]), lic,
+                0, 0, duration)
+            if item:
+                item.extra["catalog_mode"] = "reviewed_official_usgs_gallery_download"
+                item.extra["dimensions_unverified_until_ffprobe"] = True
+                result.append(item)
+        return result
+
     def _freenaturestock(self, query):
         """Search a finite manually verified CC0 video manifest, not the website.
 
@@ -712,7 +797,7 @@ class ProviderRegistry:
 
     def _wikimedia(self, query):
         data = self.client.get(API, params={"action": "query", "generator": "search",
-            "gsrsearch": query + " filetype:video", "gsrnamespace": 6, "gsrlimit": 15,
+            "gsrsearch": query + " filetype:video", "gsrnamespace": 6, "gsrlimit": 30,
             "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata", "format": "json", "maxlag": 5})
         if "error" in data:
             raise ProviderError("api_error", clean(data["error"].get("code")))
@@ -739,7 +824,7 @@ class ProviderRegistry:
 
     def _nasa(self, query):
         data = self.client.get("https://images-api.nasa.gov/search", params={
-            "q": query, "media_type": "video", "page_size": 8})
+            "q": query, "media_type": "video", "page_size": 12})
         result = []
         for rank, entry in enumerate(data.get("collection", {}).get("items", [])):
             meta = (entry.get("data") or [{}])[0]
