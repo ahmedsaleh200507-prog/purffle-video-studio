@@ -15,14 +15,14 @@ import shutil
 import subprocess
 
 
-def _first_frames(path: Path, *, focus: float = 0.5):
+def _first_frames(path: Path, *, focus: float = 0.5, seconds=(0.15, 1.15)):
     """Sample exactly the opening seconds of the source used by the renderer."""
     from PIL import Image
     binary = shutil.which("ffmpeg")
     if not binary or not path or not Path(path).is_file():
         return []
     result = []
-    for second in (0.15, 1.15):
+    for second in seconds:
         try:
             process = subprocess.run(
                 [binary, "-hide_banner", "-nostdin", "-loglevel", "error",
