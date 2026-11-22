@@ -119,10 +119,10 @@ jobs:
       - name: Check approved English narrator or audited German Thorsten
         if: steps.selected.outputs.render == 'true'
         env:
-          LANG: ${{ steps.selected.outputs.language }}
+          VOICE_LANGUAGE: ${{ steps.selected.outputs.language }}
           LONG_TOPIC: ${{ steps.selected.outputs.topic }}
         run: |
-          if [[ "$LANG" == 'en' ]]; then
+          if [[ "$VOICE_LANGUAGE" == 'en' ]]; then
             python scripts/english_reference_policy.py --topic "en|$LONG_TOPIC"
           else
             python - <<'PY'
