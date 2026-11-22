@@ -1,4 +1,4 @@
-name: Purffle regression checks
+name: '90 - INTERNAL | Automatic code tests'
 on:
   push:
     branches: [main]
