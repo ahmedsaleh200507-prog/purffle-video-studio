@@ -216,6 +216,7 @@ def test_fire_and_ice_documentary_has_expected_snow_and_volcanic_shots():
     assert long_expected_subject(5, topic) == "glacier"
     assert long_expected_subject(6, topic) == "glacier"
     assert long_expected_subject(10, topic) == "glacier"
+    assert long_expected_subject(12, topic) == "glacier"
     assert long_expected_subject(0, topic) == "volcano"
     assert long_expected_subject(9, topic) == "volcano"
     assert "glacier" in long_visual_queries(1, topic)[0]
@@ -266,3 +267,113 @@ def test_fire_and_ice_requires_glacier_in_provider_title(monkeypatch, tmp_path):
     assert len(calls)==3
     assert all(x=="glacier" for x in calls)
     assert all("bridge" not in c[2]["query"].lower() for c in result)
+
+
+def test_stock_search_fairly_reaches_broad_query_after_initial_rejections(monkeypatch, tmp_path):
+    """Regression: 25 bad stock candidates on one query no longer stop chapter 13."""
+    import media_validation
+    import long_video
+    from media_validation import ValidationError
+    topic = "Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?"
+    searches = []
+    def item(i, title="Glacier ice mountain"):
+        return SimpleNamespace(
+            source="pixabay", id=i, text=title,
+            url=f"https://example.org/{i}.mp4",
+            extra={"license":{"creator":"Contributor","id":"PIXABAY",
+                              "source_page":f"https://pixabay.com/{i}"}})
+    class Registry:
+        def search(self, provider, query):
+            if provider != "pixabay":
+                return []
+            searches.append(query)
+            if query == long_video.long_visual_queries(12,topic)[0]:
+                return [item(i) for i in range(25)]
+            return [item(100+i) for i in range(4)]
+    monkeypatch.setattr(media_validation.VideoDownloader, "download",
+                        lambda self,url:tmp_path/url.rsplit("/",1)[-1])
+    monkeypatch.setattr(media_validation.QualityValidator, "validate",
+                        lambda self,path:{"width":1920,"height":1080,"duration":30})
+    seen_paths=[]
+    def verify(path, meta, length, *, expected_subject="volcano"):
+        seen_paths.append(path.name)
+        if int(path.stem) < 100:
+            raise ValidationError("Visual scene mismatch")
+        assert expected_subject == "glacier"
+        return {"verification":"local_clip_screening","visual_score":.36}
+    monkeypatch.setattr(long_video,"long_visual_verifier",verify)
+    chosen = find_stock(12, 43.0, set(), tmp_path, registry=Registry(), topic=topic)
+    assert len(chosen) == 4
+    assert len(set(searches)) >= 2
+    assert sum(1 for p in seen_paths if int(p) < 100) == 12
+    assert all(c[2]["id"] >= 100 for c in chosen)
+
+
+def test_stock_bank_only_uses_newly_reverified_unplayed_spans(monkeypatch, tmp_path):
+    """A last-resort repeat must be a DIFFERENT offset, verified as a real clip."""
+    import long_video
+    topic = "Ice Age vs Lava: What Happens When a Volcano Erupts Beneath a Glacier?"
+    class Registry:
+        def search(self, provider, query):
+            return []
+    bank=[]
+    for i in range(3):
+        path = tmp_path/f"original-{i}.mp4"
+        path.write_bytes(b"synthetic video stub; never pass into real decoder")
+        bank.append((path,40.0,{
+            "source":"pixabay", "id":i, "source_page":f"https://pixabay.com/{i}",
+            "creator":"Contributor", "license":"PIXABAY",
+            "metadata_text":"Glacier ice mountain",
+            "subject":"glacier","chapter":i+1,"reused":False,
+            "source_end_seconds":11.0,
+        }))
+    seek_positions=[]
+    def fake_run(args, timeout=1800):
+        assert "-ss" in args
+        seek_positions.append(float(args[args.index("-ss")+1]))
+        Path(args[-1]).write_bytes(b"preview frame container placeholder")
+        return ""
+    def verifier(path,metadata,need,*,expected_subject="volcano"):
+        assert path.is_file() and "Glacier" in metadata
+        assert expected_subject=="glacier"
+        return {"verification":"local_clip_screening","visual_score":.33}
+    monkeypatch.setattr(long_video,"run",fake_run)
+    monkeypatch.setattr(long_video,"long_visual_verifier",verifier)
+    reused=set()
+    chosen=find_stock(12, 42.0,set(),tmp_path,registry=Registry(),
+                      topic=topic,bank=bank,reused=reused)
+    assert len(chosen)==3 and len(reused)==3
+    assert seek_positions==[11.0,11.0,11.0]
+    assert all(x[2]["reused"] and x[2]["source_offset_seconds"]==11.0
+               and x[2]["reused_from_chapter"] in (1,2,3)
+               for x in chosen)
+
+
+def test_stock_bank_rejects_unrelated_repeats_and_exhausted_sources(tmp_path):
+    topic="Ice Age vs Lava: Volcano Beneath a Glacier"
+    class Registry:
+        def search(self,provider,query):
+            return []
+    bank=[(tmp_path/"old.mp4",20.0, {
+        "source":"pixabay","id":77,"subject":"volcano",
+        "source_end_seconds":18.0,"chapter":3,
+    })]
+    with pytest.raises(RuntimeError,match="long_stock_insufficient_chapter_13"):
+        find_stock(12,43,set(),tmp_path,registry=Registry(),
+                   topic=topic,bank=bank,reused=set())
+
+
+def test_renderer_respects_separate_real_source_offset(monkeypatch,tmp_path):
+    import long_video
+    observed=[]
+    def fake_run(args, timeout=1800):
+        observed.append(args)
+        return ""
+    monkeypatch.setattr(long_video,"run",fake_run)
+    credit={"reused":True,"source_offset_seconds":8.0}
+    source=tmp_path/"real-media-original.mp4"
+    audio=tmp_path/"approved-voice.wav"
+    render_scene(13,audio,12.0,[(source,30.0,credit)],tmp_path)
+    assert "-ss" in observed[0]
+    assert float(observed[0][observed[0].index("-ss")+1]) == 8.0
+    assert credit["source_end_seconds"] == 20.0
