@@ -1021,6 +1021,12 @@ def install():
     upstream_llm.PRESETS["gemini"] = dataclass_replace(
         upstream_llm.PRESETS["gemini"],
         default_model="gemini-3.1-flash-lite")
+    # Preserve the original user-tested Groq GPT-OSS model when it serves
+    # as the SECOND provider. Upstream's generic fallback Llama model is
+    # different and would silently change voice/text quality.
+    upstream_llm.PRESETS["groq"] = dataclass_replace(
+        upstream_llm.PRESETS["groq"],
+        default_model="openai/gpt-oss-20b")
     import purffle_shorts.media as media
     import purffle_shorts.render as render
     import purffle_shorts.pipeline as pipeline

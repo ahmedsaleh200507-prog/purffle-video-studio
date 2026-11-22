@@ -330,7 +330,23 @@ class ProviderRegistry:
             return None
         def score(f):
             w, h = int(f.get("width") or 0), int(f.get("height") or 0)
-            return (min(w, h) >= 1080, min(w, h), w * h)
+            short = min(w, h)
+            if os.environ.get("PURFFLE_LONG_STOCK_HD_VARIANTS") == "1":
+                # Long films render at 1080p. Choosing the largest 4K
+                # CDN variant used to waste >110 MB per rejected clip;
+                # select the native 1080p version when offered, and use
+                # 720p footage only when no appropriate 1080p variant exists.
+                # Shorts still use the original high-detail preference.
+                native_hd = 2 if 1080 <= short <= 1440 else (
+                    1 if 720 <= short <= 1440 else 0)
+                try:
+                    size = int(f.get("file_size") or f.get("size") or 0)
+                except (ValueError, TypeError):
+                    size = 0
+                under_budget = size == 0 or size <= 175 * 1024 * 1024
+                return (bool(native_hd) and under_budget, native_hd,
+                        -abs(short - 1080), -(size or 0))
+            return (short >= 1080, short, w * h)
         return max(files, key=score)
 
     def _coverr_budget(self):

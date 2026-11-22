@@ -120,9 +120,11 @@ def test_documentary_general_visuals_do_not_get_volcano_queries():
              "visual_subject":"octopus"}
     assert long_video.long_expected_subject(0,"Why do octopuses have hearts?",
                                             chapter)=="octopus"
-    assert long_video.long_visual_queries(0,"Why do octopuses have hearts?",
-                                          chapter)==[
-        "octopus coral reef underwater","octopus"]
+    queries=long_video.long_visual_queries(
+        0,"Why do octopuses have hearts?",chapter)
+    assert queries[:2]==["octopus coral reef underwater","octopus"]
+    assert len(queries)==len(set(queries))
+    assert all("octopus" in query for query in queries)
 
 
 def test_native_german_voice_selected_only_for_german_long_form(monkeypatch,tmp_path):
@@ -144,3 +146,37 @@ def test_native_german_voice_selected_only_for_german_long_form(monkeypatch,tmp_
     assert len(audio)==14 and len(captions)==14
     assert abs(duration-602.0)<.01
     assert calls==["de"]*14
+
+
+
+def test_verified_real_animal_broll_is_labeled_illustrative_not_exact_action():
+    from long_video import long_visual_verifier
+    from media_validation import ValidationError
+    calls=[]
+    class Matcher:
+        def match(self, path, spec, metadata, duration):
+            calls.append(spec.visual_search_query)
+            if "migration" in spec.visual_search_query:
+                raise ValidationError("Scene metadata lacks object/action grounding (score 0.25)")
+            assert spec.visual_search_query=="humpback whale"
+            return {"verification":"local_clip_screening",
+                    "visual_score":.31}
+    proof=long_visual_verifier(
+        "whale.mp4","humpback whale swimming in ocean",10,
+        matcher=Matcher(),expected_subject="humpback whale",
+        visual_query="humpback whale migration")
+    assert proof["visual_role"]=="illustrative_subject_only"
+    assert calls==["humpback whale migration","humpback whale"]
+
+
+def test_long_verifier_never_uses_unrelated_or_failed_local_clip():
+    from long_video import long_visual_verifier
+    from media_validation import ValidationError
+    class Matcher:
+        def match(self,path,spec,metadata,duration):
+            raise ValidationError("Visual scene mismatch: cosine=0.13")
+    with pytest.raises(ValidationError,match="Visual scene mismatch"):
+        long_visual_verifier(
+            "wrong.mp4","street traffic city",10,matcher=Matcher(),
+            expected_subject="humpback whale",
+            visual_query="humpback whale migration")

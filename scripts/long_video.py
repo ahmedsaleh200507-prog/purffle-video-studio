@@ -48,7 +48,12 @@ def long_visual_queries(index, topic="", chapter=None):
     if isinstance(chapter, dict) and chapter.get("visual_search_query"):
         requested = str(chapter["visual_search_query"]).strip()
         subject = str(chapter.get("visual_subject") or "").strip()
-        return list(dict.fromkeys((requested, subject)))
+        # Search visible chapter subject with a few common real-video tags.
+        # All returned footage still passes metadata and local CLIP checks.
+        searches = [requested, subject]
+        if subject and len(subject.split()) <= 3:
+            searches += [subject + " nature", subject + " wildlife"]
+        return list(dict.fromkeys(q for q in searches if q))
     from long_script import is_fire_and_ice
     if is_fire_and_ice(topic):
         selected = FIRE_AND_ICE_QUERIES[index % len(FIRE_AND_ICE_QUERIES)]
@@ -241,7 +246,23 @@ def long_visual_verifier(path, metadata, need, *, matcher=None,
         subject, query = "volcano", "volcano mountain eruption"
     spec = SceneSpec(main_character="", object=subject, action="ambient",
                      visual_search_query=query)
-    result = matcher.match(path, spec, metadata=metadata, duration=need)
+    try:
+        result = matcher.match(path, spec, metadata=metadata, duration=need)
+        result["visual_role"] = "direct_chapter_match"
+    except ValidationError as exc:
+        # An uploaded whale video can be tagged only "humpback whale", not
+        # "humpback whale migration". Only metadata-missing actions may
+        # fall back to illustrative B-roll of that exact visible subject.
+        # Still require a complete subject match and real-frame CLIP proof.
+        if not visual_query or "metadata" not in str(exc).lower():
+            raise
+        generic = SceneSpec(
+            main_character="", object=subject, action="ambient",
+            visual_search_query=subject)
+        if SceneMatcher.metadata_score(generic, metadata) < 1.0:
+            raise
+        result = matcher.match(path, generic, metadata=metadata, duration=need)
+        result["visual_role"] = "illustrative_subject_only"
     if result.get("verification") != "local_clip_screening":
         raise ValidationError("Long documentary visual-verifier proof missing")
     return result
@@ -266,7 +287,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     from video_sources import ProviderRegistry
     reg = registry if registry is not None else ProviderRegistry()
     dl = VideoDownloader(
-        cache_dir=work/"downloads", max_bytes=110*1024*1024,
+        cache_dir=work/"downloads", max_bytes=175*1024*1024,
         max_cache_bytes=5*1024**3, min_free_bytes=2*1024**3,
     )
     val = QualityValidator(min_short_side=720)
@@ -322,6 +343,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                         "subject": expected_subject, "chapter": index+1,
                         "visual_check": visual["verification"],
                         "visual_score": visual.get("visual_score"),
+                        "visual_role": visual.get("visual_role", "direct_chapter_match"),
                         "reused": False, "source_offset_seconds": 0.0,
                     }
                     seen.add(key)
@@ -394,6 +416,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                 "source_offset_seconds": round(offset, 3),
                 "visual_check": proof["verification"],
                 "visual_score": proof.get("visual_score"),
+                "visual_role": proof.get("visual_role", "direct_chapter_match"),
             }
             recoveries.append((old_path, old_duration, credit))
         except Exception as ex:
@@ -552,7 +575,9 @@ def main():
                       burnt_in_subtitles=False,
                       subtitle_track="separate_srt_sidecar_only",
                       visual_verification="local_clip_screening",
-                      note="Video frames screened using local CLIP; similarity is not proof of exact event or action.")
+                      illustrative_subject_clips=sum(
+                          c.get("visual_role") == "illustrative_subject_only" for c in credits),
+                      note="All clips pass metadata + local CLIP screening. Illustrative subject B-roll is not exact footage of a narrated event.")
     except Exception as e:
         report.update(stage=stage,error=(type(e).__name__+": "+str(e))[:800])
         raise
