@@ -678,9 +678,11 @@ def verified_documentary_kind(topic: str) -> str | None:
          and tokens & {"dance", "dances", "dancing", "moving", "move", "waves",
                        "twists", "sway", "sways", "tanzen", "tanzt", "bewegen"}):
         return "northern_lights_dance"
-    if (("northern" in tokens and ("lights" in tokens or "light" in tokens)
-         and ({"glow", "shine", "colors", "colour", "why"} & tokens))
-        or ("aurora" in tokens and ({"glow", "shine", "colors", "colour"} & tokens))):
+    if ((("northern" in tokens and ("lights" in tokens or "light" in tokens))
+         or tokens & {"aurora", "auroras", "polarlichter", "polarlicht",
+                      "nordlichter", "nordlicht"})
+         and (tokens & {"glow", "glows", "shine", "shines", "colors",
+                        "colour", "why", "warum", "leuchten", "leuchtet"})):
         return "northern_lights_glow"
     # Match the ordinary wind-driven wave explainer only. Do not replace
     # tsunami, tides, swell-specific, rogue-wave or earthquake explanations.
