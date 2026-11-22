@@ -63,12 +63,19 @@ the exact existing checks. Never expose the key or any source secret.
 ## Real footage is the remaining bottleneck
 
 The last Gemini-only Short selected two of three strict 720p real-motion shots.
-Pexels API was **not configured on that run**, so most candidates came from
-Pixabay plus unrelated open catalogs. Pexels officially offers a free video
-search API (default **200 requests/hour, 20,000/month**) which is recommended
-alongside Pixabay. The Pexels key belongs in GitHub Secrets as
-`PEXELS_API_KEY` (never paste it into chat); the workflows already support
-it. Source: https://www.pexels.com/api/ and https://help.pexels.com/hc/en-us/articles/47677890260761-Is-the-Pexels-API-free-to-use
+Pexels API was **not configured on that run**. As of **22 November
+2026**, Pexels officially **paused new API key issuance**. Do not create
+fake keys, scrape its website, bypass access controls, or treat Pexels as
+a mandatory video dependency. Official source:
+https://www.pexels.com/api/
+
+The long-video source finder now includes **Pixabay** (existing API key),
+**Wikimedia Commons** and **NASA** (public catalogs), existing
+**Coverr** (only its explicitly real licensed free media, if key configured),
+and **Internet Archive** (only rights-screened CC0/public-domain sources).
+Every video must still pass the original metadata, 720p-native and local
+CLIP frame checks. A source is not accepted simply because an API returns it.
+Pexels remains optional for previously issued keys.
 
 Long-film stock selection now prefers verified native 1080p media versions
 rather than oversized 4K downloads when both are offered. It may accept
