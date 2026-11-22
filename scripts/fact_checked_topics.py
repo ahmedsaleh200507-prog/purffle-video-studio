@@ -739,11 +739,11 @@ _TWO_SCENE_SOURCE_REVIEWED = {
     "iceberg_breakup": {
         "en": (
             "Huge icebergs drift through the ocean. Some suddenly split apart.",
-            "Ocean waves, stress and melting can widen cracks until large chunks of ice break away.",
+            "Ocean waves, stress and melting can widen cracks in the ice. Eventually, large chunks break away.",
         ),
         "de": (
             "Riesige Eisberge treiben durch das Meer. Manche zerbrechen plötzlich.",
-            "Meereswellen, Spannungen und Schmelzen vergrößern Risse, bis große Eisstücke abbrechen.",
+            "Meereswellen, Spannungen und Schmelzen vergrößern Risse im Eis. Schließlich brechen große Stücke ab.",
         ),
     },
     "whale_breaching": {
