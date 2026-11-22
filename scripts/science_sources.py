@@ -372,7 +372,9 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
                 "northern_lights_dance", "steel_ship_buoyancy",
                 "lightning_thunder_delay",
                 "volcano_eruption", "iceberg_breakup", "whale_breaching",
-                "shark_ventilation", "sea_turtle_rest", "waterfall_freezing"):
+                "shark_ventilation", "sea_turtle_rest", "waterfall_freezing",
+                "northern_lights_glow", "mirror_condensation",
+                "volcanic_island", "hurricane_eye"):
             scenes = getattr(script, "scenes", [])
             spoken = [str(x.narration) for x in scenes]
             approved_variants = [
