@@ -25,6 +25,11 @@ _STOP = set("what why where when how which who does do is are can a an the to of
             "with from and or this that some have has do you your what happens makes "
             "warum wie was wann wo wer wieso weshalb ist sind die der das den dem "
             "ein eine einer und von zu im mit bei auf als er sie es".split())
+# Generic title words may not justify an unrelated encyclopedia article.
+# A title like "Wild China" cannot substantiate wilderness survival advice.
+_WEAK_TITLE_TERMS = {"wild", "people", "night", "list", "show", "series",
+                     "movie", "film", "strom", "nacht", "winter", "auto"}
+
 _OFFICIAL = {
     "volcano_eruption": (
         "https://www.usgs.gov/faqs/how-do-volcanoes-erupt",
@@ -150,6 +155,12 @@ def _fallback_search_queries(topic: str, language: str) -> tuple[str, ...]:
             queries += ["octopus", "octopus anatomy"]
         if "humpback" in text or "whale" in text:
             queries += ["humpback whale"]
+        if ("freezing" in text or "cold" in text) and (
+                "surviv" in text or "wild" in text or "wilderness" in text):
+            queries += ["Hypothermia", "Thermal insulation"]
+        if "rocket" in text and ("launch" in text or "engine" in text) and (
+                "smoke" in text or "cloud" in text or "plume" in text):
+            queries += ["Rocket engine", "Rocket exhaust", "Water deluge system"]
     else:
         if "nilkrokodil" in text or "salzwasserkrokodil" in text:
             queries += ["Nilkrokodil", "Leistenkrokodil", "Krokodile"]
@@ -161,6 +172,13 @@ def _fallback_search_queries(topic: str, language: str) -> tuple[str, ...]:
             queries += ["Pinguine"]
         if "robben" in text or "robbe" in text:
             queries += ["Robben"]
+        if ("kuhmist" in text or "gülle" in text or "guelle" in text
+                or ("mist" in text and "strom" in text)):
+            queries += ["Biogas", "Biogasanlage"]
+        if ("autoscheib" in text or "windschutzscheib" in text
+                or ("autoglas" in text and "frier" in text)) and (
+                "frier" in text or "eis" in text or "frost" in text):
+            queries += ["Reif (Niederschlag)", "Raureif", "Taupunkt"]
     return tuple(dict.fromkeys(queries))[:4]
 
 
@@ -198,7 +216,9 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
     # loosely related encyclopedia article and pretending it proves the user
     # question. A plural/compound synonym can now reach the real article.
     collected = []
-    saw_responsive_page = False
+    # A transient failure on the first query must not prevent valid backup
+    # source queries. Still fail closed if no real reference is returned.
+    source_errors = []
     for search_query in queries:
         try:
             response = client.get(
@@ -222,11 +242,13 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
                         raise RuntimeError("science_source_oversized")
                     chunks.append(chunk)
             document = json.loads(b"".join(chunks))
-        except (requests.RequestException, OSError, ValueError) as exc:
-            raise RuntimeError(
-                f"science_sources_unavailable: {type(exc).__name__}") from None
+        except (requests.RequestException, OSError, ValueError,
+                TimeoutError, RuntimeError) as exc:
+            source_errors.append(type(exc).__name__)
+            continue
         if not isinstance(document, dict):
-            raise RuntimeError("science_sources_unavailable: invalid response")
+            source_errors.append("invalid_response")
+            continue
         pages = (document.get("query") or {}).get("pages") or []
         if not isinstance(pages, list):
             pages = []
@@ -247,9 +269,11 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
                 overlap = {t for t in title_terms for q in search_terms
                            if len(t) >= 5 and (q.startswith(t) or t.startswith(q))
                            and abs(len(t) - len(q)) <= 3}
-            if not overlap:
+            # Single generic words are insufficient anchors. In particular,
+            # "Wild China" / episode lists must not be accepted for advice
+            # about surviving a freezing night.
+            if not overlap or overlap <= _WEAK_TITLE_TERMS:
                 continue
-            saw_responsive_page = True
             collected.append((len(overlap), title, extract[:3100]))
         # One directly relevant source is enough to get a screenable draft.
         # No broad search fan-out once a real independent reference is present.
@@ -270,7 +294,10 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
         "excerpt": excerpt,
     } for i, (_, title, excerpt) in enumerate(ranked[:2], 1))
     if not sources:
-        raise RuntimeError("science_sources_unavailable: no topic-relevant reference extracts")
+        suffix = (f"; retrieval_errors={','.join(source_errors[:3])}"
+                  if source_errors else "")
+        raise RuntimeError(
+            "science_sources_unavailable: no topic-relevant reference extracts" + suffix)
     return Evidence(str(topic), sources, "model_screened_reference")
 
 
@@ -383,7 +410,11 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         "You are a conservative source-grounding reviewer. Check each narration "
         "scene for EVERY scientific and causal claim. Reject when even one "
         "claim is absent, contradictory, only indirectly implied, or ambiguous "
-        "in the cited reference. Return JSON only. If supported, quote a short "
+        "in the cited reference. A clearly signalled visual metaphor such as "
+        "'the lights seem to dance' is not a scientific causal claim: do not "
+        "reject it just because the source uses different descriptive words. "
+        "Every factual mechanism and scientific assertion still requires "
+        "explicit support. Return JSON only. If supported, quote a short "
         "verbatim excerpt from the provided source (at least 20 characters). "
         "Do NOT fabricate citations or text. Reject unsupported claims.")
     source_text = evidence_prompt(bundle)
