@@ -333,6 +333,13 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                  "-t", f"{segment_length:.3f}", "-an",
                  "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
                  str(preview)], 180)
+            # The unused section must itself still contain genuine moving HD
+            # frames. Validating the entire original source is not sufficient.
+            preview_quality = val.validate(preview)
+            if (int(preview_quality["width"]) < 1280
+                    or int(preview_quality["height"]) < 720
+                    or float(preview_quality["duration"]) < segment_length - .5):
+                raise RuntimeError("Unused stock portion lacks required HD motion or duration")
             proof = long_visual_verifier(
                 preview, old_credit["metadata_text"], segment_length,
                 expected_subject=expected_subject)
