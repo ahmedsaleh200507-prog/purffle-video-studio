@@ -797,7 +797,7 @@ class ProviderRegistry:
 
     def _wikimedia(self, query):
         data = self.client.get(API, params={"action": "query", "generator": "search",
-            "gsrsearch": query + " filetype:video", "gsrnamespace": 6, "gsrlimit": 15,
+            "gsrsearch": query + " filetype:video", "gsrnamespace": 6, "gsrlimit": 30,
             "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata", "format": "json", "maxlag": 5})
         if "error" in data:
             raise ProviderError("api_error", clean(data["error"].get("code")))
@@ -824,7 +824,7 @@ class ProviderRegistry:
 
     def _nasa(self, query):
         data = self.client.get("https://images-api.nasa.gov/search", params={
-            "q": query, "media_type": "video", "page_size": 8})
+            "q": query, "media_type": "video", "page_size": 12})
         result = []
         for rank, entry in enumerate(data.get("collection", {}).get("items", [])):
             meta = (entry.get("data") or [{}])[0]
