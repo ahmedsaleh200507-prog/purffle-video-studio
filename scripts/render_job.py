@@ -136,10 +136,22 @@ def main():
         install()
         from purffle_shorts.config import Settings
         from purffle_shorts.pipeline import Studio
-        if not os.environ.get('GROQ_API_KEY'):
-            raise RuntimeError('GROQ_API_KEY missing from GitHub Actions Secrets')
+        groq_ready = bool(os.environ.get('GROQ_API_KEY'))
+        gemini_ready = bool(os.environ.get('GEMINI_API_KEY'))
+        if not (groq_ready or gemini_ready):
+            raise RuntimeError(
+                'Missing free narration API: configure GROQ_API_KEY or GEMINI_API_KEY')
+        # Existing approved narrator, scientific source screening and actual
+        # video quality checks remain unchanged. This selects TEXT only.
+        main_llm = 'groq' if groq_ready else 'gemini'
+        selected_model = (
+            'openai/gpt-oss-20b' if groq_ready else 'gemini-3.1-flash-lite')
+        fallbacks = ['gemini'] if groq_ready and gemini_ready else []
+        print(f"[SHORTS LLM] primary={main_llm} "
+              f"fallback={'gemini' if fallbacks else 'none'}",flush=True)
         s = replace(Settings.from_env(), language=os.environ['LANGUAGE'],
-                    llm_provider='groq', llm_model='openai/gpt-oss-20b', llm_fallbacks=[],
+                    llm_provider=main_llm, llm_model=selected_model,
+                    llm_fallbacks=fallbacks,
                     openai_api_key='', llm_api_key='',
                     tts_engine='edge', offline=False, script_review='off', seo_keywords=False,
                     resolution=tuple(int(v) for v in os.environ.get('RESOLUTION', '720x1280').lower().split('x')), fps=30, max_shot_seconds=0, transition='none',
