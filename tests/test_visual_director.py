@@ -257,3 +257,47 @@ def test_no_arbitrary_100ms_source_duration_overrequirement():
     assert "quality = self.quality.validate(path, need=need)" in src
     assert "quality = self.quality.validate(path, need=need + 0.1)" not in src
     assert "verify_visible_event_or_illustrative_subject(" in src
+
+
+def test_aurora_glow_production_89_search_stays_on_topic():
+    """Regression: a luminous sky phenomenon is NOT glowing ocean footage."""
+    topic = "Warum leuchten Polarlichter?"
+    storyboard = [
+        SimpleNamespace(**s) for s in
+        ground_verified_documentary({}, topic, "de", scene_count=3)["scenes"]
+    ]
+    opening = build_contract(storyboard[0], topic, 1)
+    assert opening["family"] == "glowing"
+    assert opening["event_required"]
+    assert opening["queries"][0] == "aurora borealis"
+    assert all(
+        ("aurora" in q.casefold() or "northern lights" in q.casefold())
+        for q in opening["queries"]
+    )
+    assert not any("ocean" in q.casefold() or "bioluminescent" in q.casefold()
+                   for q in opening["queries"])
+    assert metadata_allows(opening, "Authentic aurora borealis northern lights")
+    assert not metadata_allows(opening, "Bioluminescent ocean glowing blue waves")
+    assert "aurora" in opening["positive"].casefold()
+
+    # Invisible magnetic-field/gas mechanisms remain illustrative subjects:
+    # no artificial footage depicting hidden scientific causes.
+    for idx, scene in enumerate(storyboard[1:], 2):
+        later = build_contract(scene, topic, idx)
+        assert later["family"] == "illustrative_subject"
+        assert later["event_required"] is False
+
+
+def test_aurora_glow_uses_existing_real_video_gate_not_any_image():
+    """The new query vocabulary must not bypass licensing / HD / motion."""
+    topic = "Warum leuchten Polarlichter?"
+    from pathlib import Path
+    visuals = (Path(__file__).resolve().parents[1] /
+               "scripts" / "studio_runtime.py").read_text()
+    assert "StrictVisuals" in visuals
+    contract = build_contract(SimpleNamespace(
+        narration="Polarlichter leuchten hoch in der Atmosphäre der Erde.",
+        object="aurora", action="ambient",
+        visual_search_query="aurora borealis"), topic, 1)
+    assert contract["event_required"] is True
+    assert metadata_allows(contract, "aurora borealis") is True
