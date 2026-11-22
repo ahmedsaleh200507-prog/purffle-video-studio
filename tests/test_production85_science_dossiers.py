@@ -102,6 +102,9 @@ def test_production_85_two_verified_storm_clips_can_accurately_explain_lightning
     producer = (tmp_path.resolve().parent if False else
                 __import__("pathlib").Path(__file__).resolve().parents[1] /
                 "scripts" / "render_job.py").read_text()
-    assert "target_count = (3 if (" in producer
+    # The target-count expression also allows a shorter, fully sourced
+    # two-shot aurora documentary; lightning retains its three-shot target.
+    assert 'else 3 if (verified_kind or' in producer
+    assert '_lightning_repeated_topic(topic)' in producer
     assert "script_scene_count = len(screenplay.scenes)" in producer
     assert "storyboard=screenplay" in producer

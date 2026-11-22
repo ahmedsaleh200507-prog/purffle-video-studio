@@ -735,7 +735,18 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
     info = _DOCUMENTARY_FACTS[kind]
     language = "de" if str(language).startswith("de") else "en"
     narration = list(info[language])
-    if scene_count == 2 and kind == "lightning_thunder_delay":
+    if scene_count == 2 and kind == "northern_lights_glow":
+        # #89 had two independently checked HD aurora clips. Avoid demanding
+        # three filler shots when two source-reviewed scenes cover the cause.
+        narration = (
+            [
+                "Northern lights glow high in the night sky, especially near the poles.",
+                "Electrons collide with oxygen and nitrogen high in Earth's atmosphere. These gases release the colorful aurora light.",
+            ] if language == "en" else [
+                "Polarlichter leuchten hoch am Nachthimmel, besonders in Polargebieten.",
+                "Elektronen stoßen hoch in der Atmosphäre mit Sauerstoff und Stickstoff zusammen. Dabei entsteht das farbige Licht.",
+            ])
+    elif scene_count == 2 and kind == "lightning_thunder_delay":
         narration = (
             [
                 "Lightning and thunder happen together, but light reaches our eyes much faster.",

@@ -257,3 +257,80 @@ def test_no_arbitrary_100ms_source_duration_overrequirement():
     assert "quality = self.quality.validate(path, need=need)" in src
     assert "quality = self.quality.validate(path, need=need + 0.1)" not in src
     assert "verify_visible_event_or_illustrative_subject(" in src
+
+
+def test_aurora_glow_production_89_search_stays_on_topic():
+    """Regression: a luminous sky phenomenon is NOT glowing ocean footage."""
+    topic = "Warum leuchten Polarlichter?"
+    storyboard = [
+        SimpleNamespace(**s) for s in
+        ground_verified_documentary({}, topic, "de", scene_count=3)["scenes"]
+    ]
+    opening = build_contract(storyboard[0], topic, 1)
+    assert opening["family"] == "glowing"
+    assert opening["event_required"]
+    assert opening["queries"][0] == "aurora borealis"
+    assert all(
+        ("aurora" in q.casefold() or "northern lights" in q.casefold())
+        for q in opening["queries"]
+    )
+    assert not any("ocean" in q.casefold() or "bioluminescent" in q.casefold()
+                   for q in opening["queries"])
+    assert metadata_allows(opening, "Authentic aurora borealis northern lights")
+    assert not metadata_allows(opening, "Bioluminescent ocean glowing blue waves")
+    assert "aurora" in opening["positive"].casefold()
+
+    # Invisible magnetic-field/gas mechanisms remain illustrative subjects:
+    # no artificial footage depicting hidden scientific causes.
+    for idx, scene in enumerate(storyboard[1:], 2):
+        later = build_contract(scene, topic, idx)
+        assert later["family"] == "illustrative_subject"
+        assert later["event_required"] is False
+
+
+def test_aurora_glow_uses_existing_real_video_gate_not_any_image():
+    """The new query vocabulary must not bypass licensing / HD / motion."""
+    topic = "Warum leuchten Polarlichter?"
+    from pathlib import Path
+    visuals = (Path(__file__).resolve().parents[1] /
+               "scripts" / "studio_runtime.py").read_text()
+    assert "StrictVisuals" in visuals
+    contract = build_contract(SimpleNamespace(
+        narration="Polarlichter leuchten hoch in der Atmosphäre der Erde.",
+        object="aurora", action="ambient",
+        visual_search_query="aurora borealis"), topic, 1)
+    assert contract["event_required"] is True
+    assert metadata_allows(contract, "aurora borealis") is True
+
+
+@pytest.mark.parametrize("language", ["de", "en"])
+def test_two_shot_aurora_is_source_approved_and_filmable(language, tmp_path):
+    """#89: two distinct real aurora clips suffice for the complete mechanism."""
+    from science_sources import discover_evidence, screen_narration
+    from retention_storyboard import audit_storyboard
+    topic = ("Warum leuchten Polarlichter?" if language == "de"
+             else "Why Do Northern Lights Glow?")
+    cards = ground_verified_documentary(
+        {}, topic, language, scene_count=2)["scenes"]
+    assert len(cards) == 2
+    storyboard = SimpleNamespace(scenes=[SimpleNamespace(**s) for s in cards])
+    assert audit_storyboard(topic, storyboard, language)["state"] == "editorial_screen_passed"
+    references = discover_evidence(topic, language)
+    assert references.method == "curated_editor_reviewed"
+    report = tmp_path / f"aurora-{language}.json"
+    screen_narration(storyboard, references, None, path=report)
+    assert json.loads(report.read_text())["state"] == "curated_editor_reviewed"
+    first = build_contract(storyboard.scenes[0], topic, 1)
+    second = build_contract(storyboard.scenes[1], topic, 2)
+    assert first["family"] == "glowing"
+    assert second["family"] == "illustrative_subject"
+    assert len({s["narration"] for s in cards}) == 2
+
+
+def test_aurora_production_scene_count_is_two_without_weakened_video_gate():
+    source = (Path(__file__).resolve().parents[1] /
+              "scripts" / "render_job.py").read_text()
+    assert '2 if verified_kind == "northern_lights_glow"' in source
+    assert "min_scenes=script_scene_count" in source
+    assert "max_scenes=script_scene_count" in source
+    assert "validate_narration_timing(palette, screenplay" in source
