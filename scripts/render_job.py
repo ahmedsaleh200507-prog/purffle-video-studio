@@ -193,9 +193,14 @@ def main():
                 # An existing exact-source three-scene factual variant is
                 # preferable to demanding four independent stock clips.
                 topic = os.environ['VIDEO_TOPIC']
-                target_count = (3 if (
-                    verified_documentary_kind(topic) or
-                    _lightning_repeated_topic(topic)) else None)
+                verified_kind = verified_documentary_kind(topic)
+                # When the approved source facts fit two short scenes, do
+                # not insist on a third unrelated filler clip. Production
+                # #89 found two genuine HD aurora clips and failed at 2/3.
+                target_count = (2 if verified_kind == "northern_lights_glow"
+                                else 3 if (verified_kind or
+                                           _lightning_repeated_topic(topic))
+                                else None)
                 try:
                     with use_story_scene_target(target_count), use_evidence(evidence):
                         screenplay, pick, writer = studio.draft(
