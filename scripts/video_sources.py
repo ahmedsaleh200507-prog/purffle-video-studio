@@ -506,7 +506,7 @@ class ProviderRegistry:
                 or re.fullmatch(r"NPS\s*/\s*[A-Za-z][A-Za-z .'-]{1,80}", text)):
             return False
         rights = clean([record.get("copyright"), record.get("rights"),
-                        record.get("license"), record.get("usage")])
+                        record.get("license"), record.get("usage")]).strip()
         return not rights or (
             bool(re.search(r"public domain|no copyright", rights, re.I))
             and not re.search(r"©|all rights reserved|permissions required",
