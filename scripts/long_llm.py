@@ -43,6 +43,9 @@ class _Completion:
         self._gemini_key = gemini_key
         self._post = post
         self.prefer = prefer
+        # One video's failed provider must not consume every later chapter's
+        # minute/day quota through repeated, predictable HTTP 429 calls.
+        self._quota_exhausted = set()
 
     def _gemini(self, **kwargs):
         import requests
@@ -69,8 +72,20 @@ class _Completion:
         except (requests.RequestException, OSError) as ex:
             raise LongLLMUnavailable(
                 f"Gemini connection failed: {type(ex).__name__}") from None
+        if response.status_code in (400, 422) and fmt.get("type") == "json_schema":
+            # Some Gemini OpenAI-compatible model versions refuse strict
+            # schema keywords. Try JSON mode ONCE and keep original local
+            # 14-section/word-count validation. Never accept arbitrary prose.
+            fallback = dict(payload)
+            fallback["response_format"] = {"type": "json_object"}
+            response = sender(
+                GEMINI_URL,
+                headers={"Authorization": f"Bearer {self._gemini_key}",
+                         "Content-Type": "application/json"},
+                json=fallback, timeout=(10, 120),
+            )
         if response.status_code != 200:
-            # Do not include HTTP body or credentials in GitHub logs.
+            # Never log the response body, API key, or request headers.
             raise LongLLMResponseError("Gemini", response.status_code)
         try:
             data = response.json()
@@ -88,23 +103,41 @@ class _Completion:
             )])
 
     def create(self, **kwargs):
-        # Never attempt a provider whose API key is not configured.
-        if self.prefer == "gemini" and self._gemini_key:
-            return self._gemini(**kwargs)
-        if self._groq is not None:
+        configured = (
+            ["gemini", "groq"] if self.prefer == "gemini"
+            else ["groq", "gemini"]
+        )
+        enabled = {
+            "gemini": bool(self._gemini_key),
+            "groq": self._groq is not None,
+        }
+        available = [provider for provider in configured
+                     if enabled[provider] and
+                     provider not in self._quota_exhausted]
+        if not available:
+            raise LongLLMUnavailable(
+                "No free LLM provider available. Check Groq/Gemini quotas.")
+        for index, provider in enumerate(available):
             try:
+                if provider == "gemini":
+                    return self._gemini(**kwargs)
                 return self._groq.chat.completions.create(**kwargs)
             except Exception as exc:
-                if not self._gemini_key or not _groq_retryable(exc):
+                status = getattr(exc, "status_code", None)
+                is_quota = status == 429
+                transient = status in (502, 503, 504)
+                invalid_groq_json = (
+                    provider == "groq" and _groq_retryable(exc))
+                if is_quota:
+                    self._quota_exhausted.add(provider)
+                if not (is_quota or transient or invalid_groq_json):
                     raise
-                print("[LONG LLM] Groq generated-JSON error or limit; "
-                      "switching to Gemini free text model", flush=True)
-                return self._gemini(**kwargs)
-        if self._gemini_key:
-            return self._gemini(**kwargs)
-        raise LongLLMUnavailable(
-            "No free LLM API key. Configure GROQ_API_KEY or GEMINI_API_KEY.")
-
+                if index == len(available) - 1:
+                    raise
+                print(f"[LONG LLM] {provider} quota/transient/JSON error; "
+                      f"trying {available[index+1]} with identical script contract",
+                      flush=True)
+        raise LongLLMUnavailable("All configured script providers unavailable")
 
 class LongLLM:
     def __init__(self, *, groq=None, gemini_key: str = "", post=None,
@@ -115,13 +148,13 @@ class LongLLM:
 
 
 def get_long_client(*, groq=None, post=None, environ=None):
-    """Select Groq with Gemini recovery, or Gemini alone if Groq is absent.
+    """Prefer Gemini on its 500 RPD free tier; recover through Groq.
 
-    Explicit PURFFLE_LONG_LLM_PRIMARY=gemini lets users conserve Groq quota,
-    but only if GEMINI_API_KEY is provided. No auto-billing setup.
+    PURFFLE_LONG_LLM_PRIMARY=groq remains available as an opt-out. Both
+    providers fail closed on malformed content after the existing validators.
     """
     env = os.environ if environ is None else environ
-    primary = env.get("PURFFLE_LONG_LLM_PRIMARY", "groq").strip().lower()
+    primary = env.get("PURFFLE_LONG_LLM_PRIMARY", "gemini").strip().lower()
     if primary not in ("groq", "gemini"):
         raise ValueError("PURFFLE_LONG_LLM_PRIMARY must be groq or gemini")
     gemini_key = env.get("GEMINI_API_KEY", "").strip()
