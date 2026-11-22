@@ -230,3 +230,15 @@ def test_structure_failures_redraft_before_voice_but_do_not_fill_missing_action(
                                 render.index("from science_fact_guard import validate_unsourced_quantities")]
     assert 'raise ValueError("Missing structured scene fields: "' in runtime
     assert 'if not data["visual_search_query"] or not data["action"]' in runtime
+
+
+
+def test_factual_failure_labels_precede_unrelated_groq_limit_logs():
+    from batch import classify_failure
+    other = "WARNING unrelated API 429 rate limit reached"
+    assert classify_failure(
+        "retention_storyboard_invalid: generic intro before useful hook",
+        other) == "storyboard_quality_rejected"
+    assert classify_failure(
+        "Missing structured scene fields: action",
+        other) == "script_visual_schema_invalid"
