@@ -25,7 +25,7 @@ def test_outline_requires_exactly_fourteen_grounded_video_searches():
     assert result[0]["visual_subject"]=="ocean"
     bad=example_outline()
     bad["sections"][0]["visual_subject"]="non visible cosmic consciousness idea"
-    with pytest.raises(ValueError,match="visual_subject"):
+    with pytest.raises(ValueError,match="outline_bad_heading_or_visual_query"):
         validate_outline(bad)
     bad=example_outline()
     bad["sections"].pop()
