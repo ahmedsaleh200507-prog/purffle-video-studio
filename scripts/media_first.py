@@ -228,6 +228,20 @@ def prioritize_lava_opening(topic, items, plans, scene_reports, *,
     return True
 
 
+def scene_footage_seconds(narration, language="en"):
+    """Estimate a short, safe unlooped shot duration from approved narration.
+
+    A 5-8 second real clip must not be rejected just because an unrelated
+    hardcoded ten-second budget was used during footage search. The renderer
+    still independently validates actual speech versus source duration.
+    """
+    words = len(re.findall(r"\b[\w'-]+\b", str(narration or "")))
+    if words < 5:
+        raise ValueError("media_first_scene_too_short_for_verified_footage")
+    rate = 2.0 if str(language).startswith("de") else 2.25
+    return round(max(4.0, words / rate + 1.45), 2)
+
+
 def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
                              min_scenes=3, max_scenes=4, clip_seconds=10.0,
                              storyboard=None):
@@ -293,6 +307,12 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
         if len(items) == max_scenes:
             break
         contract = option.get("_visual_contract") if director_mode else None
+        # #91: use the reviewed sentence's estimated spoken length, not an
+        # arbitrary ten seconds for every scene. No loops and no stale shots.
+        scene_need = (
+            scene_footage_seconds(scenes[slot-1].narration,
+                                  getattr(settings, "language", "en"))
+            if director_mode else clip_seconds)
         # Three event-specific aliases can find footage even when providers
         # index 'breaching' but not 'jumping', or 'ash plume' not 'eruption'.
         # This only broadens searches; the SAME strict evidence contract
@@ -318,8 +338,10 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
             visuals._shot_deadline = shot_budget_deadline
             start = len(visuals.report["scenes"])
             try:
-                item = visuals.for_scene(len(items), query, json.dumps(payload),
-                                         topic, clip_seconds, dest_dir)
+                # Use the factual scene slot, even if an earlier one failed.
+                # len(items) would incorrectly turn scene 2 into the opening.
+                item = visuals.for_scene(slot - 1, query, json.dumps(payload),
+                                         topic, scene_need, dest_dir)
             except RuntimeError as exc:
                 if "No suitable verified REAL VIDEO" not in str(exc):
                     raise
@@ -334,6 +356,7 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
             items.append(item)
             plans.append(plan)
             attempts.append({"scene": slot, "query": query, "status": "selected",
+                             "required_seconds": scene_need,
                              "source": item.source, "id": item.id})
             selected = True
             break
