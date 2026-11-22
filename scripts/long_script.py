@@ -171,11 +171,9 @@ def _validate_spoken_batch(batch, topic: str):
 
 
 def build_documentary(topic: str, client=None, *, sleep=time.sleep):
-    if not os.environ.get("GROQ_API_KEY") and client is None:
-        raise RuntimeError("GROQ_API_KEY missing")
     if client is None:
-        from groq import Groq
-        client = Groq(api_key=os.environ["GROQ_API_KEY"], timeout=120)
+        from long_llm import get_long_client
+        client = get_long_client()
 
     subjects = FIRE_AND_ICE_TOPICS if is_fire_and_ice(topic) else TOPICS
 
