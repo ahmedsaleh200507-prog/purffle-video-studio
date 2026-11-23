@@ -153,7 +153,8 @@ def test_failed_video_releases_incomplete_footage_reservations(tmp_path, monkeyp
 
 def test_native_720_retry_only_when_real_crop_rejection(monkeypatch):
     monkeypatch.setenv("RESOLUTION", "1080x1920")
-    failed = {"status": "failed", "failure_details": {
+    failed = {"status": "failed", "failure_category": "insufficient_verified_clips",
+              "failure_details": {
         "rejection_categories": {"insufficient_native_resolution": 2}}}
     assert batch.should_retry_at_720p(failed)
     assert not batch.should_retry_at_720p({"status": "failed",
