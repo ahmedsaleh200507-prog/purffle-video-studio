@@ -389,8 +389,27 @@ class StrictVisuals:
                 try:
                     if item.kind != "video" or item.key in self.used or url_key in self.used_urls:
                         raise ValueError("non_video_or_duplicate")
-                    if item.width > 0 and item.height > 0 and min(item.width, item.height) < 720:
-                        raise ValueError(f"Known source below 720 short side: {item.width}x{item.height}")
+                    if item.width > 0 and item.height > 0:
+                        if min(item.width, item.height) < 720:
+                            raise ValueError(f"Known source below 720 short side: {item.width}x{item.height}")
+                        # #96 spent network/disk budget on 1920x1080 sources
+                        # which can never fill a 1080x1920 crop within the
+                        # existing 1.20x enlargement policy. Use known media
+                        # dimensions to avoid downloading provably unusable
+                        # renditions; unknown dimensions still require FFprobe.
+                        predicted_scale = _native_portrait_scale(
+                            {"width": item.width, "height": item.height},
+                            getattr(self.s, "width", 720),
+                            getattr(self.s, "height", 1280))
+                        if not portrait_crop_allowed(predicted_scale):
+                            reason = (
+                                "insufficient_native_resolution: provider reports "
+                                f"{item.width}x{item.height} which cannot fill "
+                                f"{getattr(self.s, 'width', 720)}x{getattr(self.s, 'height', 1280)} "
+                                "within native crop policy")
+                            self._technical_rejections[item.key] = reason
+                            self._technical_rejections[url_key] = reason
+                            raise ValueError(reason)
                     if not LicenseValidator.validate(item.extra.get("license")):
                         raise ValueError("Unverified or incompatible candidate license")
                     license_info = item.extra.get("license") or {}
