@@ -269,6 +269,13 @@ def should_retry_at_720p(result):
             or os.environ.get('PURFFLE_AUTO_720_FALLBACK', '1') != '1'
             or os.environ.get('RESOLUTION', '720x1280').lower() != '1080x1920'):
         return False
+    # V5 #105: failed SCIENCE checks accidentally triggered a native-720
+    # VIDEO retry because an old/partial footage report also contained crop
+    # rejections. Changing resolution cannot repair an unsourced claim, and
+    # burned the last free daily Groq tokens on a second full story.
+    if result.get('failure_category') not in (
+            'insufficient_verified_clips', 'insufficient_native_resolution'):
+        return False
     rejections = (result.get('failure_details') or {}).get('rejection_categories') or {}
     return int(rejections.get('insufficient_native_resolution', 0)) > 0
 
@@ -344,7 +351,17 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500, *,
         except (OSError, ValueError, TypeError) as title_exc:
             result["youtube_title_error"] = type(title_exc).__name__
     except Exception as exc:
-        result.update(status='failed', error=str(exc), exception_type=type(exc).__name__, mp4=None)
+        # Untrusted upstream provider exceptions can contain account org IDs,
+        # full API error payloads and promotional billing links. Preserve
+        # the decisive 429/TPD/TPM code while hiding account identifiers.
+        import re
+        safe_error = re.sub(r'org_[a-z0-9]+', '[ORG_REDACTED]',
+                            str(exc), flags=re.I)
+        safe_error = re.sub(
+            r'https://console\.groq\.com/[^\s\\\'\"]+',
+            '[BILLING_URL_REDACTED]', safe_error)
+        result.update(status='failed', error=safe_error[:1400],
+                      exception_type=type(exc).__name__, mp4=None)
     finally:
         if result['status'] != 'ok':
             # A preflight may have reserved real clips before scene 3 failed.
