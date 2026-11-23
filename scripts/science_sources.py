@@ -448,11 +448,11 @@ def source_fact_cards(bundle: Evidence, limit=6):
         title_terms = {token for token in words(source.get("title", ""))
                        if len(token) > 3 and token not in _STOP}
         excerpt = str(source.get("excerpt", ""))[:4000]
-        for order, raw in enumerate(re.split(r"(?<=[.!?])\\s+", excerpt)):
-            line = re.sub(r"\\s+", " ", raw).strip()
+        for order, raw in enumerate(re.split(r"(?<=[.!?])\s+", excerpt)):
+            line = re.sub(r"\s+", " ", raw).strip()
             if not 40 <= len(line) <= 300:
                 continue
-            if re.search(r"citation needed|^https?://|\\[edit\\]", line, re.I):
+            if re.search(r"citation needed|^https?://|\[edit\]", line, re.I):
                 continue
             terms = set(words(line))
             topic_overlap = len(terms & topic_terms)
@@ -466,7 +466,7 @@ def source_fact_cards(bundle: Evidence, limit=6):
     candidates.sort(key=lambda row: (-row[0], row[1], row[2]))
     result, seen = [], set()
     for _score, _source_rank, _order, identifier, line in candidates:
-        key = re.sub(r"\\W+", " ", line).casefold()
+        key = re.sub(r"\W+", " ", line).casefold()
         if key in seen:
             continue
         seen.add(key)
