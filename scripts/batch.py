@@ -284,6 +284,9 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500, *,
             resolution_override: str | None = None):
     target = out / f'video_{index:02d}'
     target.mkdir(parents=True, exist_ok=True)
+    # When a failed 1080p attempt retries at 720p, never leave an old
+    # INCOMPLETE preview in the same artifact if the retry succeeds.
+    (target / 'PREVIEW_INCOMPLETE.mp4').unlink(missing_ok=True)
     result = {'index': index, 'topic': raw, 'original_input': raw, 'status': 'failed',
               'mp4': None, 'producer_commit': _producer_revision()}
     started = time.monotonic()
