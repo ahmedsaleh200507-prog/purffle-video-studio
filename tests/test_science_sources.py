@@ -174,25 +174,16 @@ def test_batch_reports_science_root_causes_not_false_provider_errors():
 
 
 
-def test_octopus_plural_alias_finds_real_singular_encyclopedia_article():
-    """The trending octopuses topic previously returned zero source extracts."""
+def test_octopus_three_hearts_prefers_topic_matched_museum_dossier():
+    """#105: do not cite blue-ringed species intros to verify circulatory facts."""
     client = Mock()
-    client.get.side_effect = [
-        FakeResponse({"query":{"pages":[]}}),
-        FakeResponse({"query":{"pages":[{
-            "title":"Octopus", "pageid":11,
-            "extract":("An octopus is an eight-armed marine mollusc in the "
-                       "cephalopod class. It has three hearts and uses gills. " * 6)
-        }]}}),
-    ]
     bundle = discover_evidence("Why Do Octopuses Have Three Hearts?",
-                               "en",session=client)
-    assert bundle.method == "model_screened_reference"
-    assert bundle.sources[0]["title"] == "Octopus"
-    assert bundle.sources[0]["url"] == "https://en.wikipedia.org/wiki/Octopus"
-    assert "three hearts" in bundle.sources[0]["excerpt"]
-    assert client.get.call_count == 2
-    assert client.get.call_args.kwargs["params"]["gsrsearch"] == "octopus"
+                               "en", session=client)
+    assert bundle.method == "curated_editor_reviewed"
+    assert len(bundle.sources) == 2
+    assert "ocean.si.edu" in bundle.sources[0]["url"]
+    assert "horniman.ac.uk" in bundle.sources[1]["url"]
+    client.get.assert_not_called()
 
 
 def test_german_crocodile_compound_alias_is_source_verified_not_invented():
