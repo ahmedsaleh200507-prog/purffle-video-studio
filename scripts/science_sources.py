@@ -622,8 +622,20 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         # A reviewer unable to return a valid structure is NOT evidence that
         # the script's science is wrong. Distinguish this infrastructure error
         # from actual unsupported claims; do not burn quota redrafting.
+        # Only report our own fixed structural labels. Never expose an LLM
+        # response body, API key, provider URL, or arbitrary model text.
+        known_structure_errors = {
+            "review returned incomplete scene checks",
+            "review returned invalid scene index",
+            "single-scene review returned wrong number of checks",
+            "single-scene review did not return a JSON object",
+            "single-scene review returned wrong scene index",
+            "single-scene review did not supply a verdict",
+        }
+        safe_detail = (str(exc) if str(exc) in known_structure_errors
+                       else type(exc).__name__)
         _report(report, bundle, "failed",
-                error=f"reviewer JSON unavailable: {type(exc).__name__}")
+                error=f"reviewer JSON unavailable: {safe_detail}")
         raise RuntimeError("science_review_unavailable: invalid_model_json") from None
     except Exception as exc:
         _report(report, bundle, "failed",
