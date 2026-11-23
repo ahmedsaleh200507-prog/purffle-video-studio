@@ -144,6 +144,67 @@ def test_stock_fallback_keeps_three_distinct_real_sources_without_faking(monkeyp
     assert len({x[2]["id"] for x in selected})==3
 
 
+def test_long_chapter_completes_with_single_long_licensed_visual_match(monkeypatch, tmp_path):
+    """A 42-second factual chapter need not fail if 1 verified 30s moving shot fits."""
+    import long_video
+    import media_validation
+    valid = SimpleNamespace(
+        source="pixabay", id="long-1",
+        text="Volcano eruption lava moving footage",
+        url="https://example.org/volcano-moving.mp4",
+        extra={"license": {
+            "creator": "Contributor", "id": "PIXABAY",
+            "source_page": "https://pixabay.com/videos/example/"}})
+    class Registry:
+        def search(self, provider, query):
+            return [valid] if provider == "pixabay" else []
+    monkeypatch.setattr(
+        media_validation.VideoDownloader, "download",
+        lambda self, url: tmp_path/"volcano-moving.mp4")
+    monkeypatch.setattr(
+        media_validation.QualityValidator, "validate",
+        lambda self, path: {"width": 1920, "height": 1080,
+                            "duration": 31.0})
+    monkeypatch.setattr(
+        long_video, "long_visual_verifier",
+        lambda *args, **kwargs: {
+            "verification": "local_clip_screening", "visual_score": .34})
+    selected = find_stock(0, 42., set(), tmp_path, registry=Registry())
+    assert len(selected) == 1
+    assert selected[0][1] * 1.5 >= 42.
+    assert selected[0][2]["completion_fallback"] == "one_verified_long_moving_clip"
+    assert selected[0][2]["license"] == "PIXABAY"
+    assert selected[0][2]["visual_check"] == "local_clip_screening"
+
+
+def test_long_chapter_still_rejects_single_too_short_clip(monkeypatch, tmp_path):
+    """Don't invent minutes by freezing or looping a short source."""
+    import long_video
+    import media_validation
+    short = SimpleNamespace(
+        source="pixabay", id="short-1",
+        text="Volcano eruption lava footage",
+        url="https://example.org/short.mp4",
+        extra={"license": {"creator": "Contributor", "id": "PIXABAY",
+                           "source_page": "https://pixabay.com/videos/example/"}})
+    class Registry:
+        def search(self, provider, query):
+            return [short] if provider == "pixabay" else []
+    monkeypatch.setattr(
+        media_validation.VideoDownloader, "download",
+        lambda self, url: tmp_path/"short.mp4")
+    monkeypatch.setattr(
+        media_validation.QualityValidator, "validate",
+        lambda self, path: {"width": 1920, "height": 1080,
+                            "duration": 20.0})
+    monkeypatch.setattr(
+        long_video, "long_visual_verifier",
+        lambda *args, **kwargs: {
+            "verification": "local_clip_screening", "visual_score": .34})
+    with pytest.raises(RuntimeError, match="long_stock_insufficient_chapter_1"):
+        find_stock(0, 42., set(), tmp_path, registry=Registry())
+
+
 def test_long_only_storyboard_prioritizes_correct_chapter_queries():
     assert long_visual_queries(2)[0] == "molten lava"
     assert long_visual_queries(9)[0] == "volcanic ash cloud"
