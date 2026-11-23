@@ -592,35 +592,55 @@ def test_groq_one_scene_wrong_scene_id_is_not_silently_accepted(tmp_path, monkey
     assert json.loads(target.read_text())["state"] == "failed"
 
 
-def test_groq_strict_json_scope_is_only_science_review():
+def test_groq_strict_request_uses_official_schema_without_downgrade(monkeypatch):
     from science_sources import _strict_science_review_json
+    import requests
 
+    monkeypatch.setenv("GROQ_API_KEY", "dummy-test-key")
     provider = SimpleNamespace(
         name="groq", model="openai/gpt-oss-20b", _schema_mode=False)
-    class RealisticReviewClient:
+    seen = {}
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {"choices": [{"message": {"content": '{"supported":false}'}}]}
+    def fake_post(url, *, json, headers, timeout):
+        seen.update({"url": url, "payload": json, "timeout": timeout})
+        assert headers["Authorization"] == "Bearer dummy-test-key"
+        return FakeResponse()
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    class StrictClient:
         providers = [provider]
-        def complete_json(self, system, prompt, schema):
-            assert provider._schema_mode is True
-            assert schema["type"] == "object"
-            return {"checks": []}
-    reviewer = RealisticReviewClient()
+        def complete_json(self, *args, **kwargs):
+            raise AssertionError("upstream silent schema downgrade must not run")
     answer = _strict_science_review_json(
-        reviewer, "facts", "check", {"type": "object"})
-    assert answer == {"checks": []}
+        StrictClient(), "review science", "check this scene",
+        {"type": "object", "properties": {
+            "supported": {"type": "boolean"}},
+            "required": ["supported"], "additionalProperties": False})
+    assert answer == {"supported": False}
+    assert seen["payload"]["response_format"]["type"] == "json_schema"
+    assert seen["payload"]["response_format"]["json_schema"]["strict"] is True
+    assert seen["payload"]["model"] == "openai/gpt-oss-20b"
+    assert seen["url"] == "https://api.groq.com/openai/v1/chat/completions"
     assert provider._schema_mode is False
 
 
-def test_science_strict_json_scope_resets_after_failure_and_skips_unsupported_models():
+def test_science_strict_http_error_fails_closed_never_downgrades(monkeypatch):
     from science_sources import _strict_science_review_json
+    import requests
+    monkeypatch.setenv("GROQ_API_KEY", "dummy-test-key")
     groq = SimpleNamespace(name="groq", model="openai/gpt-oss-120b", _schema_mode=False)
     old_groq = SimpleNamespace(name="groq", model="llama-3.3-70b-versatile", _schema_mode=False)
+    class ErrorResponse:
+        status_code = 400
+    monkeypatch.setattr(requests, "post", lambda *args, **kwargs: ErrorResponse())
     class ReviewError:
         providers = [groq, old_groq]
         def complete_json(self, *args):
-            assert groq._schema_mode is True
-            assert old_groq._schema_mode is False
-            raise ValueError("bad result")
-    with pytest.raises(ValueError, match="bad result"):
+            raise AssertionError("must not silently downgrade to JSON object")
+    with pytest.raises(RuntimeError, match="strict_groq_http_400"):
         _strict_science_review_json(ReviewError(), "s", "u", {"type": "object"})
     assert not groq._schema_mode
     assert not old_groq._schema_mode
