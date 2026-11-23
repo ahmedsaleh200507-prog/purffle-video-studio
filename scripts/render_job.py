@@ -226,6 +226,21 @@ def main():
                             'SCIENCE_REPORT', 'science-report.json')
                         review_feedback_text = rejected_claim_feedback(
                             feedback_path, screenplay)
+                        # Preserve why earlier scripts failed. A later 429
+                        # overwrote science-report.json with an empty checks
+                        # list, erasing the exact unsupported scene evidence.
+                        # Keep at most two bounded same-job review snapshots
+                        # in the normal finished/<video> artifact directory.
+                        try:
+                            from pathlib import Path
+                            source_report = Path(feedback_path)
+                            if source_report.is_file():
+                                snapshot = source_report.with_name(
+                                    source_report.stem + f'-attempt-{attempt + 1}'
+                                    + source_report.suffix)
+                                snapshot.write_bytes(source_report.read_bytes())
+                        except OSError:
+                            pass  # Diagnostic archival never bypasses QA.
                     if attempt >= 2:
                         raise
                     logging.warning(
