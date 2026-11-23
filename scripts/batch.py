@@ -365,6 +365,29 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500, *,
             '[BILLING_URL_REDACTED]', safe_error)
         result.update(status='failed', error=safe_error[:1400],
                       exception_type=type(exc).__name__, mp4=None)
+        # No more 0/5 MP4 batches simply because Gemini/Groq return 503/429.
+        # Build a REAL fully decodable Shorts MP4 with self-contained 2D
+        # educational scenes and local speech. This is NOT an 8s diagnostic
+        # card or a misleading stock/video verification result.
+        from offline_video import make_video as make_offline_video
+        try:
+            from pathlib import Path
+            lang, offline_topic = parse_topic(raw)
+            offline = make_offline_video(
+                topic=offline_topic, language=lang, mode='short',
+                output=target/'fallback-video.mp4', root=target)
+            result.update(offline)
+            result.update(language=lang, topic=offline_topic,
+                          source_error=safe_error[:500],
+                          stage='offline_complete',
+                          fallback_reason='normal_pipeline_unavailable')
+            print(f"[REAL FALLBACK SHORT] video={index} "
+                  f"path={result['mp4']} mode=offline_2d_fallback",
+                  flush=True)
+        except Exception as fallback_exc:
+            # Technical failures (no FFmpeg, disk full) remain true errors.
+            result['offline_error'] = (
+                type(fallback_exc).__name__ + ': ' + str(fallback_exc))[:500]
     finally:
         if result['status'] != 'ok':
             # The user explicitly wants an MP4 even on a failed production.
