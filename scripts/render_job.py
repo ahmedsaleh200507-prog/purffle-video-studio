@@ -225,10 +225,72 @@ def main():
             script_scene_count = len(screenplay.scenes)
             if not 2 <= script_scene_count <= 6:
                 raise RuntimeError("visual_director_invalid_scene_count")
-            palette = prepare_verified_palette(
-                os.environ['VIDEO_TOPIC'], s, storyboard=screenplay,
-                min_scenes=script_scene_count, max_scenes=script_scene_count,
-                clip_seconds=10.0)
+            # A real-video preflight may fail because the source library
+            # cannot film one of the draft's literal actions. Give the factual
+            # writer ONE feedback-guided revision, not an unbounded retry.
+            # Restore scene reservations before trying the revised storyboard:
+            # an unsuccessful draft must not consume clips that could serve it.
+            ledger_path = Path(os.environ.get(
+                'FOOTAGE_USED_PATH', 'media_cache/used-media.json'))
+            ledger_before = (ledger_path.read_bytes()
+                             if ledger_path.is_file() else None)
+            try:
+                palette = prepare_verified_palette(
+                    os.environ['VIDEO_TOPIC'], s, storyboard=screenplay,
+                    min_scenes=script_scene_count, max_scenes=script_scene_count,
+                    clip_seconds=10.0)
+            except RuntimeError as footage_error:
+                if 'media_preflight_insufficient_footage' not in str(footage_error):
+                    raise
+                from media_first import footage_failure_feedback
+                from visual_director import use_footage_feedback
+                report_path = Path(os.environ.get(
+                    'FOOTAGE_REPORT', 'footage-report.json'))
+                failure_report = json.loads(
+                    report_path.read_text(encoding='utf-8'))
+                feedback = footage_failure_feedback(failure_report)
+                if not feedback:
+                    raise
+                print('[FOOTAGE RECOVERY] One source-grounded storyboard '
+                      'revision after failed visual preflight', flush=True)
+                if ledger_before is None:
+                    ledger_path.unlink(missing_ok=True)
+                else:
+                    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+                    temporary = ledger_path.with_suffix('.replan')
+                    temporary.write_bytes(ledger_before)
+                    temporary.replace(ledger_path)
+                stage = 'grounded_visual_replan'
+                with (use_story_scene_target(script_scene_count),
+                      use_evidence(evidence), use_footage_feedback(feedback)):
+                    alternative, alt_pick, alt_writer = studio.draft(
+                        os.environ['VIDEO_TOPIC'], style='facts')
+                if len(alternative.scenes) != script_scene_count:
+                    raise RuntimeError(
+                        'visual_replan_scene_count_mismatch')
+                if all(
+                    str(a.visual_search_query).casefold() ==
+                    str(b.visual_search_query).casefold()
+                    for a, b in zip(alternative.scenes, screenplay.scenes)
+                ):
+                    raise RuntimeError(
+                        'visual_replan_repeated_unavailable_queries')
+                # A replan cannot introduce unsupported science or skip the
+                # independently verified facts to make stock footage fit.
+                validate_unsourced_quantities(
+                    alternative, os.environ['VIDEO_TOPIC'])
+                storyboard_audit = audit_storyboard(
+                    os.environ['VIDEO_TOPIC'], alternative, s.language)
+                stage = 'science_review'
+                screen_narration(
+                    alternative, evidence, studio.llm,
+                    path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
+                stage = 'visual_director_preflight'
+                palette = prepare_verified_palette(
+                    os.environ['VIDEO_TOPIC'], s, storyboard=alternative,
+                    min_scenes=script_scene_count, max_scenes=script_scene_count,
+                    clip_seconds=10.0)
+                screenplay, pick, writer = alternative, alt_pick, alt_writer
             validate_narration_timing(palette, screenplay, s.language)
             from retention_storyboard import choose_duration_seconds, save_storyboard_report
             fact_count = len(getattr(evidence, 'sources', []) or [])
