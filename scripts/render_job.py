@@ -141,7 +141,8 @@ def main():
             # Old palette-first gathered vaguely related clips and forced a
             # fixed science story over them (#84 ship, #86 volcano).
             from media_first import (prepare_verified_palette, validate_narration_timing)
-            from science_sources import discover_evidence, screen_narration, use_evidence
+            from science_sources import (discover_evidence, screen_narration, use_evidence,
+                                         use_review_feedback, rejected_claim_feedback)
             stage = 'science_sources'
             try:
                 evidence = discover_evidence(os.environ['VIDEO_TOPIC'], s.language)
@@ -152,6 +153,7 @@ def main():
                 raise
 
             stage = 'grounded_script'
+            review_feedback_text = ''
             for attempt in range(3):
                 # The normalizer obtains precise, source-checked facts before
                 # anybody searches for clips. A visual query can never
@@ -182,7 +184,9 @@ def main():
                                            _lightning_repeated_topic(topic))
                                 else None)
                 try:
-                    with use_story_scene_target(target_count), use_evidence(evidence):
+                    with (use_story_scene_target(target_count),
+                          use_evidence(evidence),
+                          use_review_feedback(review_feedback_text)):
                         screenplay, pick, writer = studio.draft(
                             topic, style='facts')
                 except (ValueError, TypeError) as draft_error:
@@ -210,6 +214,12 @@ def main():
                         path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                     break
                 except RuntimeError as script_error:
+                    if (str(script_error).startswith(
+                            'science_claim_unverified: unsupported narration scene')):
+                        feedback_path = os.environ.get(
+                            'SCIENCE_REPORT', 'science-report.json')
+                        review_feedback_text = rejected_claim_feedback(
+                            feedback_path, screenplay)
                     if attempt >= 2:
                         raise
                     logging.warning(
