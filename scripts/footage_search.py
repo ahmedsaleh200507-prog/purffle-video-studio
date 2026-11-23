@@ -19,6 +19,9 @@ def discover(registry, sources, queries, deadline, *, workers=4):
         for query in queries:
             if time.monotonic() >= deadline:
                 return
+            # Rotate through providers before spending the entire scene budget
+            # downloading four clips from whichever API responds first.
+            deferred = []
             pending = {pool.submit(search, source, query): source for source in sources
                        if source not in getattr(registry, '_circuit', ())}
             while pending:
@@ -42,7 +45,16 @@ def discover(registry, sources, queries, deadline, *, workers=4):
                         if candidate.key not in seen[source]:
                             seen[source].add(candidate.key)
                             fresh.append(candidate)
-                    yield source, fresh
+                    # Preserve prompt/source ordering, but first offer a small
+                    # sample from EVERY live provider. A large first response
+                    # must not starve NASA, Wikimedia or official archives.
+                    yield source, fresh[:2]
+                    if len(fresh) > 2:
+                        deferred.append((source, fresh[2:]))
+            for source, remaining_candidates in deferred:
+                if time.monotonic() >= deadline:
+                    return
+                yield source, remaining_candidates
     finally:
         # Pending requests never survive the stage. Running HTTP calls observe
         # JsonClient's shared scene deadline and bounded connect/read timeouts.
