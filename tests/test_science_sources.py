@@ -557,3 +557,36 @@ def test_blue_sky_discards_rayleigh_biography_even_with_title_overlap():
     ]}})
     result = discover_evidence("Why is the sky blue?", "en", session=client)
     assert [source["title"] for source in result.sources] == ["Rayleigh scattering"]
+
+
+def test_groq_one_scene_wrapped_review_is_accepted_only_with_real_quote(tmp_path, monkeypatch):
+    monkeypatch.setattr("science_sources.time.sleep", lambda *_: None)
+    class GroqWrapped:
+        def complete_json(self, system, prompt, schema):
+            if "checks" in schema["properties"]:
+                raise ValueError("model bulk JSON array malformed")
+            return {"checks": [{
+                "scene": 1, "supported": True, "source_id": "wiki-1",
+                "quote": "Underwater volcanic eruptions can accumulate layers of lava and rock.",
+                "reason": "Direct reference quote"
+            }]}
+    target = tmp_path / "report.json"
+    screen_narration(scene(), mock_bundle(), GroqWrapped(), path=target)
+    assert json.loads(target.read_text())["state"] == "model_screened_reference"
+
+
+def test_groq_one_scene_wrong_scene_id_is_not_silently_accepted(tmp_path, monkeypatch):
+    monkeypatch.setattr("science_sources.time.sleep", lambda *_: None)
+    class GroqWrongScene:
+        def complete_json(self, system, prompt, schema):
+            if "checks" in schema["properties"]:
+                raise ValueError("bad bulk")
+            return {"checks": [{
+                "scene": 4, "supported": True, "source_id": "wiki-1",
+                "quote": "Underwater volcanic eruptions can accumulate layers of lava and rock.",
+                "reason": "Different scene"
+            }]}
+    target = tmp_path / "report.json"
+    with pytest.raises(RuntimeError, match="science_review_unavailable"):
+        screen_narration(scene(), mock_bundle(), GroqWrongScene(), path=target)
+    assert json.loads(target.read_text())["state"] == "failed"
