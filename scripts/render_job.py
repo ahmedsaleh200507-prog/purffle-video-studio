@@ -188,8 +188,22 @@ def main():
                     with (use_story_scene_target(target_count),
                           use_evidence(evidence),
                           use_review_feedback(review_feedback_text)):
-                        screenplay, pick, writer = studio.draft(
-                            topic, style='facts')
+                        # For fixed, official-source-backed explainers,
+                        # drafting a random Groq script only to overwrite
+                        # every sentence wastes thousands of free tokens.
+                        # Unknown topics still use model drafts and strict
+                        # independent source-quote review.
+                        from official_draft import approved_dossier_draft
+                        cached_draft = approved_dossier_draft(
+                            topic, s.language, evidence,
+                            scene_count=target_count or 3)
+                        if cached_draft is not None:
+                            screenplay, pick, writer = cached_draft
+                            print('[SOURCE DOSSIER] Factual source-reviewed '
+                                  'draft; zero Groq script tokens', flush=True)
+                        else:
+                            screenplay, pick, writer = studio.draft(
+                                topic, style='facts')
                 except (ValueError, TypeError) as draft_error:
                     # The Groq JSON generator sometimes omits a mandatory
                     # scene action/key. Never fabricate one or waive the
@@ -215,6 +229,11 @@ def main():
                         path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                     break
                 except RuntimeError as script_error:
+                    if evidence.method == 'curated_editor_reviewed':
+                        # A mismatched predefined statement cannot be fixed
+                        # by paying the LLM to invent an alternative: fail
+                        # closed and report the dossier integrity error.
+                        raise
                     # An unavailable/malformed reviewer is a tool failure,
                     # not an unsupported factual claim. Another newly written
                     # storyboard cannot fix that tool and wastes free API
@@ -362,6 +381,11 @@ def main():
                 if repaired is not None:
                     screenplay = repaired
                 else:
+                    # An approved fixed-science dossier must not be rewritten
+                    # with untrusted model claims merely to obtain footage.
+                    # Subject/license/CLIP gates still fail closed.
+                    if evidence.method == 'curated_editor_reviewed':
+                        raise
                     print('[FOOTAGE RECOVERY] One source-grounded storyboard '
                           'revision after failed visual preflight', flush=True)
                     stage = 'grounded_visual_replan'
