@@ -214,6 +214,12 @@ def main():
                         path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                     break
                 except RuntimeError as script_error:
+                    # An unavailable/malformed reviewer is a tool failure,
+                    # not an unsupported factual claim. Another newly written
+                    # storyboard cannot fix that tool and wastes free API
+                    # quota; keep the failure honest and stop immediately.
+                    if str(script_error).startswith('science_review_unavailable:'):
+                        raise
                     if (str(script_error).startswith(
                             'science_claim_unverified: unsupported narration scene')):
                         feedback_path = os.environ.get(
