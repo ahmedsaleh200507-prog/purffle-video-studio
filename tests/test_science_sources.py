@@ -141,7 +141,7 @@ def test_llm_unavailable_rejects_claims(tmp_path):
     llm = Mock()
     llm.complete_json.side_effect = ValueError("unexpected response")
     target = tmp_path / "science-report.json"
-    with pytest.raises(RuntimeError, match="science_claim_unverified"):
+    with pytest.raises(RuntimeError, match="science_review_unavailable"):
         screen_narration(scene(), mock_bundle(), llm, path=target)
     assert json.loads(target.read_text())["state"] == "failed"
 
@@ -486,3 +486,60 @@ def test_blue_sky_skips_hyper_rayleigh_non_atmospheric_distractor():
     ]}})
     result = discover_evidence("Why is the sky blue?", "en", session=client)
     assert [s["title"] for s in result.sources] == ["Rayleigh scattering"]
+
+
+def test_malformed_bulk_review_recovers_via_single_scene_exact_source_quote(tmp_path, monkeypatch):
+    """V5 real-proof regression: invalid Groq review JSON after Gemini 503."""
+    monkeypatch.setattr("science_sources.time.sleep", lambda *_: None)
+    quoted = "Underwater volcanic eruptions can accumulate layers of lava and rock."
+
+    class BadArrayGoodIndividualReviewer:
+        calls = 0
+        def complete_json(self, system, prompt, schema):
+            self.calls += 1
+            if "checks" in schema["properties"]:
+                raise ValueError("response not valid JSON for array schema")
+            return {"supported": True, "source_id": "wiki-1",
+                    "quote": quoted, "reason": "Supported by reference."}
+
+    reviewer = BadArrayGoodIndividualReviewer()
+    output = tmp_path / "science-report.json"
+    screen_narration(scene(), mock_bundle(), reviewer, path=output)
+    assert reviewer.calls == 4
+    result = json.loads(output.read_text())
+    assert result["state"] == "model_screened_reference"
+    assert result["scene_checks"][0]["supported"] is True
+
+
+def test_single_scene_fallback_rejects_fabricated_quote(tmp_path, monkeypatch):
+    monkeypatch.setattr("science_sources.time.sleep", lambda *_: None)
+
+    class FakeReviewer:
+        def complete_json(self, system, prompt, schema):
+            if "checks" in schema["properties"]:
+                raise ValueError("bad bulk shape")
+            return {"supported": True, "source_id": "wiki-1",
+                    "quote": "Scientists have proven that volcanoes always fly through the sky.",
+                    "reason": "Claimed support."}
+
+    target = tmp_path / "science-report.json"
+    with pytest.raises(RuntimeError, match="science_claim_unverified: unsupported narration"):
+        screen_narration(scene(), mock_bundle(), FakeReviewer(), path=target)
+    payload = json.loads(target.read_text())
+    assert payload["state"] == "failed"
+    assert payload["scene_checks"][0]["supported"] is False
+
+
+def test_malformed_single_scene_output_is_reviewer_failure_not_bad_science(tmp_path, monkeypatch):
+    monkeypatch.setattr("science_sources.time.sleep", lambda *_: None)
+
+    class AlwaysInvalidReviewer:
+        def complete_json(self, system, prompt, schema):
+            if "checks" in schema["properties"]:
+                raise ValueError("unparseable JSON")
+            return {"oops": "missing supported source_id and quote"}
+
+    target = tmp_path / "science-report.json"
+    with pytest.raises(RuntimeError, match="science_review_unavailable: invalid_model_json"):
+        screen_narration(scene(), mock_bundle(), AlwaysInvalidReviewer(), path=target)
+    assert "reviewer JSON unavailable" in json.loads(target.read_text())["error"]
