@@ -51,13 +51,15 @@ def test_first_second_semantic_gate_rejects_empty_sky_ocean_even_with_motion():
     positive = _semantic_subject_screen(
         [object(), object()], spec,
         scorer=lambda frames, captions: [
-            [.32, .22, .18], [.34, .21, .18]])
+            [.32, .22, .18] + [.14] * (len(captions) - 3),
+            [.34, .21, .18] + [.14] * (len(captions) - 3)])
     assert positive["verified"]
     assert positive["subject_minus_scenery"] >= .08
     empty_ocean = _semantic_subject_screen(
         [object(), object()], spec,
         scorer=lambda frames, captions: [
-            [.22, .35, .16], [.24, .37, .18]])
+            [.22, .35, .16] + [.12] * (len(captions) - 3),
+            [.24, .37, .18] + [.12] * (len(captions) - 3)])
     assert not empty_ocean["verified"]
     assert empty_ocean["reason"] == "opening_subject_not_prominent_enough"
 
