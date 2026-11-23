@@ -24,6 +24,8 @@ jobs:
           command -v ffmpeg
           command -v ffprobe
           ffmpeg -version | head -n 1
+          # Use explicit FFmpeg duration syntax d=0.3 (not .3).
+          ffmpeg -hide_banner -filters | grep ' fade ' | head -n 1 || true
       - name: Test generated MP4 with real ffprobe
         env:
           PYTHONPATH: scripts
@@ -84,6 +86,8 @@ jobs:
           command -v ffmpeg
           command -v ffprobe
           ffmpeg -version | head -n 1
+          # Use explicit FFmpeg duration syntax d=0.3 (not .3).
+          ffmpeg -hide_banner -filters | grep ' fade ' | head -n 1 || true
       - name: Reproduce failed Space Telescopes topic as REAL 10-minute full MP4
         env:
           PYTHONPATH: scripts
