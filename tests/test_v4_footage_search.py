@@ -147,3 +147,60 @@ def test_event_footage_and_illustrative_context_are_reported_differently():
     assert illustrative_status({"event_required": True}) is False
     assert illustrative_status({"event_required": False}) is True
     assert illustrative_status(None) is True
+
+
+
+def test_explaining_sky_does_not_select_observing_face_as_visual_subject():
+    from visual_director import anchor_observational_science_scene
+    original = {
+        "narration": "This diffuse radiation is what we see when we look upward.",
+        "main_character": "person", "object": "eyes", "action": "looking",
+        "location": "meadow", "time": "day",
+        "visual_search_query": "person looking at sky",
+    }
+    replacement = anchor_observational_science_scene(
+        original, "Why is the sky blue?")
+    assert replacement["object"] == "sky"
+    assert replacement["main_character"] == ""
+    assert "blue" in replacement["visual_search_query"]
+    assert replacement["narration"] == original["narration"]
+    assert original["object"] == "eyes"
+    # A story about a person's face is not automatically discarded.
+    assert anchor_observational_science_scene(
+        original, "How do people recognize faces?") is original
+
+
+def test_nature_has_person_and_sunset_hard_negatives_not_generic_silence():
+    from media_validation import SceneSpec, scene_specific_hard_negatives
+    sky = SceneSpec(object="sky", action="ambient",
+                    visual_search_query="clear blue sky")
+    clips = scene_specific_hard_negatives(sky)
+    assert len(clips) >= 4
+    assert any("person walking" in clip for clip in clips)
+    assert any("Orange sunset" in clip for clip in clips)
+    sunlight = SceneSpec(object="sunlight", action="shining",
+                         visual_search_query="sunlight through clouds")
+    assert any("silhouette" in clip.lower()
+               for clip in scene_specific_hard_negatives(sunlight))
+    actor = SceneSpec(main_character="woman", object="eyes",
+                      action="looking", visual_search_query="woman looking up")
+    assert not scene_specific_hard_negatives(actor)
+
+
+def test_clear_blue_sky_rejects_visuals_that_look_more_like_gray_sky(tmp_path, monkeypatch):
+    from media_validation import SceneSpec, SceneMatcher, ValidationError
+    from PIL import Image
+    spec = SceneSpec(object="sky", action="ambient", visual_search_query="clear blue sky")
+    monkeypatch.setattr("media_validation._frame",
+                        lambda *args, **kwargs: Image.new("RGB", (224, 224)))
+    captions_seen = []
+    def fake_scores(frames, captions):
+        captions_seen.extend(captions)
+        # A distractor scene scores better than requested blue sky
+        return [[.267, .24] + [.18]*(len(captions)-3) + [.285]] * len(frames)
+    monkeypatch.setattr(SceneMatcher, "_similarities", fake_scores)
+    with pytest.raises(ValidationError, match="Visual scene mismatch"):
+        SceneMatcher().match(tmp_path / "fake.mp4", spec, "clear blue sky clouds",
+                             duration=6)
+    assert any("gray overcast" in c.lower() for c in captions_seen)
+    assert any("person walking" in c for c in captions_seen)
