@@ -441,6 +441,21 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     pairs = [c for c in usable if c[1] * 1.5 >= chapter_seconds / 2]
     if len(pairs) >= 2:
         return pairs[:2]
+
+    # Completion-first, still real footage: a single sufficiently LONG
+    # independently licensed, HD, moving and CLIP-screened video can cover
+    # this chapter without black filler, fabricated stock or frame freezes.
+    # Less varied visually than three shots, but safer than discarding the
+    # entire ten-minute documentary after a successful real-clip match.
+    single = next((c for c in sorted(
+        chosen, key=lambda c: c[1], reverse=True)
+        if c[1] * 1.5 >= chapter_seconds), None)
+    if single is not None:
+        print(f"[LONG STOCK SINGLE CLIP] chapter={index+1} "
+              f"licensed_clips=1 source_duration={single[1]:.1f}s "
+              "subject_verified=True", flush=True)
+        single[2]["completion_fallback"] = "one_verified_long_moving_clip"
+        return [single]
     raise RuntimeError(
         f"long_stock_insufficient_chapter_{index+1}: "
         f"{len(usable)} new usable clips, {len(recoveries)} independently "
