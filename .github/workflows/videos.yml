@@ -44,6 +44,10 @@ on:
         description: '10 - en|Topic or de|Thema'
         required: false
         type: string
+  push:
+    branches: [fix/purffle-footage-recovery]
+    paths:
+      - '.github/workflows/videos.yml'
 permissions:
   contents: read
 # No workflow-wide concurrency lock. With a constant group GitHub allows only
@@ -52,7 +56,45 @@ permissions:
 # max-parallel: 1 per run to prevent multiple jobs jointly exhausting the
 # same Groq free-tier tokens-per-minute budget. Do not add a global lock.
 jobs:
+  clean-old-run-cards:
+    name: Remove two previously verified obsolete run IDs
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete only exact 90 and 109 entries after name and status checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import os, json, urllib.request
+          root = "https://api.github.com/repos/" + os.environ["GH_REPO"]
+          h = {"Authorization": "Bearer " + os.environ["GH_TOKEN"],
+               "Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28",
+               "User-Agent": "Purffle-Exact-Run-Card-Cleanup"}
+          targets = {
+            45255748777: "90 - INTERNAL | Automatic code tests",
+            45255736114: "109 - MAINTENANCE | Remove obsolete test runs",
+          }
+          for run_id, expected in targets.items():
+              url = root + "/actions/runs/" + str(run_id)
+              with urllib.request.urlopen(
+                  urllib.request.Request(url,headers=h),timeout=20) as r:
+                  item=json.load(r)
+              if item.get("name") != expected or item.get("status") != "completed":
+                  raise RuntimeError("Refusing deletion: expected exact completed run " + str(run_id))
+              with urllib.request.urlopen(
+                  urllib.request.Request(url,headers=h,method="DELETE"),timeout=20) as r:
+                  assert r.status == 204
+              print("[CLEANUP] removed verified obsolete run",run_id,flush=True)
+          PY
   create-videos:
+    if: github.event_name == 'workflow_dispatch'
     name: create-videos | Video ${{ matrix.slot }} of 10
     runs-on: ubuntu-24.04
     timeout-minutes: 65
