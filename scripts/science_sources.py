@@ -435,6 +435,47 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
     return Evidence(str(topic), sources, "model_screened_reference")
 
 
+def source_fact_cards(bundle: Evidence, limit=6):
+    """Highlight *actual* relevant source sentences; invent no extra facts.
+
+    Ranking only locates source text for the author. It is NOT a scientific
+    reliability score or a replacement for independent claim screening.
+    """
+    topic_terms = {token for token in words(bundle.topic)
+                   if len(token) > 3 and token not in _STOP}
+    candidates = []
+    for source_rank, source in enumerate(bundle.sources[:2]):
+        title_terms = {token for token in words(source.get("title", ""))
+                       if len(token) > 3 and token not in _STOP}
+        excerpt = str(source.get("excerpt", ""))[:4000]
+        for order, raw in enumerate(re.split(r"(?<=[.!?])\\s+", excerpt)):
+            line = re.sub(r"\\s+", " ", raw).strip()
+            if not 40 <= len(line) <= 300:
+                continue
+            if re.search(r"citation needed|^https?://|\\[edit\\]", line, re.I):
+                continue
+            terms = set(words(line))
+            topic_overlap = len(terms & topic_terms)
+            title_overlap = len(terms & title_terms)
+            if not topic_overlap and not title_overlap:
+                continue
+            # The first ranked retrieved article is typically more relevant,
+            # but only literal excerpt content, not our ranking, is usable.
+            rank = 4 * topic_overlap + title_overlap + (2 if source_rank == 0 else 0)
+            candidates.append((rank, source_rank, order, str(source["id"]), line))
+    candidates.sort(key=lambda row: (-row[0], row[1], row[2]))
+    result, seen = [], set()
+    for _score, _source_rank, _order, identifier, line in candidates:
+        key = re.sub(r"\\W+", " ", line).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(f"[{identifier}] {line}")
+        if len(result) >= limit:
+            break
+    return result
+
+
 def evidence_prompt(bundle: Evidence) -> str:
     if bundle.method == "curated_editor_reviewed":
         return ("Use the editor-reviewed factual narration for this recognized "
@@ -452,6 +493,19 @@ def evidence_prompt(bundle: Evidence) -> str:
         "Every factual assertion must be supported by the provided excerpts.",
         "If uncertain, give a simpler statement directly supported by the excerpts.",
     ]
+    cards = source_fact_cards(bundle)
+    if cards:
+        lines.extend([
+            "SOURCE-OWNED FACT CARDS (literal sentences from the retrieved "
+            "reference excerpts, NOT externally verified truth):",
+            "Write each narration sentence from only ONE explicitly supported "
+            "fact card. Do not manufacture intermediate causal steps, visual "
+            "metaphors treated as physics, reflected-light claims, timings, "
+            "sunsets, measurements or named discoveries unless the card states "
+            "them explicitly. A shorter correct explanation is better than "
+            "four imaginative unsupported sentences.",
+        ])
+        lines.extend(cards)
     for source in bundle.sources:
         lines.extend([f"[{source['id']}] {source['title']} — {source['url']}",
                       source["excerpt"]])
