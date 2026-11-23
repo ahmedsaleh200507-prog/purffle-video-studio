@@ -21,6 +21,20 @@ from PIL import Image
 from topic_footage import words
 
 _SCENE_TARGET = ContextVar("purffle_director_scene_target", default=None)
+_FOOTAGE_FEEDBACK = ContextVar("purffle_footage_feedback", default="")
+
+
+@contextmanager
+def use_footage_feedback(feedback):
+    token = _FOOTAGE_FEEDBACK.set(str(feedback or "")[:800])
+    try:
+        yield
+    finally:
+        _FOOTAGE_FEEDBACK.reset(token)
+
+
+def footage_feedback():
+    return _FOOTAGE_FEEDBACK.get()
 
 
 @contextmanager
