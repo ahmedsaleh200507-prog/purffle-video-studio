@@ -351,7 +351,19 @@ class StrictVisuals:
         attempt_deadline = min(scene_start + 75,
                                getattr(self, "_shot_deadline", float("inf")))
         max_candidates = max(1, min(12, int(os.getenv("CANDIDATES_PER_SOURCE", "4"))))
-        for source in self.sources:
+        # #93: the precise "lava entering ocean" shot was filled by a
+        # generic Pixabay lava clip before the curated USGS ocean-entry
+        # footage was ever considered. Prefer USGS ONLY for that shot;
+        # generic volcano shots keep their existing provider order.
+        source_order = list(self.sources)
+        from topic_footage import is_lava_ocean_topic
+        exact_ocean_entry = (is_lava_ocean_topic(topic) and any(
+            word in data["visual_search_query"].casefold()
+            for word in ("ocean", "sea", "coast", "entry", "laze")))
+        if exact_ocean_entry and "usgs-video" in source_order:
+            source_order.remove("usgs-video")
+            source_order.insert(0, "usgs-video")
+        for source in source_order:
             if time.monotonic() >= attempt_deadline:
                 break
             # Search a concise, subject-focused variant when verbose camera/action
@@ -582,11 +594,28 @@ class StrictVisuals:
                         else:
                             mid = max(1.15, min(float(need) * .6,
                                                 float(quality["duration"]) * .7))
+                            near_end = max(mid + .05, min(
+                                float(need) * .88,
+                                float(quality["duration"]) - .30))
                             cropped_frames = _first_frames(
-                                path, focus=focus, seconds=(.15, mid))
+                                path, focus=focus,
+                                seconds=(.15, mid, near_end))
+                        # Stop approving faint CLIP preferences for storm
+                        # clouds, empty sea or small background ships. A
+                        # physical object must remain visible in the scene;
+                        # lightning is brief so it needs stronger contrast
+                        # but NOT persistent flashes in every sampled frame.
+                        subject_kind = subject_specification["subject"]
+                        permanent_subject = subject_kind in {
+                            "bathroom_mirror", "iceberg",
+                            "floating_cargo_ship"}
+                        critical_margin = (.05 if subject_kind == "lightning"
+                            else .032 if permanent_subject else .012)
                         subject_result = _semantic_subject_screen(
                             cropped_frames, subject_specification,
-                            scorer=self.matcher._similarities)
+                            scorer=self.matcher._similarities,
+                            require_all_frames=permanent_subject,
+                            minimum_margin=critical_margin)
                         if not subject_result["verified"]:
                             raise ValueError(
                                 "visual_subject_not_grounded: vertical scene "
