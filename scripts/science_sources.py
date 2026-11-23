@@ -139,7 +139,7 @@ def _blue_sky_question(topic: str) -> bool:
 def _blue_sky_scientific_article(title: str, extract: str) -> bool:
     """Don't mistake 'Blue Sky Studios' or a song for optics references."""
     label = str(title).casefold().strip()
-    if re.search(r"rayleigh|scattering|streuung|atmospher|atmosphär|optics|optik|himmelsblau", label):
+    if re.search(r"rayleigh|scattering|streuung|atmospher|atmosphär|optics|optik|himmelsblau|diffuse sky radiation", label):
         return True
     # The bare Sky/Himmel encyclopaedia entries may contain the physical
     # explanation, whereas 'Blue Sky Studios' is not a sky article.
