@@ -206,6 +206,7 @@ jobs:
           path: |
             long_video_output/result/report.json
             long_video_output/result/long-video.mp4
+            long_video_output/result/PREVIEW_INCOMPLETE.mp4
             long_video_output/result/captions.srt
             long_video_output/result/script.json
             long_video_output/result/credits.json
