@@ -124,10 +124,37 @@ def use_evidence(bundle):
         _CURRENT.reset(token)
 
 
+def _blue_sky_question(topic: str) -> bool:
+    """Identify questions about the sky's colour, not companies or songs.
+
+    Used only for evidence retrieval. It does not assert a scientific fact.
+    """
+    value = str(topic).casefold()
+    return bool(
+        re.search(r"\\bsky\\b.{0,40}\\bblue\\b|\\bblue\\b.{0,40}\\bsky\\b", value)
+        or re.search(r"\\bhimmel\\b.{0,40}\\bblau\\w*\\b|\\bblau\\w*\\b.{0,40}\\bhimmel\\b", value)
+    )
+
+
+def _blue_sky_scientific_article(title: str, extract: str) -> bool:
+    """Don't mistake 'Blue Sky Studios' or a song for optics references."""
+    label = str(title).casefold().strip()
+    if re.search(r"rayleigh|scattering|streuung|atmospher|atmosphär|optics|optik|himmelsblau", label):
+        return True
+    # The bare Sky/Himmel encyclopaedia entries may contain the physical
+    # explanation, whereas 'Blue Sky Studios' is not a sky article.
+    return label in {"sky", "himmel"} and bool(
+        re.search(r"rayleigh|scatter|streuung", str(extract).casefold()))
+
+
 def _search_text(topic: str) -> str:
     # Use the relevant mechanism as a retrieval term for recurring questions.
     # These words are search queries only, not facts asserted in narration.
     subject = words(topic)
+    if _blue_sky_question(topic):
+        return ("Rayleigh-Streuung" if re.search(
+            r"\\bhimmel\\b", str(topic).casefold()) else
+            "Rayleigh scattering")
     if {"steel", "ship"} <= subject and "float" in subject:
         return "ship buoyancy displacement"
     if "shark" in subject and ("swim" in subject or "swimming" in subject):
@@ -150,6 +177,10 @@ def _fallback_search_queries(topic: str, language: str) -> tuple[str, ...]:
     """
     text = str(topic).casefold()
     queries = []
+    if _blue_sky_question(topic):
+        queries += (["Rayleigh scattering", "Diffuse sky radiation", "Atmospheric optics"]
+                    if language == "en" else
+                    ["Rayleigh-Streuung", "Himmelsblau", "Atmosphärische Optik"])
     if language == "en":
         if "octopus" in text or "octopuses" in text:
             queries += ["octopus", "octopus anatomy"]
@@ -273,6 +304,12 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
             # "Wild China" / episode lists must not be accepted for advice
             # about surviving a freezing night.
             if not overlap or overlap <= _WEAK_TITLE_TERMS:
+                continue
+            # For a blue-sky physics question, title-token overlap alone
+            # wrongly accepted the song 'Mr. Blue Sky' and animation company
+            # 'Blue Sky Studios'. Only optics/atmospheric science entries
+            # may underpin a factual narration about scattering.
+            if _blue_sky_question(topic) and not _blue_sky_scientific_article(title, extract):
                 continue
             collected.append((len(overlap), title, extract[:3100]))
         # One directly relevant source is enough to get a screenable draft.
