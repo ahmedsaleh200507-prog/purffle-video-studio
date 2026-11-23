@@ -728,3 +728,20 @@ def test_alias_retry_does_not_download_previously_rejected_clip(strict_env):
         with pytest.raises(RuntimeError,match='No suitable verified REAL VIDEO'):
             obj.for_scene(0,query,json.dumps(plan),'money',3,strict_env)
     assert len(down.urls)==1
+
+
+def test_known_native_crop_failure_is_not_redownloaded_for_another_scene(strict_env):
+    obj, _, down, quality = visuals(strict_env, {"first": [candidate()]})
+    obj.s=SimpleNamespace(width=1080,height=1920)
+    class LandscapeQuality:
+        calls=0
+        def validate(self,path,need=0):
+            self.calls+=1
+            return {'width':1920,'height':1080,'duration':12,'fps':30}
+    obj.quality=LandscapeQuality()
+    for action in ('picking up','walking'):
+        plan={**PLAN,'action':action}
+        with pytest.raises(RuntimeError,match='No suitable verified REAL VIDEO'):
+            obj.for_scene(0,'',json.dumps(plan),'money',4,strict_env)
+    assert len(down.urls)==1 and obj.quality.calls==1
+    assert any(r.get('stage')=='shared_technical_preflight' for r in obj.report['scenes'][-1]['rejections'])

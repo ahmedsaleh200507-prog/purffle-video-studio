@@ -239,6 +239,7 @@ class StrictVisuals:
         self.sources = [x for x in settings.visual_sources if x in self.registry.enabled]
         self.credits = set()
         self._rejected_candidates = set()
+        self._technical_rejections = {}
         self.used = set(used_keys or ())
         self.state_path = Path(os.getenv("FOOTAGE_USED_PATH", "media_cache/used-media.json"))
         try:
@@ -380,6 +381,11 @@ class StrictVisuals:
                     continue
                 parts = urlsplit(item.url)
                 url_key = parts.netloc.lower() + parts.path
+                technical_reason = self._technical_rejections.get(item.key) or self._technical_rejections.get(url_key)
+                if technical_reason:
+                    scene['rejections'].append({'source': source, 'id': item.id,
+                        'reason': technical_reason, 'stage': 'shared_technical_preflight'})
+                    continue
                 try:
                     if item.kind != "video" or item.key in self.used or url_key in self.used_urls:
                         raise ValueError("non_video_or_duplicate")
@@ -508,6 +514,12 @@ class StrictVisuals:
                     # 1920x1080 -> 720x1280 needs about 1.185x, common in Shorts.
                     # Never accept low-res video or unlimited fake HD scaling.
                     if not portrait_crop_allowed(native_scale):
+                        # Measured resolution cannot improve for another spoken
+                        # scene. Do not delete then redownload the same huge file.
+                        reason = (f'insufficient_native_resolution: measured {quality["width"]}x'
+                                  f'{quality["height"]} cannot fill {required_width}x{required_height} within crop limit')
+                        self._technical_rejections[item.key] = reason
+                        self._technical_rejections[url_key] = reason
                         raise ValueError(
                             "insufficient_native_resolution: 9:16 crop would upscale beyond safe limit "
                             f"{quality.get('width')}x{quality.get('height')} source "

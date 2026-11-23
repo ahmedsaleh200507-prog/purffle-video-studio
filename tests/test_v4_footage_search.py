@@ -30,7 +30,7 @@ def test_expired_budget_never_queries():
     assert list(discover(None,['one'],['lava'],time.monotonic()-1)) == []
 
 
-@pytest.mark.parametrize('narration', ['Lava meets ice. The ice melts.', 'Lava trifft auf Eis. Das Eis schmilzt.'])
+@pytest.mark.parametrize('narration', ['Lava meets ice. The ice melts.', 'Lava contacts ice. Steam rises.', 'Hot lava melts the ice. Steam rises.', 'Lava trifft auf Eis. Das Eis schmilzt.'])
 def test_lava_ice_does_not_become_ordinary_volcano(narration):
     plan=dict(narration=narration,object='lava',action='flowing',visual_search_query='lava ice contact')
     contract=build_contract(plan,'What Happens When Lava Meets Ice?',1)

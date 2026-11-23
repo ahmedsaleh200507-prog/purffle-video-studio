@@ -95,9 +95,8 @@ def main():
     result = {'status': 'failed', 'mp4': None}
     stage = 'setup'
     try:
-        # Avoid expensive footage/model work when the only approved English
-        # speaker has not been validated for this runner. Never use Joe as a
-        # substitute merely to make the video job appear successful.
+        # Validate language before setup; pinned Piper model identity and
+        # native alignment are checked during synthesis and final acceptance.
         stage = 'voice_identity_preflight'
         from english_reference_policy import enforce_english_reference_only
         enforce_english_reference_only(os.environ.get('LANGUAGE', 'en'))

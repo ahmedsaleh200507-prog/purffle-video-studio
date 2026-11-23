@@ -27,7 +27,7 @@ def sentence_needs(narration, subject, base):
         translated = english(text)
         interaction = (bool(re.search(r'\blava\b', translated))
                        and bool(re.search(r'\b(?:ice|glacier|snow)\b', translated))
-                       and bool(re.search(r'\b(?:meet\w*|hit\w*|contact|touch\w*|on|onto)\b', translated)))
+                       and bool(re.search(r'\b(?:meet\w*|hit\w*|contact\w*|interact\w*|melt\w*|touch\w*|on|onto|over)\b', translated)))
         result.append({'sentence': index, 'text': text, 'subject': subject,
                        'english_query': 'lava ice contact' if interaction else english(base),
                        'interaction': 'lava_ice' if interaction else None,
