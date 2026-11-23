@@ -87,7 +87,7 @@ def test_reviewer_malformed_all_attempts_still_fails_closed(tmp_path, monkeypatc
     monkeypatch.setattr("science_sources.time.sleep", lambda seconds: None)
     model = SimpleNamespace(complete_json=lambda *args: {"checks": []})
     path = tmp_path / "science-report.json"
-    with pytest.raises(RuntimeError, match="science_claim_unverified"):
+    with pytest.raises(RuntimeError, match="science_review_unavailable"):
         screen_narration(_scene(), _bundle(), model, path=path)
     assert json.loads(path.read_text())["state"] == "failed"
 
