@@ -322,8 +322,13 @@ def _speak(text, language, work, index):
 
 
 def _run(argv, timeout=180):
-    subprocess.run(argv, check=True, timeout=timeout,
-                   stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+    proc = subprocess.run(argv, check=False, timeout=timeout,
+                          stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,
+                          text=True)
+    if proc.returncode:
+        # Show the *actual* FFmpeg error instead of a contextless 234.
+        raise RuntimeError("FFmpeg render failed: " +
+                           proc.stderr[-800:].strip())
 
 
 def _concat(chunks, out, work):
@@ -377,7 +382,7 @@ def make_video(*, topic, language, mode, output, root=None):
             args=["ffmpeg","-hide_banner","-nostdin","-loglevel","error","-y",
                   *inputs,
                   "-t",video_length,"-map","0:v:0","-map","1:a:0",
-                  "-vf",f"scale={w}:{h},fade=t=in:st=0:d=.3,fade=t=out:st={fade_out:.3f}:d=.3,format=yuv420p",
+                  "-vf",f"scale={w}:{h},fade=t=in:st=0:d=0.3,fade=t=out:st={fade_out:.3f}:d=0.3,format=yuv420p",
                   "-af","apad",
                   "-c:v","libx264","-preset","veryfast","-crf","25",
                   "-r",str(FPS),"-c:a","aac","-b:a","96k",
