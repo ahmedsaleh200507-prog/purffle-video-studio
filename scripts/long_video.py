@@ -602,6 +602,22 @@ def main():
                       note="All clips pass metadata + local CLIP screening. Illustrative subject B-roll is not exact footage of a narrated event.")
     except Exception as e:
         report.update(stage=stage,error=(type(e).__name__+": "+str(e))[:800])
+        # Never discard already narrated/rendered chapters: a 10-minute
+        # video may fail during chapter 13, but the user should still be
+        # able to WATCH the 12 completed chapters. Otherwise deliver a
+        # voice-backed visual preview, or a short labelled diagnostic card.
+        # The 9–11 minute quality gate above remains mandatory for status=ok.
+        from failure_preview import make_failure_preview
+        preview = make_failure_preview(
+            output=output/"PREVIEW_INCOMPLETE.mp4",
+            topic=a.topic, stage=stage, size=(1920, 1080),
+            long_chapters_dir=work, rendered_dir=output,
+            voice_dir=work)
+        report.update(preview)
+        if preview.get("preview_mp4"):
+            print("[LONG PREVIEW AVAILABLE] "
+                  f"kind={preview.get('preview_kind')} "
+                  "not a finished documentary", flush=True)
         raise
     finally:
         save(output/"report.json",report)
