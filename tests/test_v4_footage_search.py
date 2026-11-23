@@ -66,3 +66,32 @@ def test_static_catalog_never_reports_verified_remote_api():
     report=next(p for p in registry.health() if p['provider']=='freenaturestock-video')
     assert report['integration_type']=='static_catalog'
     assert report['api_test']=='not_applicable_static_catalog'
+
+
+@pytest.mark.parametrize('text', [
+    'Glowing lava enters the ocean and turns seawater into clouds of steam.',
+    'Glühende Lava fließt ins Meer und lässt große Dampfwolken aufsteigen.',
+])
+def test_production95_inland_lava_cannot_fill_ocean_entry(text):
+    plan=dict(narration=text,object='volcano',action='ambient',visual_search_query='lava entering ocean steam')
+    c=build_contract(plan,'What Happens When Lava Hits the Ocean?',1)
+    assert c['family']=='lava_ocean_entry'
+    assert all(any(w in q for w in ('ocean','sea')) for q in c['queries'][:3])
+    assert not metadata_allows(c,'Volcano lava flow, glowing crater and lava fountain')
+    assert metadata_allows(c,'Lava entering ocean and coastal laze steam plume')
+
+
+def test_production95_eruption_is_not_a_collapsing_lava_coast():
+    plan=dict(narration='Sometimes unstable new coastal land collapses, triggering steam explosions at the ocean entry.',
+              object='volcano',action='ambient',visual_search_query='lava entering ocean steam')
+    c=build_contract(plan,'What Happens When Lava Hits the Ocean?',3)
+    assert c['family']=='coastal_lava_collapse'
+    assert not metadata_allows(c,'Glowing volcano eruption lava fountain')
+    assert metadata_allows(c,'Coastal lava delta collapse ocean steam explosion')
+
+
+def test_composite_contact_needs_two_supporting_frames_not_one_lucky_match():
+    from visual_director import visual_scores
+    c={'family':'lava_ocean_entry','event_required':True}
+    assert not visual_scores(c, [[.32,.20],[.29,.28],[.28,.29]],opening=True)['verified']
+    assert visual_scores(c, [[.34,.20],[.33,.21],[.28,.29]],opening=True)['verified']

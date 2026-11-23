@@ -18,6 +18,6 @@ jobs:
               workflow_id: 'videos.yml', ref: 'codex/v4-footage-reliability',
               inputs: {
                 video_1: 'en|What Happens When Lava Hits the Ocean?',
-                video_2: 'de|Warum beschlägt der Badezimmerspiegel?'
+                video_2: ''  // Only retest the corrected composite lava/ocean contract.
               }
             });
