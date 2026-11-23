@@ -95,3 +95,58 @@ def test_composite_contact_needs_two_supporting_frames_not_one_lucky_match():
     c={'family':'lava_ocean_entry','event_required':True}
     assert not visual_scores(c, [[.32,.20],[.29,.28],[.28,.29]],opening=True)['verified']
     assert visual_scores(c, [[.34,.20],[.33,.21],[.28,.29]],opening=True)['verified']
+
+
+def test_fair_search_offers_second_provider_before_first_provider_tail():
+    class Registry:
+        def search(self, source, query):
+            if source == "slow":
+                time.sleep(.025)
+                return [SimpleNamespace(key="slow-clip")]
+            return [SimpleNamespace(key=f"fast-{i}") for i in range(6)]
+    rows = list(discover(Registry(), ["fast", "slow"], ["ocean"], time.monotonic()+3))
+    assert [source for source, clips in rows] == ["fast", "slow", "fast"]
+    assert [len(clips) for _, clips in rows] == [2, 1, 4]
+
+
+def test_known_unusable_portrait_crop_is_rejected_without_download(tmp_path, monkeypatch):
+    from studio_runtime import StrictVisuals
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    import json
+    import footage_search
+
+    candidate = SimpleNamespace(
+        key="landscape-1080", source="usgs-video", id="ocean-entry",
+        url="https://example.org/real.mp4", kind="video",
+        width=1920, height=1080, extra={}, text="real lava entering ocean", rank=1)
+    registry = SimpleNamespace(events=[], health=lambda: [], enabled=["usgs-video"])
+    downloader = SimpleNamespace(download=Mock(side_effect=AssertionError("never download")))
+    visual = StrictVisuals.__new__(StrictVisuals)
+    visual.s = SimpleNamespace(width=1080, height=1920)
+    visual.registry = registry
+    visual.downloader = downloader
+    visual.sources = ["usgs-video"]
+    visual.report = {"state": "searching", "scenes": []}
+    visual._rejected_candidates = set()
+    visual._technical_rejections = {}
+    visual.used = set()
+    visual.used_urls = set()
+    visual._save = lambda: None
+    monkeypatch.setattr(footage_search, "discover",
+                        lambda *args, **kwargs: iter([("usgs-video", [candidate])]))
+    plan = {"main_character": "", "object": "lava", "action": "flowing",
+            "location": "coast", "time": "day",
+            "visual_search_query": "lava entering ocean"}
+    with pytest.raises(RuntimeError, match="No suitable verified REAL VIDEO"):
+        visual.for_scene(0, plan["visual_search_query"], json.dumps(plan),
+                         "Lava meets ocean", 5.0, tmp_path)
+    downloader.download.assert_not_called()
+    assert "insufficient_native_resolution" in visual.report["scenes"][0]["rejections"][0]["reason"]
+
+
+def test_event_footage_and_illustrative_context_are_reported_differently():
+    from media_first import illustrative_status
+    assert illustrative_status({"event_required": True}) is False
+    assert illustrative_status({"event_required": False}) is True
+    assert illustrative_status(None) is True
