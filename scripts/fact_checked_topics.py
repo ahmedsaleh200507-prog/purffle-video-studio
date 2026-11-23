@@ -141,6 +141,30 @@ def ground_lightning_explainer(data: dict, topic: str, language: str,
 # https://www.noaa.gov/jetstream/tropical/tropical-cyclone-introduction/tropical-cyclone-structure
 # https://www.aoml.noaa.gov/hrd/tcfaq/A11.html?print=yes
 _DOCUMENTARY_FACTS = {
+    "octopus_three_hearts": {
+        # Smithsonian Ocean and Horniman Museum support these fixed facts.
+        # https://ocean.si.edu/ocean-life/invertebrates/octopuses-squids-and-relatives
+        # https://www.horniman.ac.uk/story/fact-file-octopus/
+        "en": [
+            "An octopus has three hearts, not just one.",
+            "Two hearts pump blood through its gills, where the blood picks up oxygen.",
+            "The third heart sends oxygen-rich blood through the rest of its body.",
+        ],
+        "de": [
+            "Ein Oktopus hat drei Herzen und nicht nur eines.",
+            "Zwei Herzen pumpen Blut durch die Kiemen, wo es Sauerstoff aufnimmt.",
+            "Das dritte Herz pumpt sauerstoffreiches Blut durch den übrigen Körper.",
+        ],
+        "title": {
+            "en": "Why Do Octopuses Have Three Hearts?",
+            "de": "Warum haben Oktopusse drei Herzen?",
+        },
+        "description": {
+            "en": "Two octopus hearts supply the gills and a third pumps blood around the body.",
+            "de": "Zwei Herzen versorgen die Kiemen; das dritte pumpt Blut durch den Körper.",
+        },
+        "tags": ["octopus", "octopus hearts", "cephalopods", "gills", "marine biology"],
+    },
     "volcano_eruption": {
         "en": [
             "Hot lava flows from a volcano. But why do some eruptions explode?",
@@ -633,6 +657,16 @@ def verified_documentary_kind(topic: str) -> str | None:
     import re
     text = re.sub(r"[^a-z ]", " ", raw)
     tokens = set(text.split())
+    if (tokens & {"octopus", "octopuses", "octopi", "oktopus", "oktopusse"}
+        and tokens & {"heart", "hearts", "herzen", "herz"}
+        and tokens & {"three", "drei", "3"}
+        and not tokens & {"fiction", "game", "movie", "comic"}):
+        return "octopus_three_hearts"
+    # #105: recognize the German question before collecting unrelated titles.
+    if (tokens & {"blitz", "blitze", "blitzen"} and tokens & {"donner"}
+        and tokens & {"vor", "zuerst", "sehen", "hoeren", "horen"}
+        and not tokens & {"film", "serie", "band"}):
+        return "lightning_thunder_delay"
     # Recognize only the ordinary bathroom-mirror explanation, not unrelated
     # uses of a mirror or unrelated fog/weather topics.
     if (tokens & {"steel", "stahl", "stahlschiffe", "stahlschiff"}
@@ -824,6 +858,8 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
             ])
     elif scene_count == 3 and kind in _THREE_SCENE_SOURCE_REVIEWED:
         narration = list(_THREE_SCENE_SOURCE_REVIEWED[kind][language])
+    elif scene_count == 3 and kind == "octopus_three_hearts":
+        narration = list(info[language])
     elif scene_count == 3 and kind == "steel_ship_buoyancy":
         narration = (
             [
@@ -936,6 +972,7 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
     scenes = [{
         "narration": sentence, "speaker": "A", "search_query": "",
         "image_prompt": "", "main_character": "", "object": ("volcano" if kind in ("volcanic_island", "lava_ocean_entry", "volcano_eruption") else
+                    "octopus" if kind == "octopus_three_hearts" else
                     "ship" if kind == "steel_ship_buoyancy" else
                     "iceberg" if kind == "iceberg_breakup" else
                     "whale" if kind == "whale_breaching" else
@@ -949,6 +986,7 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
         "action": "ambient", "location": "", "time": "",
         "visual_search_query": ("lava entering ocean steam" if kind == "lava_ocean_entry" else
                                    "volcano erupting" if kind == "volcanic_island" else
+                                   "octopus swimming underwater" if kind == "octopus_three_hearts" else
                                    "cargo ship floating ocean" if kind == "steel_ship_buoyancy" else
                                    "volcano erupting lava" if kind == "volcano_eruption" else
                                    "iceberg breaking ocean" if kind == "iceberg_breakup" else
