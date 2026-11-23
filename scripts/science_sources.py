@@ -442,6 +442,63 @@ def write_source_failure(reason: str, path=None):
             None, "failed", error=reason)
 
 
+def _validate_model_scene_checks(checks, scenes, bundle):
+    """Validate every model assertion against literal, source-owned excerpts.
+
+    A JSON schema match is not sufficient: quotes must be exact excerpts of
+    a real retrieved source. Unsupported/partially supported scenes stay false.
+    """
+    if not isinstance(checks, list) or len(checks) != len(scenes):
+        raise ValueError("review returned incomplete scene checks")
+    source_by_id = {source["id"]: source for source in bundle.sources}
+    accepted = []
+    for i, item in enumerate(checks, 1):
+        if (not isinstance(item, dict) or type(item.get("scene")) is not int
+                or item["scene"] != i):
+            raise ValueError("review returned invalid scene index")
+        source = source_by_id.get(item.get("source_id"))
+        quote = str(item.get("quote") or "").strip()
+        supported = item.get("supported") is True
+        anchored = (
+            source is not None and 20 <= len(quote) <= 300
+            and _normalize_quote(quote) in _normalize_quote(source.get("excerpt", "")))
+        narration = str(scenes[i - 1].narration).casefold()
+        absolutes = re.findall(r"\b(always|never|only|immer|niemals|nur)\b", narration)
+        if absolutes and not all(word in quote.casefold() for word in absolutes):
+            anchored = False
+        accepted.append({
+            "scene": i, "source_id": str(item.get("source_id") or "")[:40],
+            "supported": supported and anchored,
+            "quote": quote[:180] if anchored else "",
+            "reason": str(item.get("reason") or "")[:180],
+        })
+    return accepted
+
+
+def _review_scenes_individually(llm, system, source_text, scenes):
+    """Last-resort smaller JSON review if a large array is repeatedly malformed.
+
+    This NEVER bypasses the independent source-quote verifier. It only changes
+    the JSON output shape to reduce model formatting failures.
+    """
+    properties = {
+        "supported": {"type": "boolean"}, "source_id": {"type": "string"},
+        "quote": {"type": "string"}, "reason": {"type": "string"}}
+    schema = {
+        "type": "object", "properties": properties,
+        "required": list(properties), "additionalProperties": False}
+    output = []
+    for i, scene in enumerate(scenes, 1):
+        answer = llm.complete_json(
+            system + " Review exactly ONE scene. Return ONE JSON object, not an array.",
+            source_text + f"\n\nNARRATION TO CHECK:\nSCENE {i}: {scene.narration}",
+            schema)
+        if not isinstance(answer, dict) or any(k not in answer for k in properties):
+            raise ValueError("single-scene review returned malformed JSON")
+        output.append({"scene": i, **{k: answer[k] for k in properties}})
+    return output
+
+
 def screen_narration(script, bundle: Evidence, llm, *, path=None):
     """Check a cited passage per scene; a missing/mismatched quote blocks TTS.
 
@@ -513,42 +570,23 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
     script_text = "\n".join(f"SCENE {i}: {x.narration}"
                             for i, x in enumerate(scenes, 1))
     try:
-        # A valid HTTP response can still contain malformed model JSON.
-        # Retry the SAME independent review without redrafting or bypassing
-        # any evidence/quote checks. Unsupported claims remain rejected.
+        # The primary bulk review uses a bounded JSON array. If repeated
+        # valid-HTTP replies have malformed shape, retry once with small,
+        # single-scene objects. No unverified citation can pass either path.
+        accepted = None
         for review_attempt in range(3):
             try:
                 result = llm.complete_json(
                     system, source_text + "\n\nNARRATION TO CHECK:\n" + script_text, schema)
                 checks = result.get("checks") if isinstance(result, dict) else None
-                if not isinstance(checks, list) or len(checks) != len(scenes):
-                    raise ValueError("review returned incomplete scene checks")
-                sources_by_id = {s["id"]: s for s in bundle.sources}
-                accepted = []
-                for i, item in enumerate(checks, 1):
-                    if not isinstance(item, dict) or type(item.get("scene")) is not int or item["scene"] != i:
-                        raise ValueError("review returned invalid scene index")
-                    source = sources_by_id.get(item.get("source_id"))
-                    quote = str(item.get("quote") or "").strip()
-                    supported = item.get("supported") is True
-                    anchored = (source is not None and 20 <= len(quote) <= 300
-                                and _normalize_quote(quote) in _normalize_quote(source["excerpt"]))
-                    # Simple literal checks supplement, but never replace, the semantic
-                    # review: 'always' and 'never' cannot be inferred from hedged text.
-                    narration = str(scenes[i-1].narration).casefold()
-                    absolutes = re.findall(r"\b(always|never|only|immer|niemals|nur)\b", narration)
-                    if absolutes and not all(word in quote.casefold() for word in absolutes):
-                        anchored = False
-                    accepted.append({
-                        "scene": i, "source_id": str(item.get("source_id") or "")[:40],
-                        "supported": supported and anchored,
-                        "quote": quote[:180] if anchored else "",
-                        "reason": str(item.get("reason") or "")[:180],
-                    })
+                accepted = _validate_model_scene_checks(checks, scenes, bundle)
                 break
             except (ValueError, TypeError, KeyError):
                 if review_attempt == 2:
-                    raise
+                    checks = _review_scenes_individually(
+                        llm, system, source_text, scenes)
+                    accepted = _validate_model_scene_checks(checks, scenes, bundle)
+                    break
                 time.sleep(2 * (review_attempt + 1))
         if not all(row["supported"] for row in accepted):
             _report(report, bundle, "failed", checks=accepted,
@@ -557,7 +595,14 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         _report(report, bundle, "model_screened_reference", checks=accepted)
     except RuntimeError:
         raise
+    except (ValueError, TypeError, KeyError) as exc:
+        # A reviewer unable to return a valid structure is NOT evidence that
+        # the script's science is wrong. Distinguish this infrastructure error
+        # from actual unsupported claims; do not burn quota redrafting.
+        _report(report, bundle, "failed",
+                error=f"reviewer JSON unavailable: {type(exc).__name__}")
+        raise RuntimeError("science_review_unavailable: invalid_model_json") from None
     except Exception as exc:
         _report(report, bundle, "failed",
                 error=f"source-grounded review unavailable: {type(exc).__name__}")
-        raise RuntimeError(f"science_claim_unverified: {type(exc).__name__}") from None
+        raise RuntimeError("science_review_unavailable: model_error") from None
