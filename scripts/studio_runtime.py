@@ -1182,6 +1182,20 @@ exact suitable footage cannot be verified; never weaken the scene to hide that f
                 "complete, short factual scenes. Do not stretch a story to "
                 "four shots. The renderer will look for independently "
                 "verified real video for EACH spoken scene, in this order.")
+        from visual_director import footage_feedback
+        feedback = footage_feedback()
+        if feedback:
+            user += (
+                "\\n\\nREAL-FOOTAGE RECOVERY (ONE bounded revision): "
+                "The following earlier scene searches found no licensed, "
+                "visually verified footage. Keep the same factual topic, "
+                "language and complete source-supported explanation, but "
+                "choose DIFFERENT common, directly filmable visible actions "
+                "for these scene slots. Do not claim a literal event is "
+                "visible when only illustrative B-roll exists. Never invent "
+                "a fact, silently omit the answer, or use generic filler. "
+                "Do not repeat the unavailable search queries.\\n"
+                + feedback)
         from media_first import active_palette, footage_prompt
         palette = active_palette()
         if palette:
