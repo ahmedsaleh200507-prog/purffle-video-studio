@@ -155,7 +155,7 @@ def _blue_sky_scientific_article(title: str, extract: str) -> bool:
 @contextmanager
 def use_review_feedback(feedback):
     """One redraft receives only bounded, independently rejected claim text."""
-    token = _REVIEW_FEEDBACK.set(str(feedback or "")[:900])
+    token = _REVIEW_FEEDBACK.set(str(feedback or "")[:1250])
     try:
         yield
     finally:
@@ -199,9 +199,9 @@ def rejected_claim_feedback(report_path, script):
             continue
         seen.add(index)
         narration = re.sub(
-            r"[^\\w äöüÄÖÜß,.!?;:'-]", " ",
+            r"[^\w äöüÄÖÜß,.!?;:'-]", " ",
             str(scenes[index - 1].narration))[:165]
-        narration = re.sub(r"\\s+", " ", narration).strip()
+        narration = re.sub(r"\s+", " ", narration).strip()
         if row["supported"]:
             approved.append(f"VERIFIED AGAINST EXCERPT, keep its meaning: '{narration}'.")
         else:
