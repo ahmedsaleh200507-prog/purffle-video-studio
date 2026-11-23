@@ -543,3 +543,17 @@ def test_malformed_single_scene_output_is_reviewer_failure_not_bad_science(tmp_p
     with pytest.raises(RuntimeError, match="science_review_unavailable: invalid_model_json"):
         screen_narration(scene(), mock_bundle(), AlwaysInvalidReviewer(), path=target)
     assert "reviewer JSON unavailable" in json.loads(target.read_text())["error"]
+
+
+def test_blue_sky_discards_rayleigh_biography_even_with_title_overlap():
+    client = Mock()
+    client.get.return_value = FakeResponse({"query": {"pages": [
+        {"title": "Rayleigh scattering",
+         "extract": ("Rayleigh scattering changes how sunlight reaches an observer. "
+                     "Blue light is scattered strongly by the atmosphere. " * 6)},
+        {"title": "John William Strutt, 3rd Baron Rayleigh",
+         "extract": ("John William Strutt was a British physicist and Nobel Prize winner. "
+                     "He is known for his work on acoustics and scientific research. " * 6)},
+    ]}})
+    result = discover_evidence("Why is the sky blue?", "en", session=client)
+    assert [source["title"] for source in result.sources] == ["Rayleigh scattering"]
