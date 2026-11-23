@@ -239,17 +239,51 @@ def resume_completed_job(index: int, raw: str, out: Path):
         return None
 
 
-def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
+def _footage_ledger_path():
+    path = Path(os.environ.get('FOOTAGE_USED_PATH', 'media_cache/used-media.json'))
+    return path if path.is_absolute() else ROOT / path
+
+
+def _restore_footage_ledger(path: Path, previous: bytes | None):
+    """Undo partial scene reservations when a complete video fails QA."""
+    if previous is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp = path.with_suffix(path.suffix + '.rollback')
+        temp.write_bytes(previous)
+        temp.replace(path)
+
+
+def should_retry_at_720p(result):
+    """Retry only a verified native-crop rejection, never random source gaps."""
+    if (result.get('status') == 'ok'
+            or os.environ.get('PURFFLE_AUTO_720_FALLBACK', '1') != '1'
+            or os.environ.get('RESOLUTION', '720x1280').lower() != '1080x1920'):
+        return False
+    rejections = (result.get('failure_details') or {}).get('rejection_categories') or {}
+    return int(rejections.get('insufficient_native_resolution', 0)) > 0
+
+
+def run_job(index: int, raw: str, out: Path, timeout: int = 1500, *,
+            resolution_override: str | None = None):
     target = out / f'video_{index:02d}'
     target.mkdir(parents=True, exist_ok=True)
     result = {'index': index, 'topic': raw, 'original_input': raw, 'status': 'failed',
               'mp4': None, 'producer_commit': _producer_revision()}
     started = time.monotonic()
     log_path = target / 'purffle.log'
+    ledger_path = _footage_ledger_path()
+    ledger_before = ledger_path.read_bytes() if ledger_path.is_file() else None
     try:
         lang, topic = parse_topic(raw)
         result.update(language=lang, topic=topic)
         env = os.environ.copy()
+        if resolution_override is not None:
+            if resolution_override != '720x1280':
+                raise ValueError('Automatic resolution fallback is limited to native 720p')
+            env['RESOLUTION'] = resolution_override
+        result['resolution'] = env.get('RESOLUTION', '720x1280')
         env.update(PURFFLE_STRICT='1', LANGUAGE=lang, VIDEO_TOPIC=topic,
                    FOOTAGE_REPORT=str((target / 'footage-report.json').resolve()),
                    MEDIA_FIRST_REPORT=str((target / 'media-first-plan.json').resolve()),
@@ -305,6 +339,9 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
         result.update(status='failed', error=str(exc), exception_type=type(exc).__name__, mp4=None)
     finally:
         if result['status'] != 'ok':
+            # A preflight may have reserved real clips before scene 3 failed.
+            # Never poison subsequent video attempts with failed-job reservations.
+            _restore_footage_ledger(ledger_path, ledger_before)
             # Partial output/title from an unsuccessful retry is not publishable.
             for partial in (target / 'render').rglob('*.mp4'):
                 partial.unlink(missing_ok=True)
@@ -425,6 +462,21 @@ def main():
         if not raw:
             continue
         result = resume_completed_job(index, raw, out) or run_job(index, raw, out)
+        if should_retry_at_720p(result):
+            original_error = {
+                'failure_category': result.get('failure_category'),
+                'error': result.get('error', '')[:300],
+            }
+            print(f'[NATIVE-720 RETRY] video={index} 1080x1920 portrait crop unavailable; '
+                  'retrying once at 720x1280 with the same strict scene gates', flush=True)
+            retry = run_job(index, raw, out, resolution_override='720x1280')
+            retry['resolution_fallback'] = {
+                'from': '1080x1920', 'to': '720x1280',
+                'reason': 'source_native_portrait_crop_unavailable',
+                'first_attempt': original_error,
+            }
+            result = retry
+            write_json(out / f'video_{index:02d}' / 'report.json', result)
         # Existing successfully rendered MP4s may predate this new upload file.
         if result.get('status') == 'ok' and not result.get('youtube_title'):
             try:
