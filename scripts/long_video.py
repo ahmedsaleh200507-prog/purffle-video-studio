@@ -567,7 +567,8 @@ def main():
         stage="full_timeline_qa"
         from output_qa import validate_timeline
         full_qa=validate_timeline(final,output/"captions.srt",
-            expected_size=(1920,1080),expected_duration=voice_seconds)
+            expected_size=(1920,1080),expected_duration=voice_seconds,
+            expected_text=' '.join(c['narration'] for c in text))
         save(output/"output-qa.json",full_qa)
         save(output/"credits.json",credits)
         report.update(status="ok",mp4="long-video.mp4",duration=duration,

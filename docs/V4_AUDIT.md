@@ -14,7 +14,7 @@ Kaynak: https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/ru
 - `studio_runtime.py`: aynı nesne/eylem/sözleşme için reddedilen aday yeniden indirilmez. Kaynak ID/URL/hash tekrarı kontrolü korunur. Gemini anahtarı da redaksiyona eklendi.
 - Kullanıcının V4 talebine göre İngilizce özel referans yerine depodaki önceki **rdh CC0 Joe** checkpoint'i geri getirildi. Joe/Thorsten her çağrıda sabit; Edge/özel referans geçişi yok. Piper model oturumları süreçte önbelleklenir, tam senaryo token kapsamı kontrol edilir. Aktif workflow'lardan Chatterbox/Whisper/Resemblyzer/PyAV kurulumu çıkarıldı. Eski özel ses araçları silinmedi.
 - Shorts workflow hedefi 1080×1920; 30 FPS. Kaynak büyütme sınırı gevşetilmedi. Uzun video 1920×1080 ve mevcut 14 bölüm/9–11 dakika korunur.
-- `output_qa.py`: tüm timeline decode, 30 FPS, çözünürlük, ses, süre eşlemesi, siyah ≥0,45s, sessizlik ≥2,5s, SRT sınır/sıra/kapsam kontrolü. Kısa örnekleme yerine tüm çıktı teknik olarak incelenir. ASR doğrulaması değildir.
+- `output_qa.py`: tüm timeline decode, 30 FPS, çözünürlük, ses, Piper WAV süresiyle eşleme ve tam senaryo–SRT metin karşılaştırması, siyah ≥0,45s, sessizlik ≥2,5s, SRT sınır/sıra/kapsam kontrolü. Kısa örnekleme yerine tüm çıktı teknik olarak incelenir. ASR doğrulaması değildir.
 - INPUT_1–INPUT_10, ayrı durumlar, hata izolasyonu ve artefakt toplama korundu. Uzun video için model cache ve QA rapor artefaktı eklendi.
 
 ## Gerçek kaynak denetimi
@@ -50,7 +50,7 @@ Mevcut Piper 1.8 yazılımı GPL-3.0-or-later, ONNX Runtime MIT, Transformers Ap
 ## Test ve canlı üretim kanıtı
 
 - Başlangıç: 800 test ve 9 subtest geçti (temiz worktree).
-- V4 regresyon: 814 test, 9 subtest geçti; üç Pillow deprecation uyarısı. Sabit Joe/Thorsten isteğiyle çelişen eski reference-only/Edge varsayımları yeni sözleşmeye uyarlandı; eski referans araçlarının kendi birim testleri korundu.
+- V4 regresyon: 815 test, 9 subtest geçti; üç Pillow deprecation uyarısı. Sabit Joe/Thorsten isteğiyle çelişen eski reference-only/Edge varsayımları yeni sözleşmeye uyarlandı; eski referans araçlarının kendi birim testleri korundu.
 - Yeni paralel kaynak/arıza/deadline, DE sorgu, lav-buz çelişkisi ve sonraki cümle eylemi testleri geçti.
 - Gerçek FFmpeg fixture testleri: tüm dosya decode, siyah video, sessiz ses, yanlış FPS, kesilmiş MP4 ve yanlış altyazı zamanları. Sentetik fixture'lar üretim videosu değildir.
 - Gerçek Joe: 16 kelime, 5,492s; gerçek Thorsten: 13 kelime, 5,050s. Hash doğrulanmış indirme, ONNX inference, native phoneme timing ve ses sözleşmesi geçti. Bunlar tam stok video üretimi değildir.

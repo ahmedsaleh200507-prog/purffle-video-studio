@@ -282,8 +282,14 @@ def main():
             stage = 'output_validation'
         stage = 'full_timeline_qa'
         from output_qa import validate_timeline
+        from purffle_shorts.pipeline import END_PAD
+        voice_data = json.loads(voice_report.read_text(encoding='utf8'))
+        script_data = json.loads((folder / 'script.json').read_text(encoding='utf8'))
+        expected_text = ' '.join(scene['narration'] for scene in script_data['scenes'])
         full_qa = validate_timeline(video, folder / 'captions.srt',
-            expected_size=(s.width, s.height), expected_duration=metadata.get('duration'))
+            expected_size=(s.width, s.height),
+            expected_duration=float(voice_data['duration']) + END_PAD,
+            expected_text=expected_text)
         write_json(target.with_name('output-qa.json'), full_qa)
         result.update(status='ok', stage='complete', mp4=str(video), output_probe=info,
                       footage_report=os.environ['FOOTAGE_REPORT'],

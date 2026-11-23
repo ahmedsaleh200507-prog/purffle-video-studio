@@ -22,7 +22,7 @@ def caption_intervals(path, duration):
     return intervals
 
 
-def validate_timeline(path, captions, *, expected_size, expected_duration=None):
+def validate_timeline(path, captions, *, expected_size, expected_duration=None, expected_text=None):
     path = Path(path)
     if not path.is_file() or path.stat().st_size < 1024:
         raise RuntimeError('output_qa_mp4_missing_or_empty')
@@ -52,6 +52,13 @@ def validate_timeline(path, captions, *, expected_size, expected_duration=None):
     if silences or re.search(r'silence_start:',p.stderr):
         raise RuntimeError('output_qa_long_silence_detected')
     intervals = caption_intervals(captions,duration)
+    if expected_text is not None:
+        blocks = re.split(r'\n\s*\n', Path(captions).read_text(encoding='utf8').strip())
+        actual = ' '.join(' '.join(block.splitlines()[2:]) for block in blocks)
+        def tokens(text):
+            return re.findall(r"\w+", re.sub(r'<[^>]*>', '', text).casefold())
+        if tokens(actual) != tokens(expected_text):
+            raise RuntimeError('output_qa_caption_transcript_incomplete_or_changed')
     return {'state':'passed','duration':duration,'fps':fps,'caption_cues':len(intervals),
             'full_decode':True,'black_intervals':[],'silence_over_2_5s':[],
             'limits':'Timing/coverage and PCM energy, not speech recognition or factual verification'}

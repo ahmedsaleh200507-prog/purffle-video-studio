@@ -38,3 +38,11 @@ def test_real_bad_mp4_never_success(tmp_path,kind):
 def test_caption_tail_and_out_of_order_fail(tmp_path):
     srt=tmp_path/'bad.srt';srt.write_text('1\n00:00:02,000 --> 00:00:05,000\nLate\n')
     with pytest.raises(RuntimeError): caption_intervals(srt,3)
+
+
+def test_complete_caption_timing_cannot_hide_missing_sentence(tmp_path):
+    video,captions=render(tmp_path)
+    with pytest.raises(RuntimeError,match='caption_transcript'):
+        validate_timeline(video,captions,expected_size=(160,284),expected_text='Test fixture. Missing sentence.')
+    with pytest.raises(RuntimeError,match='narration_duration'):
+        validate_timeline(video,captions,expected_size=(160,284),expected_duration=8)
