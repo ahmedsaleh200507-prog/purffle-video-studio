@@ -663,3 +663,57 @@ def test_source_review_schema_is_strict_json_compatible_no_array_length_keywords
     inner = captured["schema"]["properties"]["checks"]["items"]
     assert inner["additionalProperties"] is False
     assert set(inner["required"]) == set(inner["properties"])
+
+
+
+def test_free_groq_429_retries_same_verified_review_after_reported_reset(monkeypatch):
+    """The real V5 proof hit Groq TPM 429; retry the review, not the script."""
+    from science_sources import _strict_science_review_json
+    import requests
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key")
+    pauses, sent = [], []
+    monkeypatch.setattr("science_sources.time.sleep", lambda seconds: pauses.append(seconds))
+    class Reply:
+        def __init__(self, status, headers=None):
+            self.status_code, self.headers = status, headers or {}
+        def json(self):
+            return ({"error": {"message": "Please try again in 10.5s"}}
+                    if self.status_code == 429 else
+                    {"choices": [{"message": {"content": '{"supported":false}'}}]})
+    answers = [Reply(429), Reply(200)]
+    def post(url, *, json, headers, timeout):
+        sent.append(json)
+        assert headers["Authorization"] == "Bearer fake-key"
+        return answers.pop(0)
+    monkeypatch.setattr(requests, "post", post)
+    client = SimpleNamespace(
+        providers=[SimpleNamespace(name="groq", model="openai/gpt-oss-20b")])
+    verdict = _strict_science_review_json(client, "science", "claim",
+                                         {"type": "object"})
+    assert verdict == {"supported": False}
+    assert sent[0] == sent[1]
+    assert pauses == [11.5]
+
+
+def test_free_groq_429_is_bounded_and_fails_closed_without_paid_upgrade(monkeypatch):
+    from science_sources import _strict_science_review_json
+    import requests
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key")
+    pauses, calls = [], []
+    monkeypatch.setattr("science_sources.time.sleep", lambda s: pauses.append(s))
+    class RateLimited:
+        status_code = 429
+        headers = {"Retry-After": "9999"}
+        def json(self):
+            return {"error": {"message": "Please try again in 99999s"}}
+    def post(*args, **kwargs):
+        calls.append(1)
+        return RateLimited()
+    monkeypatch.setattr(requests, "post", post)
+    client = SimpleNamespace(
+        providers=[SimpleNamespace(name="groq", model="openai/gpt-oss-20b")])
+    with pytest.raises(RuntimeError, match="strict_groq_http_429"):
+        _strict_science_review_json(client, "science", "claim",
+                                    {"type": "object"})
+    assert len(calls) == 3
+    assert len(pauses) == 2 and all(1 <= s <= 65 for s in pauses)
