@@ -194,7 +194,7 @@ def test_clear_blue_sky_rejects_visuals_that_look_more_like_gray_sky(tmp_path, m
     monkeypatch.setattr("media_validation._frame",
                         lambda *args, **kwargs: Image.new("RGB", (224, 224)))
     captions_seen = []
-    def fake_scores(frames, captions):
+    def fake_scores(self, frames, captions):
         captions_seen.extend(captions)
         # A distractor scene scores better than requested blue sky
         return [[.267, .24] + [.18]*(len(captions)-3) + [.285]] * len(frames)
