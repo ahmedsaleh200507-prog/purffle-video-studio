@@ -32,6 +32,10 @@ _WEAK_TITLE_TERMS = {"wild", "people", "night", "list", "show", "series",
                      "movie", "film", "strom", "nacht", "winter", "auto"}
 
 _OFFICIAL = {
+    "octopus_three_hearts": (
+        "https://ocean.si.edu/ocean-life/invertebrates/octopuses-squids-and-relatives",
+        "https://www.horniman.ac.uk/story/fact-file-octopus/",
+    ),
     "volcano_eruption": (
         "https://www.usgs.gov/faqs/how-do-volcanoes-erupt",
         "https://www.usgs.gov/programs/VHP/about-volcanoes",
@@ -730,7 +734,7 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         if kind in (
                 "ocean_waves", "ocean_glow_bioluminescence", "lava_ocean_entry",
                 "northern_lights_dance", "steel_ship_buoyancy",
-                "lightning_thunder_delay",
+                "octopus_three_hearts", "lightning_thunder_delay",
                 "volcano_eruption", "iceberg_breakup", "whale_breaching",
                 "shark_ventilation", "sea_turtle_rest", "waterfall_freezing",
                 "northern_lights_glow", "mirror_condensation",
