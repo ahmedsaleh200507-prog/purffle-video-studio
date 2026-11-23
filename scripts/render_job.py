@@ -154,6 +154,7 @@ def main():
 
             stage = 'grounded_script'
             review_feedback_text = ''
+            review_scene_target = None
             for attempt in range(3):
                 # The normalizer obtains precise, source-checked facts before
                 # anybody searches for clips. A visual query can never
@@ -182,7 +183,7 @@ def main():
                                 else 2 if verified_kind in concise_kinds
                                 else 3 if (verified_kind or
                                            _lightning_repeated_topic(topic))
-                                else None)
+                                else review_scene_target)
                 try:
                     with (use_story_scene_target(target_count),
                           use_evidence(evidence),
@@ -226,6 +227,16 @@ def main():
                             'SCIENCE_REPORT', 'science-report.json')
                         review_feedback_text = rejected_claim_feedback(
                             feedback_path, screenplay)
+                        # Use fewer genuinely supported factual statements
+                        # instead of inventing four separate 'facts' when the
+                        # available references can only support two or three.
+                        # Still require a complete answer and independent
+                        # sentence-level source review on every next attempt.
+                        from science_sources import source_revision_scene_count
+                        revision_count = source_revision_scene_count(
+                            feedback_path, screenplay)
+                        if revision_count is not None:
+                            review_scene_target = revision_count
                         # Preserve why earlier scripts failed. A later 429
                         # overwrote science-report.json with an empty checks
                         # list, erasing the exact unsupported scene evidence.
