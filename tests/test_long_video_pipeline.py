@@ -68,17 +68,20 @@ def test_pinned_upstream_word_has_text():
 def test_all_fourteen_chapters_preserve_voice_word_contract(tmp_path, monkeypatch):
     # Simulate the approved voice output, not voice synthesis itself:
     # verifies the FULL 14-chapter speech -> timeline -> caption interaction.
-    voice = pytest.importorskip("approved_reference_voice")
+    voice = pytest.importorskip("local_voice")
     policy = pytest.importorskip("english_reference_policy")
     monkeypatch.setattr(policy, "enforce_english_reference_only", lambda lang: None)
 
-    def fake_synthesize(text, output, settings, *, segments, long_form=False):
-        assert long_form and settings.language == "en"
-        assert 2 <= len(segments) <= 6 and " ".join(segments) == text
+    def fake_synthesize(text, output, settings):
+        assert settings.language == "en"
         path = Path(output) / "approved-generated.wav"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"test fixture: simulated reference WAV")
         data = fake_speech(duration=43)
+        data.engine='piper'
+        data.voice='en_US-joe-medium'
+        data.timing='aligned'
+        data.provenance=voice.provenance('en')
         data.audio = path
         return data
 

@@ -69,7 +69,7 @@ def test_workflow_contract():
     assert workflow['jobs']['create-videos']['name'].startswith('create-videos | Video')
     assert workflow['jobs']['collect-results']['name'] == 'create-videos'
     job = workflow['jobs']['create-videos']
-    assert job['env']['RESOLUTION'] == '720x1280'
+    assert job['env']['RESOLUTION'] == '1080x1920'
     assert job['permissions'] if 'permissions' in job else workflow['permissions'] == {'contents': 'read'}
     # Ten slots are queued independently; shared Groq quota requires one at a time.
     strategy = job['strategy']

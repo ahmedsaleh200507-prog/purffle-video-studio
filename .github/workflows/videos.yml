@@ -102,12 +102,11 @@ jobs:
       # Remaining providers are still checked when the first ones have no
       # verified, relevant HD clip; license and CLIP checks stay unchanged.
       VISUAL_SOURCES: pexels,pixabay,usgs-video,nps-video,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video,vecteezy-video
-      # English strictly requires user-approved private reference voice; no Joe fallback.
-      # German remains pinned de_DE-thorsten-medium; no female fallback.
+      # V4 fixed Piper Joe/Thorsten; no alternate voice or private model setup.
       PURFFLE_NARRATOR_LOCK: '1'
-      TTS_ENGINE: edge
+      TTS_ENGINE: piper
       EDGE_TTS_TIMEOUT_SECONDS: '120'
-      RESOLUTION: 720x1280
+      RESOLUTION: 1080x1920
       FPS: '30'
       PRESET: medium
       TRANSITION: none
@@ -163,11 +162,10 @@ jobs:
           language, topic = parse_topic(os.environ["SLOT_TOPIC"])
           print(f"[TOPIC VALIDATED] one {language} topic, {len(topic)} characters")
           PY
-      - name: Enforce approved English voice before installing video tools
+      - name: Verify fixed Piper voice policy before installing video tools
         if: steps.selected.outputs.render == 'true'
         env:
           SLOT_TOPIC: ${{ inputs[matrix.input] }}
-          PURFFLE_REFERENCE_OPUS_B64: ${{ secrets.PURFFLE_REFERENCE_OPUS_B64 }}
         run: python scripts/english_reference_policy.py --topic "$SLOT_TOPIC"
       - uses: actions/setup-python@v5
         if: steps.selected.outputs.render == 'true'
@@ -201,22 +199,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-dev.txt
-      - name: Install approved reference-only English model and audio validation
-        if: steps.selected.outputs.render == 'true' && startsWith(inputs[matrix.input], 'en|')
-        run: |
-          python -m pip install --no-cache-dir 'faster-whisper==1.2.1' 'resemblyzer==0.1.4' 'av==18.1.0'
-          # PyAV 19.x removed 'metadata_errors'; faster-whisper 1.2.1 requires it.
-          # Voice smoke #6 succeeded with av==18.1.0. Reject accidental upgrades.
-          python -c "import av; assert av.__version__ == '18.1.0', 'Incompatible PyAV version'; print('[VOICE DEPENDENCY] PyAV 18.1.0 pinned for real word timing')"
-          python -m venv --system-site-packages .venv-reference
-          .venv-reference/bin/python -m pip install --upgrade pip
-          .venv-reference/bin/python -m pip install 'torchaudio==2.6.0+cpu' --index-url https://download.pytorch.org/whl/cpu
-          .venv-reference/bin/python -m pip install --no-cache-dir 'chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217'
-      - name: Live test the approved private English reference voice
-        if: steps.selected.outputs.render == 'true' && startsWith(inputs[matrix.input], 'en|')
-        env:
-          PURFFLE_REFERENCE_OPUS_B64: ${{ secrets.PURFFLE_REFERENCE_OPUS_B64 }}
-        run: python scripts/reference_voice_smoke.py
       - name: Restore local model cache
         if: steps.selected.outputs.render == 'true'
         id: model-cache
@@ -251,7 +233,6 @@ jobs:
         if: steps.selected.outputs.render == 'true'
         env:
           PURFFLE_STRICT: '1'
-          PURFFLE_REFERENCE_OPUS_B64: ${{ secrets.PURFFLE_REFERENCE_OPUS_B64 }}
         run: python scripts/batch.py
       - name: Save local models even when production fails
         if: always() && steps.selected.outputs.render == 'true' && steps.model-cache.outputs.cache-hit != 'true'

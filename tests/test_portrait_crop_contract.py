@@ -1,3 +1,4 @@
+from conftest import write_piper_report
 """The #68 real-world regression: 5 verified clips must not fail in FFmpeg.
 
 The archive has 2 correctly selected 1080p landscape videos needing 1.18519x
@@ -104,7 +105,7 @@ def test_successful_hurricane_scene_report_is_accepted_at_final_gate(tmp_path, m
     captions.write_text("1\n00:00:00,000 --> 00:00:03,000\nHurricane eye\n")
     with patch("media_validation.QualityValidator.validate",
                return_value={"width": 720, "height": 1280, "duration": 33, "has_audio": True}):
-        _, validated = validate_result(clip, {"language": "de", "voice": "edge:de", "timing": "native"},
-                                       captions, report)
+        _, validated = validate_result(clip, {"language": "de", "voice": "piper:de_DE-thorsten-medium", "timing": "aligned"},
+                                       captions, report, voice_report=write_piper_report(clip.parent))
     assert len(validated["scenes"]) == 5
     assert sum(x["quality"]["portrait_crop_scale"] > 1 for x in validated["scenes"]) == 2

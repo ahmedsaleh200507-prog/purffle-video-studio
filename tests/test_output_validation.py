@@ -1,3 +1,4 @@
+from conftest import write_piper_report
 """Output acceptance requires complete provenance, native/aligned voice and captions."""
 import json
 from types import SimpleNamespace
@@ -32,7 +33,7 @@ def test_output_requires_exact_size(output):
     video, captions, report = output
     with patch('media_validation.QualityValidator.validate', return_value=probe(1080, 1920)):
         with pytest.raises(RuntimeError, match='Output resolution mismatch'):
-            validate_result(video, {'language': 'de', 'voice': 'edge:test', 'timing': 'native'}, captions, report)
+            validate_result(video, {'language': 'de', 'voice': 'piper:de_DE-thorsten-medium', 'timing': 'aligned'}, captions, report, voice_report=write_piper_report(video.parent))
 
 
 def test_output_requires_actual_audio_stream(output):
@@ -42,7 +43,7 @@ def test_output_requires_actual_audio_stream(output):
     with patch('media_validation.QualityValidator.validate', return_value=no_audio), \
             patch('subprocess.run', return_value=SimpleNamespace(stdout='{"streams":[{"codec_type":"video"}]}')):
         with pytest.raises(RuntimeError, match='no narration audio'):
-            validate_result(video, {'language': 'de', 'voice': 'edge:test', 'timing': 'native'}, captions, report)
+            validate_result(video, {'language': 'de', 'voice': 'piper:de_DE-thorsten-medium', 'timing': 'aligned'}, captions, report, voice_report=write_piper_report(video.parent))
 
 
 @pytest.mark.parametrize('metadata', [
@@ -53,26 +54,26 @@ def test_output_requires_actual_audio_stream(output):
 def test_output_rejects_unverified_narration(output, metadata):
     video, captions, report = output
     with patch('media_validation.QualityValidator.validate', return_value=probe()):
-        with pytest.raises(RuntimeError, match='verified native/aligned'):
-            validate_result(video, metadata, captions, report)
+        with pytest.raises(RuntimeError, match='identity mismatch|native sample alignment'):
+            validate_result(video, metadata, captions, report, voice_report=write_piper_report(video.parent))
 
 
 def test_output_rejects_missing_captions_or_unverified_scenes(output):
     video, captions, report = output
-    metadata = {'language': 'de', 'voice': 'edge:test', 'timing': 'native'}
+    metadata = {'language': 'de', 'voice': 'piper:de_DE-thorsten-medium', 'timing': 'aligned'}
     with patch('media_validation.QualityValidator.validate', return_value=probe()):
         report.write_text(json.dumps({'scenes': [{'status': 'failed'}]}))
         with pytest.raises(RuntimeError, match='Not every scene'):
-            validate_result(video, metadata, captions, report)
+            validate_result(video, metadata, captions, report, voice_report=write_piper_report(video.parent))
         captions.unlink()
         with pytest.raises(RuntimeError, match='captions missing'):
-            validate_result(video, metadata, captions, report)
+            validate_result(video, metadata, captions, report, voice_report=write_piper_report(video.parent))
 
 
 def test_accepts_complete_validated_output(output):
     video, captions, report = output
     with patch('media_validation.QualityValidator.validate', return_value=probe()):
-        info, provenance = validate_result(video, {'language': 'de', 'voice': 'edge:test', 'timing': 'native'}, captions, report)
+        info, provenance = validate_result(video, {'language': 'de', 'voice': 'piper:de_DE-thorsten-medium', 'timing': 'aligned'}, captions, report, voice_report=write_piper_report(video.parent))
     assert info['width'] == 720
     assert provenance['scenes'][0]['status'] == 'selected'
 

@@ -1,57 +1,42 @@
-# Purffle Video Studio V2
+# Purffle Video Studio V4
 
-Konu → senaryo → yapılandırılmış sahneler → lisanslı gerçek video araması → dosya ve sahne doğrulama → Almanca/İngilizce seslendirme → senkron altyazılı **720×1280 MP4 (9:16)**.
+Mevcut Purffle ve sabitlenmiş `purffle-shorts` motoru üzerinde: konu → denetlenmiş senaryo → gerçek görüntü arama/doğrulama → sabit Piper sesi → zamanlı altyazı → render → çıktı kontrolü. Ücretli üretim API'si veya otomatik yayın yoktur.
 
-[Actions: 1–10 video üret](https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/workflows/videos.yml). `video_1` alanına `en|Ocean waves breaking on a rocky coast` veya `de|Ozeanwellen an einer felsigen Küste` yazıp **Run workflow** seçilir. Diğer dokuz alan isteğe bağlıdır. Ön ek yoksa İngilizce kullanılır. Kod, manuel görüntü arama/yükleme/indirme gerekmez. Çıktılar çalışmanın **Artifacts** bölümünde 7 gün saklanır.
+## Kullanım
 
-## Ücretsiz erişim ve anahtarlar
+- [Shorts — 1–10 konu](https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/workflows/videos.yml): `en|What Happens When Lava Hits the Ocean?` veya `de|Warum beschlägt der Badezimmerspiegel?`. 1080×1920, 9:16, 30 FPS.
+- [Uzun video — 1–10 konu](https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/workflows/long-batch.yml): İngilizce/Almanca, 14 bölüm, 9–11 dakika, 1920×1080, 30 FPS. Uzun video akışı deneysel; her konuda gerçek stok kapsamı garanti edilmez. Altyazıları zamanlı `captions.srt` olarak teslim eder; MP4'e yakmaz.
 
-Ücretli üretim API'si kullanılmaz. Senaryo için ücretsiz kota kapsamında `GROQ_API_KEY` gerekir. Stok için `PIXABAY_API_KEY` ve `PEXELS_API_KEY`, Europeana için `EUROPEANA_API_KEY` isteğe bağlıdır. Anahtarlar yalnız **GitHub Actions Secrets** üzerinden ortam değişkenlerine aktarılır; anahtarı eksik kaynak atlanır. Wikimedia, NASA ve Internet Archive anahtarsız çalışabilir. Yerelde Secrets değerlerini okumak veya dışa aktarmak gerekmez. Coverr ücretsiz üretim erişimi netleşene kadar anahtar bulunsa da engellidir.
+`INPUT_1`–`INPUT_10` korunur. Her konu bağımsız job; kota için aynı anda bir üretim. `fail-fast: false`: hata diğer konuları iptal etmez. Başarılı MP4'ler ve başarısızlık raporları Artifacts'ta 7 gün tutulur. Kısmi MP4 başarı sayılmaz. Shorts worker süresi 25 dakika, runner kurulum dahil 65 dakika; uzun runner sınırı 330 dakika. GitHub hesabının ücretsiz dakika/depolama sınırları geçerlidir.
 
-GitHub standart Linux runner, Edge TTS, ücretsiz yerel Piper ses yedeği ve CPU CLIP kullanılır; kota/süre/hizmet erişilebilirliği sınırlıdır. Ücretsiz kota biterse iş hata verir; ücretli sağlayıcıya geçmez. Anahtar oluşturma veya ücretli plan kaydı otomatik yapılmaz.
+## Görüntü eşleştirme
 
-## Secrets ve kaynak belirtmesiz yayın
-`NPS_API_KEY` resmî National Park Service video API'sine yalnız `X-Api-Key` başlığıyla gönderilir. NPS'de yalnız özgün NPS kredili, telif işareti olmayan B-roll/video-only dosyalar ve en az 720p MP4 sürümler değerlendirilir; indirme sonrası kaynak/kalite/hareket kontrolleri ayrıca zorunludur.
+Her sahnenin konusu, nesnesi, eylemi, ortamı ve her anlatım cümlesi raporlanır. İngilizce sorgular ve sınırlı Almanca görsel sözlük desteklenir; bilinmeyen kelimelerde senaristin İngilizce görsel planı kullanılır. Tam çeviri modeli değildir.
 
-`COVER2`, `COVERR_API_KEY` bulunmadığında kullanılan yedek bir **Coverr anahtarı adıdır**; ayrı video kaynağı veya kota aşma yöntemi değildir. İlk anahtar 401/429 alınca diğerine otomatik geçilmez.
+Kaynaklar en fazla dört ağ isteği paralelliğiyle taranır. Önce kesin sorgu tüm kaynaklarda denenir; sonra alternatif eylem/nesne/ortam sorguları denenir. HTTP çağrıları kaynak başına hız sınırı, metadata cache, kota devre kesicisi ve sahne süresiyle sınırlıdır. İndirme, FFprobe ve CLIP incelemesi CPU/RAM için sırayla yapılır. Aynı gereksinim için reddedilmiş klip alias aramasında yeniden indirilmez.
 
-`VECTEEZY_API_KEY` Secrets'dan workflow'a geçer, ancak ücretsiz Vecteezy lisansı atıf gerektirdiğinden otomatik seçime kapalıdır. Ücretli indirme, Pro yükseltme ve manuel açıklama oluşturma yapılmaz.
+Hafif CPU metadata elemesi nesne kapsamını ve bilinen çelişkileri inceler. Son karar ayrıca lisans, gerçek çözünürlük, süre, hareket ve kullanılan karelerde CPU CLIP gerektirir. **Metadata tek başına görsel doğrulama değildir.** CLIP yüklenemezse ilgisiz stokla devam edilmez. Çok cümleli sahnelerde sonraki cümlenin görünür eylemi de denetlenir. Lav–buz etkileşimi için her iki öznenin kaynak metadata'sında bulunması ve özel kare karşılaştırması gerekir.
 
-Shorts workflow'unda `PURFFLE_NO_ATTRIBUTION=1` geçerlidir. CC BY/Coverr gibi atıf gerektiren videolar kullanılmaz; tüm hakların uygun olduğu ayrıca doğrulanmalıdır. Bu kısıt daha az klibin bulunmasına yol açabilir. Anahtarlar rapora veya depoya yazılmaz.
+`match.suitability` uygunluk indeksini, gerekçeleri ve güvenilirlik sınırını kaydeder. Bu indeks olasılık veya ölçülmüş doğruluk değildir; CLIP nedensellik/kimlik/tüm kısa eylemleri ispatlamaz. Düşük uygunluklu aday mevcut bağımsız eşiklerde reddedilir, sonraki aday/sorgu/kaynak denenir. Seçenekler tükenirse açık hata oluşur. Her konuda otomatik sahne yeniden yazımı uygulanmaz; ilgisiz görüntüyle boşluk doldurulmaz.
 
-## Kabul politikası
+Kaynak kısa kenarı en az 720 px. Dikey kırpmanın gerçek ölçeği raporlanır, en fazla 1,20× büyütme kabul edilir. Full HD çıktı, kaynağın native Full HD olduğu anlamına gelmez. 1080p yatay klipler 9:16 Full HD kırpmada sıklıkla yetersizdir; native dikey veya 4K stok gerekir. Bu tercih bulunabilirliği azaltır. Aynı video içinde kaynak ID/URL/SHA256 tekrarı engellenir; ayrı runner'lar arasında ortak tekrar geçmişi yoktur.
 
-- Video araması: Pixabay, Pexels, Wikimedia Commons, NASA, Internet Archive, Europeana, NPS, Free Nature Stock, Coverr. Vecteezy anahtarı workflow'a bağlıdır ama **Free atıf zorunluluğu nedeniyle lisans engeliyle devre dışıdır**. [Kaynak/lisans araştırması](docs/SOURCE_RESEARCH_V2.md).
-- Her sahne karakter, nesne, eylem, mekân, zaman ve İngilizce görsel sorgusu taşır. Genel konuya genişletme ve rastgele stok yedeği yoktur.
-- Metadata nesne/eylem kontrolü ve örnek karelerde yerel CLIP doğrulaması zorunludur. Model yüklenemezse sahne kabul edilmez. Model; aynı kişinin kimliğini, tam para kupürünü veya tüm eylem ayrıntılarını kesin ispatlayamaz. Bu sınırlama raporda bulunur; kaynaklarla birebir anlatım her konuda garanti edilmez.
-- FFprobe gerçek boyut/FPS/süre/codec ölçer; kaynak kısa kenarı en az 720 pikseldir ve 9:16 kırpma sonrası 720×1280 yerel ayrıntı korunmalıdır. Siyah/boş/hareketsiz dosyalar ve kısa klip döngüsü reddedilir. Yatay1080p'nin dikey kırpılması büyütme gerektirebilir; `portrait_crop_scale` ve `upscaled_after_crop` bunu açıkça bildirir. Native1080p dikey veya4K kaynak tercih edilir.
-- Fotoğraflar, gradyanlar, yapay2D yedekler ve açıkça animasyon/simülasyon olarak işaretlenen içerikler reddedilir. Kazıma veya toplu katalog indirmesi yoktur. Bilinmeyen lisanslar, CC BY-SA/NC/ND kabul edilmez. CC BY için yaratıcı/lisans/kaynak/değişiklik atfı artefakta dahil edilir; videoyu yayımlarken bu atıf da birlikte verilmelidir.
-- Ses önce Edge üzerinden üretilir; erişim başarısızsa onaylanmış yerel Piper modelleri kullanılır (İngilizce public domain, Almanca CC0). Yalnız native veya gerçek fonem örneklerinden hizalanmış kelime zamanları kabul edilir. [Model lisansları ve ölçülmüş ses testleri](docs/LOCAL_VOICE_OPTIONS.md). Sessiz ya da tahminî zamanlamalı çıktı başarı sayılmaz.
+## Ses ve kalite kontrolü
 
-## İşletim ve raporlar
+Yalnız `en_US-joe-medium` (rdh tabanlı CC0 checkpoint) ve `de_DE-thorsten-medium` (CC0) Piper kullanılır. Model revision/hash denetimi ve yerel fonem örneklerinden kelime hizalaması korunur. Ses başarısızsa başka kimliğe geçilmez. Eski özel İngilizce referans araçları geçmiş artefaktlar için depodadır; aktif üretim bunları çağırmaz ve özel kayıt Secret'ını gerektirmez.
 
-**10 video, 10 ayrı GitHub Actions görevi olarak kuyruğa alınır.** En fazla **2 video aynı anda** oluşturulur; kalan görevler otomatik başlar. Boş bırakılan konu alanlarında üretim atlanır. Her video en fazla 25 dakika denenir; hatalı bir video sonraki konuları engellemez. Bir video bile başarısızsa toplu iş akışı başarısız sonuçlanır, fakat başarılı MP4'ler ve tüm hata raporları yine **tek ZIP** içinde yüklenir. Bulunan kısmiMP4 dosyası başarı kanıtı değildir.
+FFprobe, boyut/FPS/ses/süre, kaynak hareket/CLIP ve ilk saniyelerin kalite kontrolüne ek olarak **tüm çıktı** decode edilir: siyah sahne ≥0,45 saniye, sessizlik ≥2,5 saniye, altyazı sınırları/sırası/kapsamı ve ses toplam süresi denetlenir. `output-qa.json` teknik sonucu kaydeder. Bunlar ASR veya bilimsel doğruluk kanıtı değildir. Shorts ekranında logo veya Purffle başlığı yoktur.
 
-Her `finished/video_XX/` klasöründe `report.json`, `job-result.json`, `footage-report.json`, `voice-report.json`, `purffle.log`; başarılı üretimde ayrıca `render/.../short.mp4`, `script.json`, `metadata.json`, `captions.srt` bulunur. Raporlar kaynak URL'sini, SHA256'yı, lisans atfını, gerçek çözünürlüğü, hareket/uygunluk puanını ve reddetme nedenlerini içerir. `batch-results.json` toplu durumdur. Ses raporu denenen motoru, başarısızlıkları, kullanılan yerel modelin hash/lisansını ve zamanlama yöntemini kaydeder. Ses aşamasında başarısızlık gibi henüz kaynak aranmamış durumlarda footage raporu oluşmayabilir.
+## Secrets ve kaynak durumu
 
-API yanıtları24 saat önbelleklenir; kota reddinde kaynak o video için devreden çıkar. İndirmeler HTTPS, boyut/zaman/özel-IP denetimi ve SHA256 ile sınırlıdır. Aynı **videonun sahneleri** arasında kaynak anahtarı, URL ve içerik karmasıyla tekrar önlenir. Ayrı matrix runner'larında videolar arası ortak tekrar kontrolü yapılmaz. Runner geçicidir; farklı Actions çalışmaları arasında tüm klip geçmişi saklanmaz. Render işleri temizlenir; indirilen klipler artefakta eklenmez.
+`GROQ_API_KEY` / `GEMINI_API_KEY` mevcut ücretsiz kotalı senaryo servisleri içindir. Stok Secrets: `PIXABAY_API_KEY`, `PEXELS_API_KEY`, `NPS_API_KEY`, `EUROPEANA_API_KEY`, `COVERR_API_KEY` (yoksa `COVER2`). Eksik/geçersiz/kotası dolmuş kaynak diğerlerini durdurmaz. Anahtar değerleri rapora yazılmaz.
 
-Başarılı MP4 dosyalarının yanında `YouTube_Title.txt` bulunur. Tek ZIP içinde ayrıca `YOUTUBE_SHORTS_TITLES.txt` ve makinece okunabilir `PURFFLE_DIAGNOSTICS.json` teslim edilir. Sonuçları ve eksik raporları tek dosyada toplamak için `scripts/aggregate_results.py` çalıştırılır.
+Wikimedia, NASA, Internet Archive, USGS ve Free Nature Stock anahtarsız adaptörlere sahiptir. Coverr resmi ücretsiz API adaptörü vardır; indirme sayımı PATCH isteği zorunludur. Vecteezy ücretsiz lisans/atıf koşulları nedeniyle kapalıdır. Shorts `PURFFLE_NO_ATTRIBUTION=1` ile atıf gerektiren varlıkları filtreler. Lisansın API'de listelenmesi tüm üçüncü kişi haklarını garanti etmez.
 
-Upstream [514fd254](https://github.com/Chamanrajragu/purffle-shorts/commit/514fd2547227b98d951dfc1489fc8c7ce72f1b68) sürümüne sabitlenmiştir. Runtime uyumluluğu SHA256 ile doğrulanır; bilinmeyen upstream sessizce yamalanmaz. İş akışında syntax, mock/API hata, lisans, medya, sahne ve toplu durum testleri çalışır.
+**Güncel ve kapsamı belirtilmiş kaynak/test sonuçları:** [V4 doğrulama ve lisans raporu](docs/V4_AUDIT.md). Yapılandırılmış kaynak, erişimi doğrulanmış kaynak ve indirilen/doğrulanmış klip ayrı durumlardır.
 
-Yerel geliştirici testleri: `pip install -r requirements-dev.txt`, CPU PyTorch (`torch==2.6.0+cpu`, resmî PyTorch CPU index), FFmpeg/FFprobe ardından `python -m pytest -q`. Bu testlerdeki sentetik dosyalar yalnız olumsuz kalite/render testleridir; gerçek kaynak veya uçtan uca üretim kanıtı değildir. [Doğrulama kaydı](docs/VALIDATION_V2.md).
+## Geliştirme
 
-## 10 farklı konuda video üretimi — görüntü kalitesi
+Python 3.12, FFmpeg/FFprobe, `pip install -r requirements-dev.txt`, ayrıca `torch==2.6.0+cpu` (resmi PyTorch CPU index). `python -m pytest -q` ve `python -m compileall -q scripts sitecustomize.py` çalıştırılır. Ağsız mock testler canlı API/üretim kanıtı değildir; sentetik FFmpeg dosyaları yalnız test fixture'ıdır.
 
-Özel/soyut konuların her cümlesi birebir canlandırılmaz. Önce birebir gerçek stok görüntü aranır; bulunamazsa konuya özgü, gerçek hareketli **temsili B-roll** kullanılır. Kara delik, tsunami, Antarktika, volkan, derin deniz, Dünya'nın dönüşü, Bermuda, terk edilmiş şehirler ve kasırga gibi konular desteklenir. Temsili görüntüler özgün olayın birebir kaydı olarak sunulmaz, raporda işaretlenir. Rastgele alakasız görüntü alınmaz.
-
-Görüntü kaynağının kısa kenarı en az 720px olmalı. Dikey 720×1280 çıktı tercih edilir; gerçek Full HD (1920×1080) yatay görüntü 9:16 kırpıldığında **en fazla 1,20× büyütmeye** izin verilir; `portrait_crop_scale` ve `upscaled_after_crop` alanlarında açıkça kaydedilir. 1280×720 gibi düşük netlikli yatay görüntü bu kurala uymaz. `PURFFLE_MAX_PORTRAIT_UPSCALE=1.0` tam yerel kırpma şartını geri getirir.
-
-Bir sahne için toplam arama süresi yaklaşık 210 saniye ile sınırlandırılmıştır; sürenin dolması durumunda tamamlanamayan video, diğer videoların çalışmasını engellemez. Toplam 10 video 10 bağımsız Actions görevidir ve en fazla ikisi paralel çalışır. Kod testlerinin geçmesi canlı stok kaynağı bulunacağını garanti etmez.
-
-## İki ayrı video oluşturma bölümü
-
-**1. Shorts (9:16):** [Shorts Video Maker](https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/workflows/videos.yml) — mevcut 1–10 Shorts üretimini kullanır, eski üretim mantığı değiştirilmedi.
-
-**2. 10 Dakikalık Video (16:9):** [10 Minute Video Maker — Experimental](https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/workflows/long-videos.yml) — Shorts'tan ayrı bir üretim akışıdır. İlk deneme yalnızca İngilizce volkan/lav konuları için 9–11 dakikalık, 1920×1080 MP4 üretmeyi dener. **Henüz canlı üretim başarıyla doğrulanmadı.** Sabit onaylı erkek sesinin doğrulaması, gerçek stok görüntüler, altyazı ve FFprobe kontrolleri başarısızsa işlem hata verir; ZIP içindeki `report.json` gerçek sonucu gösterir.
+Upstream commit `514fd2547227b98d951dfc1489fc8c7ce72f1b68` ve runtime SHA denetimi korunur. OpenMontage AGPL-3.0 kaynakları mimari inceleme içindir; kod veya bağımlılık kopyalanmadı. Eski `docs/` raporları tarihlerindeki durumu anlatır; V4 için bu README ve V4 raporu esas alınır.

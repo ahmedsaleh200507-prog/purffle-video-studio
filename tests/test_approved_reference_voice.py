@@ -23,13 +23,12 @@ def wav(tmp_path, seconds=2, rate=24000):
     return target
 
 
-def test_private_voice_is_required_for_every_english_call(monkeypatch):
-    monkeypatch.delenv("PURFFLE_REFERENCE_OPUS_B64", raising=False)
-    for strict in (True, False, None):
-        with pytest.raises(RuntimeError,match="reference_voice_not_ready"):
-            policy.enforce_english_reference_only("en",strict=strict)
-    assert policy.requires_reference_only("en",strict=False)
-    policy.enforce_english_reference_only("de",strict=True)
+def test_v4_english_uses_pinned_joe_without_private_secret():
+    from english_reference_policy import requires_reference_only, enforce_english_reference_only
+    from local_voice import provenance
+    assert not requires_reference_only('en')
+    enforce_english_reference_only('en')
+    assert provenance('en')['model']=='en_US-joe-medium'
 
 
 def test_mismatched_reference_secret_refused_and_not_printed(monkeypatch):
@@ -81,37 +80,23 @@ def test_speaker_similarity_rejects_unrelated_embedded_voice(tmp_path):
         voice.voice_similarity(source,target,loader=bad)
 
 
-def test_english_has_no_generic_voice_models_or_production_fallback():
+def test_v4_fixed_voices_and_no_reference_production_fallback():
     import local_voice
-    assert list(local_voice.VOICES)==["de"]
-    assert "en_US-joe-medium" not in repr(local_voice.VOICES)
+    assert set(local_voice.VOICES)=={'en','de'}
+    assert local_voice.provenance('en')['model']=='en_US-joe-medium'
     root=Path(__file__).resolve().parents[1]
-    renderer=(root/"scripts"/"render_job.py").read_text()
-    runtime=(root/"scripts"/"studio_runtime.py").read_text()
-    assert "voice != 'reference:' + REFERENCE_VOICE_ID" in renderer
-    assert "if settings.language == \"en\":" in runtime
-    assert "from approved_reference_voice import synthesize as approved_synthesize" in runtime
+    runtime=(root/'scripts/studio_runtime.py').read_text()
+    active=runtime[runtime.index('def speak_with_free_fallback'):runtime.index('def install')]
+    assert 'approved_reference_voice' not in active
 
 
-def test_all_workflows_keep_reference_secret_private():
-    root=Path(__file__).resolve().parents[1]/".github"/"workflows"
-    workflows=["videos.yml"]
-    for name in workflows:
+def test_production_does_not_export_or_install_private_reference():
+    root=Path(__file__).resolve().parents[1]/'.github/workflows'
+    for name in ('videos.yml','long-batch.yml'):
         content=(root/name).read_text()
-        assert "secrets.PURFFLE_REFERENCE_OPUS_B64" in content
-        assert "scripts/reference_voice_smoke.py" in content
-        assert "PURFFLE_NARRATOR_LOCK: '1'" in content
-        assert "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217" in content
-    long_batch=(root/"long-batch.yml").read_text()
-    # The long-form English job also uses only the private approved speaker.
-    # Long German jobs choose their own audited CC0 narrator.
-    assert "secrets.PURFFLE_REFERENCE_OPUS_B64" in long_batch
-    assert "scripts/english_reference_policy.py" in long_batch
-    assert "steps.selected.outputs.language == 'en'" in long_batch
-    assert "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217" in long_batch
-    assert "long_video_output/result/long-video.mp4" in long_batch
-    assert "voice-reference.wav" not in long_batch
-    assert not list(root.rglob("*approved-reference*.wav"))
+        assert 'secrets.PURFFLE_REFERENCE_OPUS_B64' not in content
+        assert 'chatterbox-tts' not in content
+        assert 'actions/upload-artifact@' in content
 
 
 

@@ -106,7 +106,7 @@ def test_shorts_fallback_keeps_narrator_and_fact_and_visual_checks():
     runtime=(root/"scripts"/"studio_runtime.py").read_text()
     assert "fallbacks = ['groq']" in render and "llm_fallbacks=fallbacks" in render
     assert "gemini-3.1-flash-lite" in runtime
-    assert "PURFFLE_NARRATOR_LOCK" in render
+    assert "fixed Piper Joe/Thorsten required" in render
     assert "screen_narration(" in render
     assert "validate_result(" in render
     assert "visual_director_preflight" in render

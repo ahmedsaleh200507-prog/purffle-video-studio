@@ -100,7 +100,7 @@ def test_fallback_checks_next_source_without_broadening(strict_env):
     # Query broadening must not weaken the separate metadata and visual gates.
     expected = [PLAN["visual_search_query"], "euro banknote",
                 "euro banknote picking up", "euro banknote sidewalk"]
-    assert registry.queries == [(source, query) for source in ("first", "second") for query in expected]
+    assert set(registry.queries) == {(source, PLAN["visual_search_query"]) for source in ("first", "second")}
     assert all("euro banknote" in query for _, query in registry.queries)
     assert len(down.urls) == 1 and quality.calls == [4]  # exact unlooped scene length; no artificial 100ms
     report = json.loads((strict_env / "report.json").read_text())
@@ -458,18 +458,14 @@ def voice_settings():
     return SimpleNamespace(offline=False, tts_engine="edge", language="de")
 
 
-def test_free_voice_prefers_valid_edge_and_records_report(tmp_path, monkeypatch):
+def test_fixed_piper_selected_without_calling_edge(tmp_path, monkeypatch):
     from studio_runtime import speak_with_free_fallback
-    monkeypatch.setenv("VOICE_REPORT", str(tmp_path / "voice-report.json"))
-    expected = fake_speech(tmp_path)
-
-    def forbidden_fallback():
-        raise AssertionError("Local fallback must not run when Edge succeeded")
-
-    result = speak_with_free_fallback(None, tmp_path, voice_settings(), lambda: expected, forbidden_fallback)
+    monkeypatch.setenv('VOICE_REPORT',str(tmp_path/'voice-report.json'))
+    expected=fake_speech(tmp_path,'piper')
+    result=speak_with_free_fallback(None,tmp_path,voice_settings(),lambda: pytest.fail('Edge not permitted'),lambda: expected)
     assert result is expected
-    report = json.loads((tmp_path / "voice-report.json").read_text())
-    assert report["engine"] == "edge" and len(report["attempts"]) == 1
+    report=json.loads((tmp_path/'voice-report.json').read_text())
+    assert report['engine']=='piper' and len(report['attempts'])==1
 
 
 def test_free_voice_falls_back_to_audited_piper_after_edge_failure(tmp_path, monkeypatch):
@@ -484,7 +480,7 @@ def test_free_voice_falls_back_to_audited_piper_after_edge_failure(tmp_path, mon
     assert result is expected
     report = json.loads((tmp_path / "voice-report.json").read_text())
     assert report["engine"] == "piper" and report["timing"] == "aligned"
-    assert report["attempts"][0]["status"] == "failed" and "403" in report["attempts"][0]["error"]
+    assert report["attempts"][0]["status"] == "ok"
     assert report["provenance"]["license"]["id"] == "CC0-1.0"
 
 
@@ -495,10 +491,10 @@ def test_free_voice_reports_both_failures_and_throws(tmp_path, monkeypatch):
     def failure():
         raise RuntimeError("unavailable")
 
-    with pytest.raises(RuntimeError, match="failed for both Edge and approved local Piper"):
+    with pytest.raises(RuntimeError, match="Locked male narrator unavailable"):
         speak_with_free_fallback(None, tmp_path, voice_settings(), failure, failure)
     report = json.loads((tmp_path / "voice-report.json").read_text())
-    assert report["state"] == "failed" and len(report["attempts"]) == 2
+    assert report["state"] == "failed" and len(report["attempts"]) == 1
 
 
 @pytest.mark.parametrize("violation", ["license", "engine", "timing", "language", "samples"])
@@ -520,7 +516,7 @@ def test_free_voice_rejects_unapproved_local_fallback(tmp_path, monkeypatch, vio
     def edge_failed():
         raise RuntimeError("Edge unavailable")
 
-    with pytest.raises(RuntimeError, match="failed for both"):
+    with pytest.raises(RuntimeError, match="Locked male narrator unavailable"):
         speak_with_free_fallback(None, tmp_path, voice_settings(), edge_failed, lambda: rejected)
 
 

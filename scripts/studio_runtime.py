@@ -47,7 +47,7 @@ def verify_upstream(root=None):
 
 def _redact(value):
     text = str(value)
-    for key in ("GROQ_API_KEY", "PIXABAY_API_KEY", "PEXELS_API_KEY", "COVERR_API_KEY", "COVER2", "NPS_API_KEY", "VECTEEZY_API_KEY", "EUROPEANA_API_KEY", "GITHUB_TOKEN", "GH_TOKEN", "HF_TOKEN"):
+    for key in ("GROQ_API_KEY", "GEMINI_API_KEY", "PURFFLE_REFERENCE_OPUS_B64", "PIXABAY_API_KEY", "PEXELS_API_KEY", "COVERR_API_KEY", "COVER2", "NPS_API_KEY", "VECTEEZY_API_KEY", "EUROPEANA_API_KEY", "GITHUB_TOKEN", "GH_TOKEN", "HF_TOKEN"):
         secret = os.getenv(key, "")
         if secret:
             text = text.replace(secret, "[REDACTED]")
@@ -238,6 +238,7 @@ class StrictVisuals:
         self.matcher = matcher if matcher is not None else SceneMatcher()
         self.sources = [x for x in settings.visual_sources if x in self.registry.enabled]
         self.credits = set()
+        self._rejected_candidates = set()
         self.used = set(used_keys or ())
         self.state_path = Path(os.getenv("FOOTAGE_USED_PATH", "media_cache/used-media.json"))
         try:
@@ -363,85 +364,20 @@ class StrictVisuals:
         if exact_ocean_entry and "usgs-video" in source_order:
             source_order.remove("usgs-video")
             source_order.insert(0, "usgs-video")
-        for source in source_order:
-            if time.monotonic() >= attempt_deadline:
-                break
-            # Search a concise, subject-focused variant when verbose camera/action
-            # directions cause stock providers to return unrelated footage.
-            queries = [data["visual_search_query"]]
-            short_query = " ".join(part for part in
-                                   (data.get("object", ""), data.get("location", ""))
-                                   if part).strip()
-            # Preserve strict action-specific searches for ordinary scenes.
-            # Only landmark footage benefits from a shorter subject query.
-            landmark_terms = ("stonehenge", "machu picchu", "giza", "easter island", "moai")
-            landmark_scene = any(name in queries[0].lower() for name in landmark_terms)
-            # Kitchen-doorway footage is often tagged with short stock terms;
-            # retain the original exact search and add a focused alternative.
-            if "kitchen doorway" in queries[0].lower():
-                queries.append("person entering kitchen")
-                queries.append("walking through doorway")
-            # Use the scene's own object/action as a fallback for ordinary
-            # stock searches too. Keep the strict per-candidate metadata and
-            # frame checks, rather than accepting unrelated footage.
-            if ("kitchen doorway" in queries[0].lower()
-                    and short_query and short_query.lower() != queries[0].lower()):
-                queries.append(short_query[:120])
-            # Stock APIs index short subject phrases better than long scene prose.
-            # Try these automatically, while retaining the same metadata, license,
-            # quality and frame-verification gates for every candidate.
-            if not landmark_scene:
-                subject = data.get("object", "").strip()
-                action = data.get("action", "").strip()
-                if subject:
-                    queries.append(subject[:90])
-                if subject and action:
-                    queries.append((subject + " " + action)[:120])
-                if short_query:
-                    queries.append(short_query[:120])
-            # V4: cinematic natural-scene search expansion. Stock catalogues
-            # index simple visual subjects much better than long AI descriptions.
-            # These alternatives are only discovery queries: the original
-            # structured scene still controls license, metadata, motion and
-            # frame-level visual verification.
-            if not landmark_scene and not data.get("main_character", "").strip():
-                natural_query = (data.get("visual_search_query", "") + " "
-                                 + data.get("object", "")).lower()
-                if "droplet" in natural_query or "water drop" in natural_query:
-                    queries.extend(["water droplets sunlight", "water drops in sunlight",
-                                    "sunlight reflecting on water", "water drops close up"])
-                elif "sunlight" in natural_query and ("lake" in natural_query or "water" in natural_query):
-                    queries.extend(["sunlight reflecting on water", "sun rays over lake",
-                                    "sunlight on water surface"])
-                elif "sky" in natural_query or "cloud" in natural_query:
-                    queries.extend(["blue sky clouds", "clouds moving sky",
-                                    "sunlight through clouds"])
-                elif "sunset" in natural_query or "sunrise" in natural_query:
-                    queries.extend(["sunrise sky", "sunset horizon", "golden hour sky"])
-            # Avoid repeated API requests for identical queries.
-            queries = list(dict.fromkeys(queries))
-            if landmark_scene:
-                if short_query and short_query.lower() != queries[0].lower():
-                    queries.append(short_query[:120])
-                # A named landmark is more searchable than a generated action
-                # description. Keep strict metadata, license, resolution and
-                # visual validation unchanged for every returned candidate.
-                for landmark in landmark_terms:
-                    if landmark in queries[0].lower() and landmark not in {q.lower() for q in queries}:
-                        queries.append(landmark)
-                        break
-            candidates = []
-            seen_candidates = set()
-            for search_query in queries:
-                for candidate in self.registry.search(source, search_query):
-                    if candidate.key not in seen_candidates:
-                        seen_candidates.add(candidate.key)
-                        candidates.append(candidate)
-                if time.monotonic() >= attempt_deadline:
-                    break
+        from footage_search import discover
+        from scene_relevance import search_queries
+        queries = search_queries(data, director_contract)
+        scene["search_queries"] = queries
+        # A fair first round prevents the first provider exhausting all aliases
+        # and downloads before the next provider gets any opportunity.
+        for source, candidates in discover(self.registry, source_order, queries, attempt_deadline):
             print(f"[SOURCE CHECK] {source}: {len(candidates)} candidates scene={idx+1}", flush=True)
             ranked = []
             for item in candidates:
+                rejection_key = (spec.object, spec.action,
+                                 json.dumps(director_contract, sort_keys=True), item.key)
+                if rejection_key in self._rejected_candidates:
+                    continue
                 parts = urlsplit(item.url)
                 url_key = parts.netloc.lower() + parts.path
                 try:
@@ -511,8 +447,14 @@ class StrictVisuals:
                             raise ValueError(f"Unrelated metadata (score {score:.3f})")
                     else:
                         score = 0.0  # injected test matchers have no metadata model
+                    from scene_relevance import metadata_evidence
+                    evidence = metadata_evidence(data, item.text, director_contract)
+                    if evidence["contradictions"]:
+                        raise ValueError("semantic_contradiction: " + "; ".join(evidence["contradictions"]))
+                    item.extra["relevance_evidence"] = evidence
                     ranked.append((score, item, url_key))
                 except Exception as exc:
+                    self._rejected_candidates.add(rejection_key)
                     reason = _redact(f"{type(exc).__name__}: {exc}")[:450]
                     scene["rejections"].append({"source": source, "id": item.id, "reason": reason,
                                                 "stage": "metadata_preflight"})
@@ -533,6 +475,8 @@ class StrictVisuals:
                                           -int(row[1].height > row[1].width),
                                           -min(row[1].width, row[1].height)))
             for score, item, url_key in ranked[:max_candidates]:
+                rejection_key = (spec.object, spec.action,
+                                 json.dumps(director_contract, sort_keys=True), item.key)
                 if time.monotonic() >= attempt_deadline:
                     scene["rejections"].append({"source": source, "reason": "scene_budget_exhausted"})
                     break
@@ -570,6 +514,8 @@ class StrictVisuals:
                             f"to {required_width}x{required_height}"
                         )
                     match = self.matcher.match(path, spec, metadata=item.text, duration=need)
+                    from scene_relevance import suitability
+                    match["suitability"] = suitability(item.extra.get("relevance_evidence", {}), match, quality)
                     # #84: A generic 'ship outdoors' CLIP score let a mostly
                     # empty sea scene through. Compare the actual first 1.2 s
                     # of the *vertical crop* with subject-vs-empty-scenery,
@@ -681,6 +627,8 @@ class StrictVisuals:
                           f"license={license_info.get('id')}", flush=True)
                     return item
                 except Exception as exc:
+                    self._rejected_candidates.add((spec.object, spec.action,
+                        json.dumps(director_contract, sort_keys=True), item.key))
                     # A rejected 4K file must not accumulate until it fills the CI disk.
                     # Preserve anything referenced by accepted footage, including a
                     # duplicate hash reached through another URL.
@@ -966,9 +914,9 @@ def _validate_free_speech(speech, engine, language=None):
         proof = getattr(speech, "provenance", {})
         if proof.get("alignment") != "native_phoneme_samples":
             raise RuntimeError("Piper narration has no native sample alignment provenance")
-        # Only German local Piper is permitted. All English generic model
-        # allowlist entries have been physically removed.
-        approved = {"de": ("de_DE-thorsten-medium", "CC0-1.0")}
+        # Exactly the two requested, pinned Piper identities are accepted.
+        approved = {"en": ("en_US-joe-medium", "CC0"),
+                    "de": ("de_DE-thorsten-medium", "CC0-1.0")}
         expected = approved.get(language)
         if (expected is None or proof.get("model") != expected[0]
                 or speech.voice != expected[0]):
@@ -983,12 +931,12 @@ def _validate_free_speech(speech, engine, language=None):
 
 
 def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_synthesize):
-    """Use Edge/Piper only in non-reference production (or German)."""
+    """Synthesize only the fixed Piper identity; failures never switch voices."""
     from english_reference_policy import enforce_english_reference_only
     enforce_english_reference_only(settings.language)
-    if settings.offline or settings.tts_engine != "edge" or settings.language not in ("de", "en"):
+    if settings.offline or settings.tts_engine not in ("edge", "piper") or settings.language not in ("de", "en"):
         raise RuntimeError("Strict production requires free Edge/local narration in de/en")
-    male_lock = os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1'
+    male_lock = True
     report = {"state": "synthesizing", "language": settings.language,
               "narrator_lock": male_lock, "attempts": []}
     voice_report = os.getenv("VOICE_REPORT")
@@ -1001,51 +949,19 @@ def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_
         _atomic_json(voice_report, report)
 
     save()
-    if settings.language == "en":
-        # Absolute English-only speaker identity: NO Piper Joe, LJSpeech,
-        # Edge, alternative voice, local default or fallback, even non-strict.
-        from approved_reference_voice import synthesize as approved_synthesize
-        started = time.monotonic()
-        try:
-            speech = with_voice_deadline(
-                lambda: approved_synthesize(
-                    screenplay.narration, Path(work) / "approved-reference-voice", settings,
-                    segments=[scene.narration for scene in getattr(screenplay, "scenes", [])]),
-                timeout_seconds=900, stage="Approved private reference narrator")
-            _validate_free_speech(speech, "reference", "en")
-            report["attempts"].append({
-                "engine": "reference", "status": "ok",
-                "seconds": round(time.monotonic()-started, 3)})
-            report.update(state="ready", engine="reference", voice=speech.voice,
-                          timing=speech.timing, duration=speech.duration,
-                          word_count=len(speech.words),
-                          provenance=getattr(speech, "provenance", {}))
-            save()
-            return speech
-        except Exception as exc:
-            report["attempts"].append({
-                "engine": "reference", "status": "failed",
-                "seconds": round(time.monotonic()-started, 3),
-                "error": _redact(f"{type(exc).__name__}: {exc}")[:500]})
-            report["state"] = "failed"
-            save()
-            raise RuntimeError(
-                "reference_voice_failed: only approved private English narrator "
-                "can be used; no alternate English speaker") from exc
-
-    # A locked narrator must never randomly change between Edge and Piper or
-    # revert to the old female LJSpeech voice after a timeout. Keep one local,
-    # reproducible identity per language for every successful upload.
-    engines = ((("piper", local_synthesize, "Locked male Piper narrator"),)
-               if male_lock else
-               (("edge", edge_synthesize, "Edge TTS"),
-                ("piper", local_synthesize, "Local Piper TTS")))
+    # V4 has one fixed voice per language, irrespective of legacy env flags.
+    engines = (("piper", local_synthesize, "Locked male Piper narrator"),)
     for engine, synthesize, stage in engines:
         started = time.monotonic()
         try:
             timeout = os.getenv("EDGE_TTS_TIMEOUT_SECONDS", "180") if engine == "edge" else 180
             speech = with_voice_deadline(synthesize, timeout_seconds=timeout, stage=stage)
             _validate_free_speech(speech, engine, settings.language)
+            if screenplay is not None:
+                from purffle_shorts.timing import tokenize
+                expected_tokens = tokenize(screenplay.narration, settings.language)
+                if [w.text for w in speech.words] != expected_tokens:
+                    raise RuntimeError("Narration caption tokens differ from the complete script")
             report["attempts"].append({"engine": engine, "status": "ok", "seconds": round(time.monotonic()-started, 3)})
             report.update(state="ready", engine=engine, voice=speech.voice, timing=speech.timing,
                           duration=speech.duration, word_count=len(speech.words),
@@ -1060,9 +976,7 @@ def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_
             print(f"[VOICE FAILED] engine={engine} reason={reason}", flush=True)
     report["state"] = "failed"
     save()
-    if male_lock:
-        raise RuntimeError("Locked male narrator unavailable; refusing to substitute a female or different voice")
-    raise RuntimeError("Free narration failed for both Edge and approved local Piper; see voice-report.json")
+    raise RuntimeError("Locked male narrator unavailable; refusing to substitute a female or different voice")
 
 
 def install():

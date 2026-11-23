@@ -104,7 +104,7 @@ def _first_statement(narration):
     return re.split(r"[.!?]", str(narration).strip(), maxsplit=1)[0]
 
 
-def build_contract(scene, topic, index):
+def build_contract(scene, topic, index, *, _sentence=False):
     """Prepare a bounded ordered search plan tied to THIS spoken scene."""
     narration = _scene_value(scene, "narration").strip()
     subject = _scene_value(scene, "object").strip()
@@ -204,7 +204,24 @@ def build_contract(scene, topic, index):
             unique.append(query)
     if not unique:
         raise ValueError("visual_director_no_queries")
+    from scene_relevance import sentence_needs
+    needs = sentence_needs(narration, subject, base)
+    if any(n['interaction'] == 'lava_ice' for n in needs):
+        unique = ['lava ice contact', 'lava flowing on ice', 'lava glacier interaction']
+        family, event_required = 'lava_ice_contact', True
+        positive = 'Real camera footage of molten lava contacting ice or snow, with both lava and ice visible.'
+        negative = 'Lava without ice, an ordinary volcano, a mountain, ocean water or fire without ice.'
+        keywords = ('lava',)
+    requirements = []
+    if not _sentence and len(needs) > 1:
+        for need in needs:
+            row = {field: _scene_value(scene, field) for field in (
+                'object', 'action', 'visual_search_query', 'main_character', 'location', 'time')}
+            row['narration'] = need['text']
+            requirements.append(build_contract(row, topic, index, _sentence=True))
     return {
+        "sentence_contracts": requirements,
+        "sentence_needs": needs,
         "version": "evidence_first_shot_director_v1",
         "index": int(index),
         "subject": subject,
@@ -221,6 +238,9 @@ def build_contract(scene, topic, index):
 
 def metadata_allows(contract, provider_text):
     """Necessary preflight, never a substitute for viewing source frames."""
+    if any(not metadata_allows(child, provider_text)
+           for child in contract.get("sentence_contracts", [])):
+        return False
     if not contract.get("event_required"):
         return True
     text = str(provider_text or "").casefold().replace("-", " ").replace("_", " ")
@@ -337,8 +357,13 @@ def verify_visible_event_or_illustrative_subject(
     if not isinstance(matched_scene, dict) or (
             matched_scene.get("verification") != "local_clip_screening"):
         raise RuntimeError("visual_director_missing_independent_clip_match")
+    sentence_checks = [verify_visible_event_or_illustrative_subject(
+        path, duration, crop_focus, child, matched_scene, scorer=scorer,
+        opening=opening and i == 0, event_inspector=event_inspector)
+        for i, child in enumerate(contract.get("sentence_contracts", []))]
     if not contract.get("event_required"):
         return {
+            "sentence_checks": sentence_checks,
             "verified": True,
             "event_required": False,
             "family": contract["family"],
@@ -355,4 +380,5 @@ def verify_visible_event_or_illustrative_subject(
         raise ValueError(
             "visual_director_action_not_visible: real 9:16 frames do not "
             "demonstrate " + str(contract["family"]))
+    result["sentence_checks"] = sentence_checks
     return result

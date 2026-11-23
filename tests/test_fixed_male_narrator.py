@@ -15,14 +15,10 @@ from english_reference_policy import (
 )
 
 
-def test_all_generic_english_piper_models_were_physically_removed():
-    assert list(local_voice.VOICES) == ["de"]
-    assert "en_US-joe-medium" not in str(local_voice.VOICES)
-    assert "en_US-ljspeech-high" not in str(local_voice.VOICES)
-    with pytest.raises(RuntimeError, match="removed"):
-        local_voice.provenance("en")
-    with pytest.raises(RuntimeError, match="removed"):
-        local_voice._voice_key("en")
+def test_only_requested_male_piper_models_available():
+    assert set(local_voice.VOICES) == {'en', 'de'}
+    assert local_voice.provenance('en')['model'] == 'en_US-joe-medium'
+    assert 'ljspeech' not in str(local_voice.VOICES)
 
 
 def test_german_thorsten_remains_fixed_and_cc0(monkeypatch):
@@ -38,20 +34,16 @@ def test_reference_voice_identifies_one_fixed_speaker_only():
     assert REFERENCE_VOICE_ID.endswith(ENGLISH_REFERENCE_SHA256[:16])
 
 
-def test_english_without_approved_secret_refuses_all_fallbacks(tmp_path, monkeypatch):
-    monkeypatch.delenv("PURFFLE_REFERENCE_OPUS_B64", raising=False)
-    monkeypatch.setenv("VOICE_REPORT", str(tmp_path / "voice-report.json"))
-    callbacks = []
-    def forbidden():
-        callbacks.append("wrong_voice")
-        raise AssertionError("No generic English speaker is allowed")
-    with pytest.raises(RuntimeError, match="reference_voice_not_ready"):
-        speak_with_free_fallback(SimpleNamespace(narration="An explanation"),
-                                 tmp_path,
-                                 SimpleNamespace(language="en", offline=False,
-                                                 tts_engine="edge"),
-                                 forbidden, forbidden)
-    assert callbacks == []
+def test_english_without_private_secret_uses_only_joe(tmp_path, monkeypatch):
+    monkeypatch.delenv('PURFFLE_REFERENCE_OPUS_B64', raising=False)
+    calls=[]
+    def joe():
+        calls.append('joe')
+        raise RuntimeError('model unavailable')
+    with pytest.raises(RuntimeError, match='Locked male narrator unavailable'):
+        speak_with_free_fallback(None,tmp_path,SimpleNamespace(language='en',offline=False,tts_engine='piper'),
+            lambda: pytest.fail('Edge must never run'),joe)
+    assert calls == ['joe']
 
 
 def test_german_locked_narrator_cannot_fall_back_to_english(tmp_path, monkeypatch):
