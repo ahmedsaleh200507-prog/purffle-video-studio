@@ -149,6 +149,13 @@ def failure_details(target: Path):
             report = json.loads(footage_file.read_text(encoding='utf-8'))
             scenes = report.get('scenes') or []
             failed = [s for s in scenes if s.get('status') == 'failed']
+            # An earlier query may have failed before a later alias succeeded.
+            # Diagnose the genuinely unavailable storyboard slot, not merely
+            # the last incidental rejected search from another scene.
+            missing = {i for i in report.get('unavailable_scenes', [])
+                       if isinstance(i, int) and 1 <= i <= 6}
+            if missing:
+                failed = [s for s in failed if s.get('index') in missing]
             if failed:
                 scene = failed[-1]
                 details['scene'] = scene.get('index')
