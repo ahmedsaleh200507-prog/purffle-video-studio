@@ -395,7 +395,7 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
         int(row["scene"]) for row in attempts
         if row.get("status") == "unavailable"})
     if len(items) >= min_scenes:
-        # Only complete palettes may renumber their selected scene slots.
+        # Re-number successful selections only when the palette is complete.
         for index, row in enumerate(selected_rows, 1):
             original_slot = int(row.get("index", index))
             contract = (options[original_slot - 1].get("_visual_contract")
