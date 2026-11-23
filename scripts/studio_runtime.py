@@ -1200,7 +1200,18 @@ exact suitable footage cannot be verified; never weaken the scene to hide that f
         palette = active_palette()
         if palette:
             user += "\n\n" + footage_prompt(palette)
-        from science_sources import active_evidence, evidence_prompt
+        from science_sources import active_evidence, evidence_prompt, review_feedback
+        source_feedback = review_feedback()
+        if source_feedback:
+            user += (
+                "\n\nSOURCE-REVIEW REDRAFT (ONE bounded revision): The previous "
+                "draft contained the unsupported claim(s) below. Never repeat "
+                "those claims unless a supplied independent source excerpt "
+                "explicitly supports them. Replace them with different, "
+                "simple, source-supported scientific facts, keep the full "
+                "answer to the requested topic, and do not invent new "
+                "measurements, experiments or causal claims.\n"
+                + source_feedback)
         bundle = active_evidence()
         if bundle:
             user += "\n\n" + evidence_prompt(bundle)
