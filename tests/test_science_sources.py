@@ -774,3 +774,40 @@ def test_science_redraft_only_shrinks_after_real_failed_scene_checks(tmp_path):
     }), encoding="utf-8")
     assert source_revision_scene_count(p, SimpleNamespace(
         scenes=[object()] * 4)) is None
+
+
+def test_generic_fact_cards_quote_only_actual_source_sentences():
+    from science_sources import Evidence, source_fact_cards, evidence_prompt
+    excerpts = (
+        "Rayleigh scattering of sunlight in the Earth's atmosphere causes "
+        "diffuse sky radiation. "
+        "Shorter wavelengths of light are scattered more strongly than "
+        "longer wavelengths, so the daytime sky appears blue. "
+        "The meaning of that light is not about a glass mirror reflecting "
+        "a person who happens to walk beside a beach."
+    )
+    bundle = Evidence(
+        "Why is the sky blue?",
+        ({"id": "wiki-1", "title": "Rayleigh scattering",
+          "url": "https://en.wikipedia.org/wiki/Rayleigh_scattering",
+          "tier": "community_edited_reference", "excerpt": excerpts},),
+        "model_screened_reference",
+    )
+    cards = source_fact_cards(bundle, limit=3)
+    assert len(cards) >= 2
+    assert all(c.startswith("[wiki-1] ") for c in cards)
+    assert all(c.partition("] ")[2] in excerpts for c in cards)
+    prompt = evidence_prompt(bundle)
+    assert prompt.index("SOURCE-OWNED FACT CARDS") < prompt.index(
+        "[wiki-1] Rayleigh scattering —")
+    assert "Do not manufacture intermediate causal steps" in prompt
+    assert "No new made-up fact" not in prompt
+
+
+def test_generic_fact_cards_do_not_invent_statements_from_empty_reference():
+    from science_sources import Evidence, source_fact_cards
+    bundle = Evidence("Why do ships float?", (
+        {"id": "wiki-1", "title": "Buoyancy",
+         "url": "https://en.wikipedia.org/wiki/Buoyancy",
+         "excerpt": "Unrelated brief text."},), "model_screened_reference")
+    assert source_fact_cards(bundle) == []
