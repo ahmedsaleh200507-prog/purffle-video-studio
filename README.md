@@ -9,19 +9,28 @@ Mevcut Purffle ve sabitlenmiş `purffle-shorts` motoru üzerinde: konu → denet
 
 `INPUT_1`–`INPUT_10` korunur. Her konu bağımsız job; kota için aynı anda bir üretim. `fail-fast: false`: hata diğer konuları iptal etmez. Başarılı MP4'ler ve başarısızlık raporları Artifacts'ta 7 gün tutulur. Kısmi MP4 başarı sayılmaz. Shorts worker süresi 25 dakika, runner kurulum dahil 65 dakika; uzun runner sınırı 330 dakika. GitHub hesabının ücretsiz dakika/depolama sınırları geçerlidir.
 
-## Hata olsa da izlenebilir MP4
+## Hata olduğunda TAM video: 2D çevrimdışı yedek üretim
 
-Video tam olarak doğrulanırsa normal MP4 dosyası oluşturulur. Normal üretim
-durursa kullanıcı ayrıca `PREVIEW_INCOMPLETE.mp4` dosyasını Artifacts
-ZIP'inden indirebilir. Sistem önce mevcut işlenmiş MP4'ü veya uzun videodaki
-sesli, tamamlanmış bölümleri korumaya çalışır. Bunlar yoksa mevcut ses üzerine
-açıklayıcı önizleme kartı oluşturur; ses de yoksa yaklaşık 8 saniyelik
-bir hata/konu önizlemesi verir.
+Normal senaryo/gerçek stok/Piper üretimi başarılı olursa mevcut Shorts veya
+uzun belgesel değişmeden teslim edilir.
 
-**ÖNİZLEME TAMAMLANDI DEMEK DEĞİLDİR:** Eksik, bilimsel olarak doğrulanmamış
-veya görseli bulunmamış bir içerik yayımlanmaya hazır sayılmaz. Bu nedenle
-`status=failed` ve hata raporu korunur; önizleme yalnızca sonucu görebilmek
-içindir. FFmpeg/runner/disk tamamen çalışamazsa MP4 teknik olarak üretilemez.
+Groq 429, Gemini 503, referans bulunamaması veya uygun stok video
+bulunamaması gibi durumlarda **yeni bir 2D eğitim videosu gerçekten render
+edilir**. Shorts: yaklaşık 32 saniye, 1080×1920. Uzun: yaklaşık 10 dakika,
+1920×1080, 14 konu bölümü. FFmpeg H.264 + AAC, yerel konuşma
+(espeak veya flite yedek sesi), orijinal geometrik görseller ve SRT içerir.
+Ücretli API, stok anahtarı veya LLM erişimi gerekmez.
+Shorts dosyası `fallback-video.mp4`, uzun dosyası `long-video.mp4`.
+
+Bu **PREVIEW_INCOMPLETE değildir**: süre ve teknik biçim doğrulandıktan
+sonra başarı olarak kaydedilen, baştan sona oynatılabilen video dosyasıdır.
+Ancak `quality_mode=offline_2d_fallback` ve
+`visual_mode=original_2d_graphics_no_stock` işaretleri tutulur.
+Gerçek çekim içermeyen 2D sürümün görsel kalitesi, doğrulanmış stok
+görüntülerle hazırlanan normal videoyla eşit değildir. Yerel hazır konu
+paketleri dışındaki başlıklarda doğrulanmamış bilimsel iddialar yerine genel
+konu başlıkları kullanılır. FFmpeg, disk alanı veya GitHub worker tamamen
+kullanılamazsa MP4 garantisi teknik olarak mümkün değildir.
 
 ## Görüntü eşleştirme
 
