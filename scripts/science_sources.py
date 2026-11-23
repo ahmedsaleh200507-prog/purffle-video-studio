@@ -131,8 +131,8 @@ def _blue_sky_question(topic: str) -> bool:
     """
     value = str(topic).casefold()
     return bool(
-        re.search(r"\\bsky\\b.{0,40}\\bblue\\b|\\bblue\\b.{0,40}\\bsky\\b", value)
-        or re.search(r"\\bhimmel\\b.{0,40}\\bblau\\w*\\b|\\bblau\\w*\\b.{0,40}\\bhimmel\\b", value)
+        re.search(r"\bsky\b.{0,40}\bblue\b|\bblue\b.{0,40}\bsky\b", value)
+        or re.search(r"\bhimmel\b.{0,40}\bblau\w*\b|\bblau\w*\b.{0,40}\bhimmel\b", value)
     )
 
 
@@ -153,7 +153,7 @@ def _search_text(topic: str) -> str:
     subject = words(topic)
     if _blue_sky_question(topic):
         return ("Rayleigh-Streuung" if re.search(
-            r"\\bhimmel\\b", str(topic).casefold()) else
+            r"\bhimmel\b", str(topic).casefold()) else
             "Rayleigh scattering")
     if {"steel", "ship"} <= subject and "float" in subject:
         return "ship buoyancy displacement"
