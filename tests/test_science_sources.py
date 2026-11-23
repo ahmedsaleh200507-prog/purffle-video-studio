@@ -366,3 +366,73 @@ def test_frost_search_retries_third_query_when_second_article_title_differs():
     assert result.sources[0]["title"] == "Raureif"
     assert client.get.call_count == 3
     assert client.get.call_args.kwargs["params"]["gsrsearch"] == "Raureif"
+
+
+def test_production_real_proof_blue_sky_uses_science_terms_not_music_or_studio():
+    """Regression from v4-recovery-real-proof.zip: exact false Wikipedia matches."""
+    from science_sources import _search_text, _fallback_search_queries
+    assert _search_text("Why is the sky blue?") == "Rayleigh scattering"
+    assert "Diffuse sky radiation" in _fallback_search_queries("Why is the sky blue?", "en")
+    client = Mock()
+    client.get.side_effect = [
+        FakeResponse({"query": {"pages": [
+            {"title": "Blue Sky Studios", "pageid": 1,
+             "extract": "Blue Sky Studios was an animation studio that released feature films. " * 6},
+            {"title": "Mr. Blue Sky", "pageid": 2,
+             "extract": "Mr. Blue Sky is a song released by a popular band. " * 7},
+        ]}}),
+        FakeResponse({"query": {"pages": [
+            {"title": "Diffuse sky radiation", "pageid": 3,
+             "extract": ("Diffuse sky radiation is sunlight reaching the observer "
+                         "after being scattered by molecules in the atmosphere. "
+                         "Rayleigh scattering influences why a clear daytime sky appears blue. " * 4)},
+        ]}}),
+    ]
+    result = discover_evidence("Why is the sky blue?", "en", session=client)
+    assert [src["title"] for src in result.sources] == ["Diffuse sky radiation"]
+    assert client.get.call_count == 2
+
+
+def test_blue_sky_rejects_music_studio_even_when_they_are_first_page_results():
+    client = Mock()
+    client.get.return_value = FakeResponse({"query": {"pages": [
+        {"title": "Blue Sky Studios",
+         "extract": "The film studio animated movies and shorts. " * 12},
+        {"title": "Mr. Blue Sky",
+         "extract": "A pop-rock recording, chart single and music video. " * 12},
+        {"title": "Rayleigh scattering",
+         "extract": ("Rayleigh scattering occurs when light interacts with "
+                     "particles smaller than the wavelength of the light. "
+                     "Shorter wavelengths of sunlight scatter strongly, "
+                     "contributing to the blue appearance of the daytime sky. " * 3)},
+    ]}})
+    result = discover_evidence("Why is the sky blue?", "en", session=client)
+    assert [src["title"] for src in result.sources] == ["Rayleigh scattering"]
+    assert client.get.call_count == 1
+
+
+def test_blue_sky_fails_closed_if_all_results_are_entertainment():
+    client = Mock()
+    client.get.return_value = FakeResponse({"query": {"pages": [
+        {"title": "Blue Sky Studios",
+         "extract": "An animation studio that made motion pictures. " * 12},
+        {"title": "Mr. Blue Sky",
+         "extract": "A song and music video from a recording artist. " * 12},
+    ]}})
+    with pytest.raises(RuntimeError, match="science_sources_unavailable"):
+        discover_evidence("Why is the sky blue?", "en", session=client)
+
+
+def test_german_blue_sky_physics_query():
+    from science_sources import _search_text
+    assert _search_text("Warum ist der Himmel blau?") == "Rayleigh-Streuung"
+    client = Mock()
+    client.get.return_value = FakeResponse({"query": {"pages": [
+        {"title": "Rayleigh-Streuung",
+         "extract": ("Die Rayleigh-Streuung bezeichnet die Streuung von Licht "
+                     "an kleinen Teilchen. Das kurzwellige Licht wird stärker "
+                     "gestreut und trägt zur blauen Farbe des Himmels bei. " * 4)},
+    ]}})
+    result = discover_evidence("Warum ist der Himmel blau?", "de", session=client)
+    assert result.sources[0]["title"] == "Rayleigh-Streuung"
+    assert client.get.call_args.args == ("https://de.wikipedia.org/w/api.php",)
