@@ -630,22 +630,8 @@ def main():
         except Exception as fallback_exc:
             report["offline_error"] = (
                 type(fallback_exc).__name__+": "+str(fallback_exc))[:500]
-        # Never discard already narrated/rendered chapters: a 10-minute
-        # video may fail during chapter 13, but the user should still be
-        # able to WATCH the 12 completed chapters. Otherwise deliver a
-        # voice-backed visual preview, or a short labelled diagnostic card.
-        # The 9–11 minute quality gate above remains mandatory for status=ok.
-        from failure_preview import make_failure_preview
-        preview = make_failure_preview(
-            output=output/"PREVIEW_INCOMPLETE.mp4",
-            topic=a.topic, stage=stage, size=(1920, 1080),
-            long_chapters_dir=work, rendered_dir=output,
-            voice_dir=work)
-        report.update(preview)
-        if preview.get("preview_mp4"):
-            print("[LONG PREVIEW AVAILABLE] "
-                  f"kind={preview.get('preview_kind')} "
-                  "not a finished documentary", flush=True)
+        # No diagnostic preview cards: CI emergency fallback creates a
+        # FULL documentary if the direct fallback itself cannot render.
         raise
     finally:
         save(output/"report.json",report)
