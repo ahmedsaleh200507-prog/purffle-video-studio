@@ -140,9 +140,9 @@ def _blue_sky_question(topic: str) -> bool:
 def _blue_sky_scientific_article(title: str, extract: str) -> bool:
     """Don't mistake 'Blue Sky Studios' or a song for optics references."""
     label = str(title).casefold().strip()
-    # Hyper-Rayleigh is a specialized nonlinear optics experiment, not
-    # the atmospheric Rayleigh scattering that gives the sky its colour.
-    if re.search(r"hyper[\s\-–—]*rayleigh", label):
+    # The scientist's biography and nonlinear laboratory optics are not
+    # sources explaining the scattering that colours the daytime sky.
+    if re.search(r"hyper[\s\-–—]*rayleigh|john william strutt|baron rayleigh", label):
         return False
     if re.search(r"rayleigh|scattering|streuung|atmospher|atmosphär|optics|optik|himmelsblau|diffuse sky radiation", label):
         return True
