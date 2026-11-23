@@ -10,19 +10,20 @@ WORKFLOWS = ("videos.yml", "long-batch.yml")
 
 
 def test_all_english_production_workflows_pin_compatible_pyav():
-    for filename in WORKFLOWS:
-        body = (ROOT / ".github" / "workflows" / filename).read_text()
-        assert "'faster-whisper==1.2.1' 'resemblyzer==0.1.4' 'av==18.1.0'" in body, filename
-        assert "assert av.__version__ == '18.1.0'" in body, filename
-        assert "secrets.PURFFLE_REFERENCE_OPUS_B64" in body, filename
-        assert "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217" in body, filename
+    root=Path(__file__).resolve().parents[1]/'.github/workflows'
+    for name in ('videos.yml','long-batch.yml'):
+        body=(root/name).read_text()
+        assert 'chatterbox-tts' not in body
+        assert 'faster-whisper' not in body
+        assert 'secrets.PURFFLE_REFERENCE_OPUS_B64' not in body
+        assert 'requirements-dev.txt' in body
 
 
 def test_active_shorts_workflow_keeps_real_success_checks():
     body = (ROOT / ".github" / "workflows" / "videos.yml").read_text()
     assert "python scripts/batch.py" in body
     assert "WATERMARK: none" in body
-    assert "RESOLUTION: 720x1280" in body
+    assert "RESOLUTION: 1080x1920" in body
     assert "max-parallel: 1" in body
     assert "fail-fast: false" in body
 

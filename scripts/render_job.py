@@ -26,51 +26,21 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
         if not any(x.get('codec_type') == 'audio' for x in data.get('streams', [])):
             raise RuntimeError('MP4 has no narration audio stream')
     voice = str(metadata.get('voice', ''))
-    # A rendered MP4 with old Piper Joe must not pass a STRICT English
-    # workflow, even if the caller bypasses the early voice preflight.
-    from english_reference_policy import (
-        enforce_english_reference_only, REFERENCE_VOICE_ID,
-        ENGLISH_REFERENCE_SHA256, ENGLISH_REFERENCE_OPUS_SHA256)
     language = str(metadata.get('language') or os.environ.get('LANGUAGE', 'en'))
-    if language == 'en':
-        # No output can ever pass with Piper Joe/Edge/LJSpeech or a fake voice.
-        if voice != 'reference:' + REFERENCE_VOICE_ID:
-            raise RuntimeError('Narrator identity mismatch: approved English reference was not used')
-        enforce_english_reference_only(language)
-        if voice_report is None or not voice_report.is_file():
-            raise RuntimeError('Approved reference voice verification report missing')
-        reference_proof = json.loads(voice_report.read_text(encoding='utf-8'))
-        provenance = reference_proof.get('provenance', {})
-        if (reference_proof.get('state') != 'ready'
-                or reference_proof.get('engine') != 'reference'
-                or reference_proof.get('voice') != REFERENCE_VOICE_ID
-                or reference_proof.get('timing') != 'aligned'
-                or provenance.get('reference_original_sha256') != ENGLISH_REFERENCE_SHA256
-                or provenance.get('reference_opus_sha256') != ENGLISH_REFERENCE_OPUS_SHA256
-                or provenance.get('voice') != REFERENCE_VOICE_ID
-                or provenance.get('reference_private') is not True
-                or provenance.get('alignment') !=
-                    'faster-whisper-base.en actual generated WAV word timestamps'
-                or float(provenance.get('speaker_similarity_cosine', 0)) < .70):
-            raise RuntimeError('Approved English reference speaker or real caption alignment not verified')
-    elif language == 'de':
-        if os.getenv('PURFFLE_NARRATOR_LOCK', '0') == '1' and voice != 'piper:de_DE-thorsten-medium':
-            raise RuntimeError('Narrator identity mismatch: locked German Thorsten was not used')
-    else:
-        raise RuntimeError('Unsupported narrator language')
-    if not voice.startswith(('reference:', 'edge:', 'piper:')) or metadata.get('timing') not in ('native', 'aligned'):
-        raise RuntimeError('Narration does not have verified native/aligned timing')
+    expected_voice = {'en': 'en_US-joe-medium', 'de': 'de_DE-thorsten-medium'}.get(language)
+    if expected_voice is None or voice != 'piper:' + expected_voice:
+        raise RuntimeError('Narrator identity mismatch: fixed Piper Joe/Thorsten required')
+    if metadata.get('timing') != 'aligned':
+        raise RuntimeError('Narration lacks native sample alignment')
     if voice.startswith('piper:'):
         if voice_report is None or not voice_report.is_file():
             raise RuntimeError('Local voice alignment/license report missing')
         proof = json.loads(voice_report.read_text(encoding='utf-8'))
         provenance = proof.get('provenance', {})
-        approved = {'de_DE-thorsten-medium': 'CC0-1.0'}
+        approved = {'en_US-joe-medium': 'CC0', 'de_DE-thorsten-medium': 'CC0-1.0'}
         model = voice.partition(':')[2]
         from local_voice import provenance as expected_provenance
-        if language != 'de':
-            raise RuntimeError('All generic English Piper voices have been removed')
-        lang = 'de'
+        lang = language
         expected = expected_provenance(lang)
         if (model not in approved or proof.get('state') != 'ready' or proof.get('engine') != 'piper'
                 or proof.get('voice') != model or proof.get('timing') != 'aligned'
@@ -125,9 +95,8 @@ def main():
     result = {'status': 'failed', 'mp4': None}
     stage = 'setup'
     try:
-        # Avoid expensive footage/model work when the only approved English
-        # speaker has not been validated for this runner. Never use Joe as a
-        # substitute merely to make the video job appear successful.
+        # Validate language before setup; pinned Piper model identity and
+        # native alignment are checked during synthesis and final acceptance.
         stage = 'voice_identity_preflight'
         from english_reference_policy import enforce_english_reference_only
         enforce_english_reference_only(os.environ.get('LANGUAGE', 'en'))
@@ -140,7 +109,7 @@ def main():
         gemini_ready = bool(os.environ.get('GEMINI_API_KEY'))
         if not (groq_ready or gemini_ready):
             raise RuntimeError(
-                'Missing free narration API: configure GROQ_API_KEY or GEMINI_API_KEY')
+                'Missing free script API: configure GROQ_API_KEY or GEMINI_API_KEY')
         # Existing approved narrator, scientific source screening and actual
         # video quality checks remain unchanged. This selects TEXT only.
         # Gemini 3.1 Flash-Lite has a higher request allowance on the
@@ -152,12 +121,12 @@ def main():
             else 'openai/gpt-oss-20b')
         fallbacks = ['groq'] if gemini_ready and groq_ready else []
         print(f"[SHORTS LLM] primary={main_llm} "
-              f"fallback={'gemini' if fallbacks else 'none'}",flush=True)
+              f"fallback={'groq' if fallbacks else 'none'}",flush=True)
         s = replace(Settings.from_env(), language=os.environ['LANGUAGE'],
                     llm_provider=main_llm, llm_model=selected_model,
                     llm_fallbacks=fallbacks,
                     openai_api_key='', llm_api_key='',
-                    tts_engine='edge', offline=False, script_review='off', seo_keywords=False,
+                    tts_engine='piper', offline=False, script_review='off', seo_keywords=False,
                     resolution=tuple(int(v) for v in os.environ.get('RESOLUTION', '720x1280').lower().split('x')), fps=30, max_shot_seconds=0, transition='none',
                     background_video='', music_volume=0, sound_effects=False,
                     caption_emoji=False, color_grade='none', ken_burns=False,
@@ -310,6 +279,17 @@ def main():
                  'verified_source_opening': footage['opening_review']},
                 duration_seconds=info['duration'])
             stage = 'output_validation'
+        stage = 'full_timeline_qa'
+        from output_qa import validate_timeline
+        from purffle_shorts.pipeline import END_PAD
+        voice_data = json.loads(voice_report.read_text(encoding='utf8'))
+        script_data = json.loads((folder / 'script.json').read_text(encoding='utf8'))
+        expected_text = ' '.join(scene['narration'] for scene in script_data['scenes'])
+        full_qa = validate_timeline(video, folder / 'captions.srt',
+            expected_size=(s.width, s.height),
+            expected_duration=float(voice_data['duration']) + END_PAD,
+            expected_text=expected_text)
+        write_json(target.with_name('output-qa.json'), full_qa)
         result.update(status='ok', stage='complete', mp4=str(video), output_probe=info,
                       footage_report=os.environ['FOOTAGE_REPORT'],
                       metadata=str(folder / 'metadata.json'), captions=str(folder / 'captions.srt'),

@@ -1,3 +1,4 @@
+from conftest import write_piper_report
 """Regression tests for ten user-requested Shorts topics and realistic crop quality."""
 import json
 from pathlib import Path
@@ -88,13 +89,13 @@ def test_output_uses_bounded_documented_upscale(tmp_path, monkeypatch, scale, ac
     fake = {"width": 720, "height": 1280, "duration": 25.0, "has_audio": True}
     with patch("media_validation.QualityValidator.validate", return_value=fake):
         if accepted:
-            info, report = validate_result(clip, {"language": "de", "voice": "edge:de", "timing": "native"},
-                                           captions, footage)
+            info, report = validate_result(clip, {"language": "de", "voice": "piper:de_DE-thorsten-medium", "timing": "aligned"},
+                                           captions, footage, voice_report=write_piper_report(clip.parent))
             assert report["scenes"][0]["quality"]["portrait_crop_scale"] == scale
         else:
             with pytest.raises(RuntimeError, match="insufficient_native_resolution"):
-                validate_result(clip, {"language": "de", "voice": "edge:de", "timing": "native"},
-                                captions, footage)
+                validate_result(clip, {"language": "de", "voice": "piper:de_DE-thorsten-medium", "timing": "aligned"},
+                                captions, footage, voice_report=write_piper_report(clip.parent))
 
 
 def test_unknown_topic_does_not_fall_back_to_random_video():

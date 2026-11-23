@@ -59,5 +59,4 @@ def test_german_mirror_visual_queries_are_about_bathroom():
 
 def test_german_thorsten_not_blocked_by_english_reference_policy():
     enforce_english_reference_only("de", strict=True)
-    with pytest.raises(RuntimeError, match="reference_voice_not_ready"):
-        enforce_english_reference_only("en", strict=True)
+    enforce_english_reference_only("en", strict=True)  # V4 Joe needs no private sample

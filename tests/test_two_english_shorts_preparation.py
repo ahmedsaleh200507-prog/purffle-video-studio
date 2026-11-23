@@ -56,9 +56,12 @@ def test_unrelated_science_not_forced_into_selected_topics():
             "lightning_thunder_delay","northern_lights_glow")
 
 
-def test_no_english_output_using_unapproved_voice():
-    with pytest.raises(RuntimeError,match="reference_voice_not_ready"):
-        enforce_english_reference_only("en",strict=True)
+def test_v4_english_uses_pinned_joe_without_private_secret():
+    from english_reference_policy import requires_reference_only, enforce_english_reference_only
+    from local_voice import provenance
+    assert not requires_reference_only('en')
+    enforce_english_reference_only('en')
+    assert provenance('en')['model']=='en_US-joe-medium'
 
 
 def test_both_requests_explicitly_require_same_reference_and_no_mp4_claim():

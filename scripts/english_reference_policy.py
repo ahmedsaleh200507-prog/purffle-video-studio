@@ -1,4 +1,4 @@
-"""Reference-only English voice policy. No public repository audio samples.
+"""Legacy reference artifact verification; V4 production uses fixed Piper voices.
 
 The approved original 10.0s PCM WAV SHA256 identifies the speaker recording.
 The 24kbps Opus version is delivered only through a private GitHub Actions
@@ -26,7 +26,7 @@ REFERENCE_PRODUCTION_READY = False
 
 def requires_reference_only(language: str, *, strict: bool | None = None) -> bool:
     # English speaker selection cannot be weakened by removing PURFFLE_STRICT.
-    return str(language).strip().lower() == "en"
+    return False  # V4 explicitly selects Piper Joe; legacy private reference stays dormant.
 
 
 def approved_secret_bytes(*, source: str | None = None) -> bytes:
@@ -69,7 +69,7 @@ def main():
     parser.add_argument("--topic", required=True)
     args = parser.parse_args()
     enforce_english_reference_only(topic_language(args.topic), strict=True)
-    print("[VOICE POLICY] Approved private English reference SHA confirmed, or German voice unchanged")
+    print("[VOICE POLICY] V4 fixed Piper Joe/Thorsten; no reference secret required")
 
 
 if __name__ == "__main__":

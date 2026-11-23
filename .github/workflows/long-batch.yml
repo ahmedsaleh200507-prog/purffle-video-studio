@@ -88,7 +88,6 @@ jobs:
       PURFFLE_LONG_LLM_PRIMARY: ${{ vars.PURFFLE_LONG_LLM_PRIMARY || 'gemini' }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-      PURFFLE_REFERENCE_OPUS_B64: ${{ secrets.PURFFLE_REFERENCE_OPUS_B64 }}
       LLM_MODEL: openai/gpt-oss-20b
       HF_HOME: ${{ github.workspace }}/.cache/huggingface
       OMP_NUM_THREADS: '2'
@@ -112,6 +111,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
 
       - name: Test long documentary languages and slot isolation
         if: steps.selected.outputs.render == 'true'
@@ -121,7 +121,7 @@ jobs:
           python -m pip install 'pytest>=8,<10'
           python -m pytest -q tests/test_long_generic.py tests/test_long_batch_slot.py tests/test_long_script.py tests/test_long_video_pipeline.py
 
-      - name: Check approved English narrator or audited German Thorsten
+      - name: Check fixed Piper Joe/Thorsten policy
         if: steps.selected.outputs.render == 'true'
         env:
           VOICE_LANGUAGE: ${{ steps.selected.outputs.language }}
@@ -154,16 +154,15 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install 'torch==2.6.0+cpu' --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r requirements-dev.txt
-          python -m pip install --no-cache-dir 'faster-whisper==1.2.1' 'resemblyzer==0.1.4' 'av==18.1.0'
-          python -c "import av; assert av.__version__ == '18.1.0', 'Incompatible PyAV decoder'; print('[VOICE DEPENDENCY] PyAV 18.1.0 pinned')"
 
-      - name: Install English private-reference narrator only when selected
-        if: steps.selected.outputs.render == 'true' && steps.selected.outputs.language == 'en'
-        run: |
-          python -m venv --system-site-packages .venv-reference
-          .venv-reference/bin/python -m pip install --upgrade pip
-          .venv-reference/bin/python -m pip install 'torchaudio==2.6.0+cpu' --index-url https://download.pytorch.org/whl/cpu
-          .venv-reference/bin/python -m pip install --no-cache-dir 'chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@ab55923c27757c90cfcc407baa57dc25a7d25217'
+      - name: Restore shared CPU voice and visual model cache
+        if: steps.selected.outputs.render == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/huggingface
+            .cache/piper
+          key: purffle-v4-long-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/media_validation.py') }}
 
       - name: Render only this long documentary; never publish automatically
         if: steps.selected.outputs.render == 'true'
@@ -210,6 +209,7 @@ jobs:
             long_video_output/result/captions.srt
             long_video_output/result/script.json
             long_video_output/result/credits.json
+            long_video_output/result/output-qa.json
           if-no-files-found: warn
           retention-days: 7
           compression-level: 0

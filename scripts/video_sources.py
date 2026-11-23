@@ -104,6 +104,8 @@ class JsonClient:
     """
     _lock = threading.Lock()
     _last_request = {}
+    _host_locks = {}
+    _context = threading.local()
 
     def __init__(self, cache_dir=Path("media_cache/api"), session=None, ttl=86400):
         self.cache_dir = Path(cache_dir)
@@ -116,7 +118,13 @@ class JsonClient:
         sensitive_ephemeral = urlparse(url).hostname == "api.coverr.co"
         identity = json.dumps([url, params or {}, headers], sort_keys=True)
         cache = self.cache_dir / (hashlib.sha256(identity.encode()).hexdigest() + ".json")
+        # Serialize only the SAME host. A slow archive must not block Pixabay.
         with self._lock:
+            host_lock = self._host_locks.setdefault(urlparse(url).hostname, threading.Lock())
+        with host_lock:
+            deadline = getattr(self._context, 'deadline', float('inf'))
+            if time.monotonic() >= deadline:
+                raise ProviderError('scene_budget_exhausted', 'No API request after scene deadline')
             try:
                 if not sensitive_ephemeral and cache.exists() and time.time() - cache.stat().st_mtime < self.ttl:
                     return json.loads(cache.read_text(encoding="utf-8"))
@@ -141,8 +149,11 @@ class JsonClient:
             if pause > 0:
                 time.sleep(pause)
             try:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ProviderError('scene_budget_exhausted')
                 response = self.session.get(url, params=params, headers=headers,
-                                            timeout=(8, 25), stream=True, allow_redirects=False)
+                                            timeout=(min(8, max(.1, remaining)), min(25, max(.1, remaining))), stream=True, allow_redirects=False)
                 self._last_request[host] = time.monotonic()
                 with response:
                     if response.status_code != 200:
@@ -154,6 +165,8 @@ class JsonClient:
                         raise ProviderError("invalid_response", "JSON response exceeds 4 MiB")
                     chunks, size = [], 0
                     for part in response.iter_content(65536):
+                        if time.monotonic() >= deadline:
+                            raise ProviderError('scene_budget_exhausted')
                         size += len(part)
                         if size > 4 * 1024 * 1024:
                             raise ProviderError("invalid_response", "JSON response exceeds 4 MiB")
@@ -229,12 +242,16 @@ class VideoProvider:
         return ""
 
 
+STATIC_CATALOGS = {"usgs-video", "freenaturestock-video"}
+
+
 class ProviderHealthCheck:
     @staticmethod
     def check(provider):
         reason = provider.unavailable_reason()
         return {"provider": provider.name, "enabled": not bool(reason), "reason": reason,
-                "api_test": "not_requested"}
+                "integration_type": "static_catalog" if provider.name in STATIC_CATALOGS else "api",
+                "api_test": "not_applicable_static_catalog" if provider.name in STATIC_CATALOGS else "not_requested"}
 
 
 PROVIDERS = [
@@ -280,7 +297,8 @@ class ProviderRegistry:
             latest = next((e for e in reversed(self.events) if e["provider"] == p.name), None)
             if latest:
                 check["last_status"] = latest["status"]
-                check["api_test"] = latest["status"]
+                if p.name not in STATIC_CATALOGS:
+                    check["api_test"] = latest["status"]
             checks.append(check)
         return checks
 

@@ -387,7 +387,8 @@ def _stem(word: str) -> str:
 
 
 def _terms(value: str) -> set[str]:
-    words = re.findall(r"[a-z]+|[0-9]+", value.lower())
+    from scene_relevance import english
+    words = re.findall(r"[a-z]+|[0-9]+", english(value))
     return {_stem(w) for w in words if w not in _STOP and len(w) > 1}
 
 

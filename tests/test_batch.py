@@ -69,7 +69,7 @@ def test_workflow_contract():
     assert workflow['jobs']['create-videos']['name'].startswith('create-videos | Video')
     assert workflow['jobs']['collect-results']['name'] == 'create-videos'
     job = workflow['jobs']['create-videos']
-    assert job['env']['RESOLUTION'] == '720x1280'
+    assert job['env']['RESOLUTION'] == '1080x1920'
     assert job['permissions'] if 'permissions' in job else workflow['permissions'] == {'contents': 'read'}
     # Ten slots are queued independently; shared Groq quota requires one at a time.
     strategy = job['strategy']
@@ -116,3 +116,50 @@ def test_production_85_matrix_respects_shared_free_groq_rate_limit():
                 ".github" / "workflows" / "videos.yml").read_text()
     assert "max-parallel: 1" in workflow
     assert "Reject combined topics before costly setup" in workflow
+
+
+def test_previous_commit_mp4_cannot_be_resumed_even_when_decodable(tmp_path, monkeypatch):
+    import json
+    import batch
+    monkeypatch.setenv("GITHUB_SHA", "new-commit-sha")
+    out = tmp_path / "finished"
+    target = out / "video_01"
+    target.mkdir(parents=True)
+    video = target / "old.mp4"
+    video.write_bytes(b"x" * 4096)
+    (target / "report.json").write_text(json.dumps({
+        "status": "ok", "original_input": "en|Why is the sky blue?",
+        "producer_commit": "old-commit-sha", "mp4": str(video)}))
+    assert batch.resume_completed_job(1, "en|Why is the sky blue?", out) is None
+
+
+def test_failed_video_releases_incomplete_footage_reservations(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(batch, "ROOT", tmp_path)
+    ledger = tmp_path / "used-media.json"
+    monkeypatch.setenv("FOOTAGE_USED_PATH", str(ledger))
+    original = b'{"keys": ["previous-success"], "hashes": ["good"]}'
+    ledger.write_bytes(original)
+
+    def failed_worker(*args, **kwargs):
+        ledger.write_text('{"keys": ["previous-success", "unfinished-shot"]}')
+        return SimpleNamespace(returncode=1, stdout=[], wait=lambda timeout=None: 1)
+
+    monkeypatch.setattr(batch.subprocess, "Popen", failed_worker)
+    result = batch.run_job(1, "en|Why is the sky blue?", tmp_path / "finished")
+    assert result["status"] == "failed"
+    assert ledger.read_bytes() == original
+
+
+def test_native_720_retry_only_when_real_crop_rejection(monkeypatch):
+    monkeypatch.setenv("RESOLUTION", "1080x1920")
+    failed = {"status": "failed", "failure_details": {
+        "rejection_categories": {"insufficient_native_resolution": 2}}}
+    assert batch.should_retry_at_720p(failed)
+    assert not batch.should_retry_at_720p({"status": "failed",
+        "failure_details": {"rejection_categories": {"metadata_rejected": 4}}})
+    monkeypatch.setenv("PURFFLE_AUTO_720_FALLBACK", "0")
+    assert not batch.should_retry_at_720p(failed)
+    monkeypatch.setenv("PURFFLE_AUTO_720_FALLBACK", "1")
+    monkeypatch.setenv("RESOLUTION", "720x1280")
+    assert not batch.should_retry_at_720p(failed)

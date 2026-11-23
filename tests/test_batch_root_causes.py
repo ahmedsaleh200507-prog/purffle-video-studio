@@ -1,3 +1,4 @@
+from conftest import write_piper_report
 """Regression coverage for consolidated diagnosis and strict scene reports."""
 import json
 from pathlib import Path
@@ -139,13 +140,13 @@ def test_output_rejects_duplicate_or_upscaled_scene(tmp_path, monkeypatch):
     report_path.write_text(json.dumps({"scenes": [
         dict(base, index=1), dict(base, index=2)]}))
     with pytest.raises(RuntimeError, match="Duplicate footage"):
-        render_job.validate_result(video, {"language": "de", "voice": "edge:test", "timing": "native"},
-                                   captions, report_path)
+        render_job.validate_result(video, {"language": "de", "voice": "piper:de_DE-thorsten-medium", "timing": "aligned"},
+                                   captions, report_path, voice_report=write_piper_report(video.parent))
     report_path.write_text(json.dumps({"scenes": [
         dict(base, index=1, sha256="unique", quality={"portrait_crop_scale": 1.5})]}))
     with pytest.raises(RuntimeError, match="insufficient_native_resolution"):
-        render_job.validate_result(video, {"language": "de", "voice": "edge:test", "timing": "native"},
-                                   captions, report_path)
+        render_job.validate_result(video, {"language": "de", "voice": "piper:de_DE-thorsten-medium", "timing": "aligned"},
+                                   captions, report_path, voice_report=write_piper_report(video.parent))
 
 
 @pytest.mark.parametrize("topic,object_name,action,query,context_subject", [

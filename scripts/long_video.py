@@ -168,25 +168,13 @@ def real_word_captions(speech, chapter_start):
 def narrate(data,work,language="en"):
     if language not in ("en","de"):
         raise RuntimeError("Only English or German long documentaries are supported")
-    if language == "en":
-        from english_reference_policy import enforce_english_reference_only
-        from approved_reference_voice import synthesize as reference_synthesize
-        enforce_english_reference_only("en")
-    else:
-        # Audited free German Thorsten Piper narrator, already used by Shorts.
-        # Never replace a failed German narrator with an English/female one.
-        from local_voice import synthesize as german_synthesize
+    from local_voice import synthesize as piper_synthesize
     audios, lines, offset=[],[],0.0
     for i,c in enumerate(data):
         text=c["narration"]
-        if language == "en":
-            segments=voice_segments(text)
-            speech=reference_synthesize(
-                text,work/f"voice-{i+1}",SimpleNamespace(language="en"),
-                segments=segments,long_form=True)
-        else:
-            speech=german_synthesize(
-                text,work/f"voice-{i+1}",SimpleNamespace(language="de"))
+        speech=piper_synthesize(text,work/f"voice-{i+1}",SimpleNamespace(language=language))
+        from studio_runtime import _validate_free_speech
+        _validate_free_speech(speech, "piper", language)
         if (not Path(speech.audio).is_file() or not speech.words
                 or not 20<=speech.duration<=110):
             raise RuntimeError(f"Chapter {i+1} {language} voice invalid")
@@ -552,7 +540,7 @@ def main():
         stage="script"
         text=chapters(a.topic,a.language)
         save(output/"script.json",{"language":a.language,"chapters":text})
-        stage="reference_voice" if a.language == "en" else "german_piper_voice"
+        stage="fixed_piper_voice"
         audio,subs,voice_seconds=narrate(text,work,a.language)
         with (output/"captions.srt").open("w",encoding="utf8") as f:
             for j,(start,end,line) in enumerate(subs,1):
@@ -576,6 +564,12 @@ def main():
         duration,width,height,audible=probe(final)
         if not (540<=duration<=660 and width==1920 and height==1080 and audible):
             raise RuntimeError("Final video failed measured duration/1080p/audio validation")
+        stage="full_timeline_qa"
+        from output_qa import validate_timeline
+        full_qa=validate_timeline(final,output/"captions.srt",
+            expected_size=(1920,1080),expected_duration=voice_seconds,
+            expected_text=' '.join(c['narration'] for c in text))
+        save(output/"output-qa.json",full_qa)
         save(output/"credits.json",credits)
         report.update(status="ok",mp4="long-video.mp4",duration=duration,
                       clips=len(credits),narration_duration=voice_seconds,

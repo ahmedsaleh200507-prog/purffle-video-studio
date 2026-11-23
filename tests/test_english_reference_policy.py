@@ -24,30 +24,22 @@ def test_approved_private_audio_fingerprint_is_fixed():
     assert len(ENGLISH_REFERENCE_SHA256) == 64
 
 
-def test_strict_english_rejects_other_speaker_instead_of_switching_voice():
-    assert requires_reference_only("en", strict=True)
-    with pytest.raises(RuntimeError, match="reference_voice_not_ready"):
-        enforce_english_reference_only("en", strict=True)
-    assert not requires_reference_only("de", strict=True)
-    enforce_english_reference_only("de", strict=True)
+def test_v4_no_longer_requires_private_english_secret():
+    assert not requires_reference_only('en',strict=True)
+    enforce_english_reference_only('en',strict=True)
+    enforce_english_reference_only('de',strict=True)
 
 
-def test_reference_voice_policy_runs_before_piper_or_edge(tmp_path, monkeypatch):
-    monkeypatch.setenv("PURFFLE_STRICT", "1")
-    monkeypatch.setenv("PURFFLE_NARRATOR_LOCK", "1")
-    called = []
-    def old_piper():
-        called.append("piper-joe")
-        raise AssertionError("Joe must NEVER synthesize a strict EN video")
-    def old_edge():
-        called.append("edge")
-        raise AssertionError("Edge must NEVER synthesize a strict EN video")
-    with pytest.raises(RuntimeError, match="reference_voice_not_ready"):
-        speak_with_free_fallback(None, tmp_path,
-                                 SimpleNamespace(language="en", offline=False,
-                                                 tts_engine="edge"),
-                                 old_edge, old_piper)
-    assert called == []
+def test_v4_no_edge_fallback_even_without_lock_flag(tmp_path,monkeypatch):
+    monkeypatch.delenv('PURFFLE_NARRATOR_LOCK',raising=False)
+    called=[]
+    def piper():
+        called.append('piper')
+        raise RuntimeError('offline model')
+    with pytest.raises(RuntimeError,match='Locked male narrator unavailable'):
+        speak_with_free_fallback(None,tmp_path,SimpleNamespace(language='en',offline=False,tts_engine='piper'),
+            lambda: pytest.fail('Edge cannot replace Joe'),piper)
+    assert called==['piper']
 
 
 def test_german_voice_not_blocked_by_english_lock():
@@ -69,7 +61,7 @@ def test_render_job_preflights_reference_before_media_and_voice():
     first_install = source.index("install()", preflight)
     media = source.index("prepare_verified_palette(")
     assert preflight < first_install < media
-    assert source.count("enforce_english_reference_only(") >= 2
+    assert source.count("enforce_english_reference_only(") >= 1
 
 
 @pytest.mark.parametrize("workflow", ["videos.yml", "long-batch.yml"])
@@ -83,8 +75,8 @@ def test_github_workflows_block_wrong_voice_before_downloads(workflow):
     if workflow == "videos.yml":
         assert "PURFFLE_NARRATOR_LOCK: '1'" in yaml
     else:
-        assert "steps.selected.outputs.language == 'en'" in yaml
-        assert "secrets.PURFFLE_REFERENCE_OPUS_B64" in yaml
+        assert "scripts/english_reference_policy.py" in yaml
+        assert "secrets.PURFFLE_REFERENCE_OPUS_B64" not in yaml
 
 
 def test_reference_audio_never_committed_to_public_repo():
