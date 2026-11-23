@@ -167,10 +167,17 @@ def review_feedback():
 
 
 def rejected_claim_feedback(report_path, script):
-    """Build safe revision guidance from unsupported scenes in a QA report.
+    """Source-checked facts to keep; unsupported facts to replace.
 
-    No provider descriptions, model-generated reviewer reasons, excerpts,
-    URLs or potentially sensitive values are copied into the prompt.
+    A factuality reviewer can approve only two of four generated sentences.
+    Earlier V5 tests showed three full rewrites invented *new* claims and
+    exhausted the free Groq quota. Prefer preserving explicitly approved
+    statements while shortening the story to evidence depth.
+
+    Read only the actual validated booleans and the script's own narration:
+    never feed model-authored reviewer reasons or provider error text back as
+    instructions. All guidance remains non-authoritative; independent review
+    still validates the next script.
     """
     try:
         report = json.loads(Path(report_path).read_text(encoding="utf-8"))
@@ -179,25 +186,62 @@ def rejected_claim_feedback(report_path, script):
     if report.get("state") != "failed":
         return ""
     scenes = list(getattr(script, "scenes", []) or [])
-    messages = []
+    if not scenes:
+        return ""
+    approved = []
+    rejected = []
     seen = set()
     for row in report.get("scene_checks", []):
-        if not isinstance(row, dict) or row.get("supported") is not False:
+        if not isinstance(row, dict) or type(row.get("supported")) is not bool:
             continue
         index = row.get("scene")
         if type(index) is not int or index < 1 or index > len(scenes) or index in seen:
             continue
         seen.add(index)
-        # Use the draft's own narration instead of untrusted reviewer strings.
-        old = re.sub(r"[^\w äöüÄÖÜß,.!?;:'-]", " ",
-                     str(scenes[index - 1].narration))[:170]
-        old = re.sub(r"\s+", " ", old).strip()
-        messages.append(
-            f"Scene {index}: the previous text was not supported by the provided "
-            f"reference excerpts: '{old}'. Do not repeat this unsupported claim; "
-            "replace it with a simpler, different fact explicitly present in "
-            "the reference text. Preserve the topic and complete explanation.")
-    return "\n".join(messages)[:900]
+        narration = re.sub(
+            r"[^\\w äöüÄÖÜß,.!?;:'-]", " ",
+            str(scenes[index - 1].narration))[:165]
+        narration = re.sub(r"\\s+", " ", narration).strip()
+        if row["supported"]:
+            approved.append(f"VERIFIED AGAINST EXCERPT, keep its meaning: '{narration}'.")
+        else:
+            rejected.append(
+                f"Scene {index} UNSUPPORTED: '{narration}'. "
+                "Do not repeat or lightly paraphrase it; omit it unless "
+                "you can state a different fact directly in the sources.")
+    if not rejected:
+        return ""
+    return ("PREVIOUS SOURCE SCREEN: " + " ".join(approved[:3])
+            + " " + " ".join(rejected[:5]))[:1250]
+
+
+def source_revision_scene_count(report_path, script):
+    """A scientific Short should not force four facts from two grounded facts.
+
+    Reduce one slot at a time after an actual source-backed rejection.
+    Never shrink below two scenes, and never infer success from the count.
+    The new script must still pass all science, completeness and visual QA.
+    """
+    try:
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    scenes = list(getattr(script, "scenes", []) or [])
+    if report.get("state") != "failed" or len(scenes) <= 2:
+        return None
+    checks = report.get("scene_checks")
+    if not isinstance(checks, list):
+        return None
+    valid = {
+        row["scene"]: row["supported"]
+        for row in checks if isinstance(row, dict)
+        and type(row.get("scene")) is int
+        and 1 <= row["scene"] <= len(scenes)
+        and type(row.get("supported")) is bool
+    }
+    if len(valid) != len(scenes) or all(valid.values()):
+        return None
+    return max(2, len(scenes) - 1)
 
 
 def _search_text(topic: str) -> str:
