@@ -86,6 +86,7 @@ def classify_failure(message: str, log_text: str = "", details=None) -> str:
         ("retention_storyboard_invalid", "storyboard_quality_rejected"),
         ("missing structured scene fields", "script_visual_schema_invalid"),
         ("science_sources_unavailable", "science_reference_unavailable"),
+        ("science_review_unavailable", "science_reviewer_unavailable"),
         ("science_claim_unverified", "science_claim_unsupported"),
         ("reference_voice_not_ready", "approved_english_voice_unavailable"),
         ("reference_voice_failed", "approved_english_voice_validation"),
