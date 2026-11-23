@@ -96,27 +96,42 @@ def inspect_opening(path: Path) -> dict:
                              for frame in _first_frames(path)])
 
 
-def _semantic_subject_screen(frames, specification, *, scorer=None):
-    """Contrast the real 9:16 first-second crop with subject vs scenery.
+def _semantic_subject_screen(
+        frames, specification, *, scorer=None, require_all_frames=False,
+        minimum_margin=.012):
+    """Contrast actual 9:16 scene frames with subject vs scenery.
 
     This is CLIP-based comparative screening, NOT an object detector or a
     measured likelihood of viewer retention.
     """
-    if len(frames) != 2:
+    if len(frames) < 2:
         return {"verified": False, "reason": "subject_frames_unavailable"}
     if scorer is None:
         from media_validation import SceneMatcher
         scorer = SceneMatcher()._similarities
     captions = [specification["positive"], *specification["negatives"]]
     matrix = scorer(frames, captions)
-    if len(matrix) != 2 or any(len(row) != len(captions) for row in matrix):
+    if len(matrix) != len(frames) or any(len(row) != len(captions) for row in matrix):
         raise RuntimeError("opening_subject_unverified: local visual scorer malformed")
     score = statistics.median(float(row[0]) for row in matrix)
     margin = statistics.median(
         float(row[0]) - max(float(x) for x in row[1:]) for row in matrix)
-    accepted = score >= .235 and margin >= .012
+    # #93: median similarity barely favored "lightning" over ordinary
+    # storm clouds (0.0135), or "iceberg" over a dark sea (0.020).
+    # Critical topics can demand a stronger independent visual margin.
+    # Persistent physical objects must remain in every sampled scene frame,
+    # including close to the final edited frame, not only the opening.
+    margins = [float(row[0]) - max(float(x) for x in row[1:])
+               for row in matrix]
+    all_visible = all(float(row[0]) >= .235 and delta >= .012
+                      for row, delta in zip(matrix, margins))
+    accepted = (score >= .235 and margin >= minimum_margin
+                and (not require_all_frames or all_visible))
     return {
         "verified": bool(accepted),
+        "sampled_subject_frames": len(frames),
+        "all_sampled_frames_subject_visible": bool(all_visible),
+        "required_subject_margin": round(float(minimum_margin), 4),
         "subject": specification["subject"],
         "subject_similarity": round(score, 4),
         "subject_minus_scenery": round(margin, 4),
