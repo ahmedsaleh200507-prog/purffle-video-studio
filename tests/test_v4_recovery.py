@@ -36,7 +36,7 @@ def test_replan_feedback_never_uses_untrusted_provider_text():
     assert len(feedback) <= 800
 
 
-def test_batch_uses_unavailable_scene_not_an_earlier_failed_alias(tmp_path):
+def test_batch_uses_unavailable_scene_not_an_earlier_failed_alias(tmp_path, monkeypatch):
     target = tmp_path / "video_01"
     target.mkdir()
     (target / "footage-report.json").write_text(json.dumps({
@@ -59,10 +59,11 @@ def test_batch_uses_unavailable_scene_not_an_earlier_failed_alias(tmp_path):
     assert details["scene"] == 2
     assert details["query"] == "lightning storm"
     assert details["rejection_categories"] == {"insufficient_native_resolution": 1}
-    assert should_retry_at_720p({
-        "status": "failed",
-        "failure_details": details,
-    }) is False  # Default RESOLUTION is 720x1280; no pointless retry.
+    failed_result = {"status": "failed", "failure_details": details}
+    monkeypatch.setenv("RESOLUTION", "1080x1920")
+    assert should_retry_at_720p(failed_result) is True
+    monkeypatch.setenv("RESOLUTION", "720x1280")
+    assert should_retry_at_720p(failed_result) is False
 
 
 def test_failed_palette_keeps_every_rejection_for_real_diagnosis(tmp_path, monkeypatch):
