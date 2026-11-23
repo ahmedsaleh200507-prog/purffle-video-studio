@@ -381,6 +381,7 @@ def make_video(*, topic, language, mode, output, root=None):
                   "-af","apad",
                   "-c:v","libx264","-preset","veryfast","-crf","25",
                   "-r",str(FPS),"-c:a","aac","-b:a","96k",
+                  "-ar","44100","-ac","2",
                   "-movflags","+faststart",str(out)]
             _run(args,timeout=180 if mode=="short" else 480)
             chunks.append(out)
