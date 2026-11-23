@@ -97,16 +97,13 @@ def test_composite_contact_needs_two_supporting_frames_not_one_lucky_match():
     assert visual_scores(c, [[.34,.20],[.33,.21],[.28,.29]],opening=True)['verified']
 
 
-def test_fair_search_offers_second_provider_before_first_provider_tail():
+def test_discovery_keeps_late_high_relevance_candidates_for_ranking():
     class Registry:
         def search(self, source, query):
-            if source == "slow":
-                time.sleep(.025)
-                return [SimpleNamespace(key="slow-clip")]
-            return [SimpleNamespace(key=f"fast-{i}") for i in range(6)]
-    rows = list(discover(Registry(), ["fast", "slow"], ["ocean"], time.monotonic()+3))
-    assert [source for source, clips in rows] == ["fast", "slow", "fast"]
-    assert [len(clips) for _, clips in rows] == [2, 1, 4]
+            return [SimpleNamespace(key=f"clip-{i}") for i in range(6)]
+    rows = list(discover(Registry(), ["source"], ["ocean"], time.monotonic()+3))
+    assert len(rows) == 1
+    assert [clip.key for clip in rows[0][1]] == [f"clip-{i}" for i in range(6)]
 
 
 def test_known_unusable_portrait_crop_is_rejected_without_download(tmp_path, monkeypatch):
