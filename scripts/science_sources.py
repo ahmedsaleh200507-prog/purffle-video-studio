@@ -510,17 +510,47 @@ def _strict_science_review_json(llm, system, prompt, schema):
             "max_completion_tokens": 4096,
             "temperature": 0.0,
         }
-        try:
-            response = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                json=payload,
-                headers={"Authorization": "Bearer " + os.environ["GROQ_API_KEY"],
-                         "Content-Type": "application/json"},
-                timeout=(10, 90))
-        except requests.RequestException:
-            raise RuntimeError("science_review_unavailable: strict_groq_network") from None
+        # A transient free-tier TPM 429 is not a science failure. Keep the
+        # *same* review request and wait for its real token-window reset rather
+        # than redrafting the entire story or buying another API. At most two
+        # bounded waits; never spin or retry a different HTTP error.
+        response = None
+        for rate_attempt in range(3):
+            try:
+                response = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    json=payload,
+                    headers={"Authorization": "Bearer " + os.environ["GROQ_API_KEY"],
+                             "Content-Type": "application/json"},
+                    timeout=(10, 90))
+            except requests.RequestException:
+                raise RuntimeError("science_review_unavailable: strict_groq_network") from None
+            if response.status_code != 429 or rate_attempt == 2:
+                break
+            # Read only a bounded numerical delay from the server; never copy
+            # API response bodies (which can reveal account identifiers) to
+            # application logs or artifacts. Cap each pause at 65 seconds.
+            retry_after = getattr(response, "headers", {}).get("Retry-After", "")
+            try:
+                seconds = float(retry_after)
+            except (TypeError, ValueError):
+                seconds = 0
+            if not (0 < seconds <= 65):
+                seconds = 0
+                try:
+                    message = str(response.json().get("error", {}).get("message", ""))
+                    found = re.search(
+                        r"try again in\\s+([0-9]+(?:\\.[0-9]+)?)s", message, re.I)
+                    if found:
+                        seconds = float(found.group(1))
+                except (ValueError, TypeError, AttributeError, KeyError):
+                    pass
+            wait = min(65, max(1, seconds + 1)) if seconds > 0 else 20
+            print(f"[SCIENCE REVIEW] Free Groq token limit; waiting {wait:.1f}s "
+                  f"before retry {rate_attempt + 1}/2", flush=True)
+            time.sleep(wait)
         # Do not echo arbitrary provider error bodies (which may contain
-        # user prompts), HTTP headers or any authentication details.
+        # prompts or account identifiers), HTTP headers or auth details.
         if response.status_code != 200:
             raise RuntimeError(
                 "science_review_unavailable: strict_groq_http_"
