@@ -71,22 +71,15 @@ def test_complete_real_32_second_short_not_diagnostic(tmp_path):
                for x in probe["streams"])
 
 
-@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
-                    reason="FFmpeg/FFprobe required")
-def test_complete_long_documentary_render_pipeline_not_preview(tmp_path,monkeypatch):
-    # Only shorten duration for CI; production LONG_SECONDS stays 602.
-    monkeypatch.setattr(offline_video,"LONG_SECONDS",28)
-    result=make_video(
-        topic="How Do Space Telescopes Explore the Universe?",
-        language="en",mode="long",output=tmp_path/"long-video.mp4")
-    assert result["status"]=="ok"
-    assert result["resolution"]=="1920x1080"
-    assert 26 <= result["duration"] <= 31
-    assert result["quality_mode"]=="offline_2d_fallback"
-    script=json.loads((tmp_path/"script.json").read_text())
-    assert len(script["scenes"])==14
-    assert (tmp_path/"credits.json").exists()
-    assert (tmp_path/"captions.srt").exists()
+def test_long_offline_fake_ten_minutes_now_rejected_before_render(tmp_path):
+    # Regression: seven repeated facts and padded silence must never be
+    # represented as a successful ten-minute documentary.
+    with pytest.raises(RuntimeError, match="insufficient_unique_narration"):
+        make_video(
+            topic="How Do Space Telescopes Explore the Universe?",
+            language="en",mode="long",
+            output=tmp_path/"long-video.mp4")
+    assert not (tmp_path/"long-video.mp4").exists()
 
 
 def test_error_routes_to_full_video_not_incomplete_preview():
@@ -95,6 +88,7 @@ def test_error_routes_to_full_video_not_incomplete_preview():
     long=(repo/"scripts/long_video.py").read_text()
     assert "mode='short'" in shorts
     assert "output=target/'fallback-video.mp4'" in shorts
-    assert "mode=\"long\"" in long
-    assert 'output=output/"long-video.mp4"' in long
+    assert "verify_narration(" in long
+    assert "verify_finished(" in long
     assert 'status="ok"' in long
+    assert "make_offline_video(" not in long
