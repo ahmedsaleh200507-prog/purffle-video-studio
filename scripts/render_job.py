@@ -292,46 +292,82 @@ def main():
                 feedback = footage_failure_feedback(failure_report)
                 if not feedback:
                     raise
-                print('[FOOTAGE RECOVERY] One source-grounded storyboard '
-                      'revision after failed visual preflight', flush=True)
-                if ledger_before is None:
-                    ledger_path.unlink(missing_ok=True)
+                def restore_used_media():
+                    # Rejected visual plans must not reserve footage for the
+                    # next attempt. This uses the exact preflight ledger copy.
+                    if ledger_before is None:
+                        ledger_path.unlink(missing_ok=True)
+                    else:
+                        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+                        temporary = ledger_path.with_suffix('.replan')
+                        temporary.write_bytes(ledger_before)
+                        temporary.replace(ledger_path)
+
+                # FIRST fix only the unfilmable VISUAL directions. The
+                # previously source-screened speech stays byte-for-byte
+                # unchanged. This saves Groq tokens and avoids a second
+                # fictitious 'light reflecting like a mirror' explanation.
+                from visible_science_repair import visible_context_repair
+                repaired = visible_context_repair(
+                    screenplay, os.environ['VIDEO_TOPIC'],
+                    failure_report.get('unavailable_scenes', []))
+                restore_used_media()
+                if repaired is not None:
+                    print('[FOOTAGE RECOVERY] Retry camera-filmable sky context '
+                          'WITHOUT rewriting verified narration', flush=True)
+                    stage = 'visible_science_context_repair'
+                    try:
+                        palette = prepare_verified_palette(
+                            os.environ['VIDEO_TOPIC'], s,
+                            storyboard=repaired,
+                            min_scenes=script_scene_count,
+                            max_scenes=script_scene_count,
+                            clip_seconds=10.0)
+                    except RuntimeError as context_error:
+                        if 'media_preflight_insufficient_footage' not in str(context_error):
+                            raise
+                        # A failed visual-only attempt cannot block the
+                        # source-grounded narrative fallback from using
+                        # potentially suitable previously tested stock.
+                        restore_used_media()
+                        repaired = None
+                if repaired is not None:
+                    screenplay = repaired
                 else:
-                    ledger_path.parent.mkdir(parents=True, exist_ok=True)
-                    temporary = ledger_path.with_suffix('.replan')
-                    temporary.write_bytes(ledger_before)
-                    temporary.replace(ledger_path)
-                stage = 'grounded_visual_replan'
-                with (use_story_scene_target(script_scene_count),
-                      use_evidence(evidence), use_footage_feedback(feedback)):
-                    alternative, alt_pick, alt_writer = studio.draft(
-                        os.environ['VIDEO_TOPIC'], style='facts')
-                if len(alternative.scenes) != script_scene_count:
-                    raise RuntimeError(
-                        'visual_replan_scene_count_mismatch')
-                if all(
-                    str(a.visual_search_query).casefold() ==
-                    str(b.visual_search_query).casefold()
-                    for a, b in zip(alternative.scenes, screenplay.scenes)
-                ):
-                    raise RuntimeError(
-                        'visual_replan_repeated_unavailable_queries')
-                # A replan cannot introduce unsupported science or skip the
-                # independently verified facts to make stock footage fit.
-                validate_unsourced_quantities(
-                    alternative, os.environ['VIDEO_TOPIC'])
-                storyboard_audit = audit_storyboard(
-                    os.environ['VIDEO_TOPIC'], alternative, s.language)
-                stage = 'science_review'
-                screen_narration(
-                    alternative, evidence, studio.llm,
-                    path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
-                stage = 'visual_director_preflight'
-                palette = prepare_verified_palette(
-                    os.environ['VIDEO_TOPIC'], s, storyboard=alternative,
-                    min_scenes=script_scene_count, max_scenes=script_scene_count,
-                    clip_seconds=10.0)
-                screenplay, pick, writer = alternative, alt_pick, alt_writer
+                    print('[FOOTAGE RECOVERY] One source-grounded storyboard '
+                          'revision after failed visual preflight', flush=True)
+                    stage = 'grounded_visual_replan'
+                    with (use_story_scene_target(script_scene_count),
+                          use_evidence(evidence), use_footage_feedback(feedback)):
+                        alternative, alt_pick, alt_writer = studio.draft(
+                            os.environ['VIDEO_TOPIC'], style='facts')
+                    if len(alternative.scenes) != script_scene_count:
+                        raise RuntimeError(
+                            'visual_replan_scene_count_mismatch')
+                    if all(
+                        str(a.visual_search_query).casefold() ==
+                        str(b.visual_search_query).casefold()
+                        for a, b in zip(alternative.scenes, screenplay.scenes)
+                    ):
+                        raise RuntimeError(
+                            'visual_replan_repeated_unavailable_queries')
+                    # A new factual script still needs independent source
+                    # screening. Visual-only repair above never changes speech.
+                    validate_unsourced_quantities(
+                        alternative, os.environ['VIDEO_TOPIC'])
+                    storyboard_audit = audit_storyboard(
+                        os.environ['VIDEO_TOPIC'], alternative, s.language)
+                    stage = 'science_review'
+                    screen_narration(
+                        alternative, evidence, studio.llm,
+                        path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
+                    stage = 'visual_director_preflight'
+                    palette = prepare_verified_palette(
+                        os.environ['VIDEO_TOPIC'], s, storyboard=alternative,
+                        min_scenes=script_scene_count,
+                        max_scenes=script_scene_count,
+                        clip_seconds=10.0)
+                    screenplay, pick, writer = alternative, alt_pick, alt_writer
             validate_narration_timing(palette, screenplay, s.language)
             from retention_storyboard import choose_duration_seconds, save_storyboard_report
             fact_count = len(getattr(evidence, 'sources', []) or [])
