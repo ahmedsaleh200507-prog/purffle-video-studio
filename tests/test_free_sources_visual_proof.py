@@ -119,7 +119,7 @@ def test_second_scene_sampled_after_first_second_to_catch_midscene_mismatch():
     source = (Path(__file__).resolve().parents[1] /
               "scripts" / "studio_runtime.py").read_text()
     assert "if idx == 0:" in source
-    assert "seconds=(.15, mid)" in source
+    assert "seconds=(.15, mid, near_end)" in source
     assert "visual_subject_not_grounded" in source
 
 
