@@ -1082,7 +1082,9 @@ def install():
         if not raw_scenes or len(raw_scenes) > 6:
             raise ValueError("A strict video needs 1–6 explicit scenes")
         prepared, plans = [], []
+        from visual_director import anchor_observational_science_scene
         for raw in raw_scenes:
+            raw = anchor_observational_science_scene(raw, subject)
             plan = _scene_data(raw)
             if not str(raw.get("narration", "")).strip():
                 raise ValueError("Scene narration is empty")
