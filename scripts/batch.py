@@ -364,10 +364,43 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500, *,
                       exception_type=type(exc).__name__, mp4=None)
     finally:
         if result['status'] != 'ok':
+            # The user explicitly wants an MP4 even on a failed production.
+            # First keep any playable rendered result as PREVIEW (never mark
+            # as a successful video). If the job failed before creating film,
+            # output a labelled preview card, optionally with available voice.
+            # Do this BEFORE deleting transient render artefacts.
+            from failure_preview import make_failure_preview
+            detail_stage = result.get('stage') or 'worker_failed'
+            job_report = target / 'job-result.json'
+            if job_report.is_file():
+                try:
+                    detail_stage = json.loads(
+                        job_report.read_text(encoding='utf-8')).get(
+                            'stage', detail_stage)
+                except (OSError, ValueError, TypeError):
+                    pass
+            try:
+                w, h = [int(x) for x in result.get(
+                    'resolution', '720x1280').split('x')]
+            except (ValueError, TypeError):
+                w, h = 720, 1280
+            if (w, h) not in ((720, 1280), (1080, 1920)):
+                w, h = 720, 1280
+            preview_info = make_failure_preview(
+                output=target / 'PREVIEW_INCOMPLETE.mp4',
+                topic=result.get('topic') or raw, stage=str(detail_stage),
+                size=(w, h), rendered_dir=target / 'render',
+                voice_dir=target / 'render')
+            result.update(preview_info)
+            if result.get('preview_mp4'):
+                print(f"[PREVIEW AVAILABLE] video={index} "
+                      f"kind={result.get('preview_kind')} "
+                      "not a final video", flush=True)
             # A preflight may have reserved real clips before scene 3 failed.
             # Never poison subsequent video attempts with failed-job reservations.
             _restore_footage_ledger(ledger_path, ledger_before)
-            # Partial output/title from an unsuccessful retry is not publishable.
+            # Rendered work is transient; PREVIEW_INCOMPLETE.mp4 is in the
+            # job root, outside this deletion and is included in Artifacts.
             for partial in (target / 'render').rglob('*.mp4'):
                 partial.unlink(missing_ok=True)
             for stale_title in (target / 'render').rglob('YouTube_Title.txt'):
