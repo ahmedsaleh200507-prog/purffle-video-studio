@@ -142,7 +142,7 @@ def _blue_sky_scientific_article(title: str, extract: str) -> bool:
     label = str(title).casefold().strip()
     # Hyper-Rayleigh is a specialized nonlinear optics experiment, not
     # the atmospheric Rayleigh scattering that gives the sky its colour.
-    if re.search(r"hyper[\\s\\-–—]*rayleigh", label):
+    if re.search(r"hyper[\s\-–—]*rayleigh", label):
         return False
     if re.search(r"rayleigh|scattering|streuung|atmospher|atmosphär|optics|optik|himmelsblau|diffuse sky radiation", label):
         return True
@@ -189,15 +189,15 @@ def rejected_claim_feedback(report_path, script):
             continue
         seen.add(index)
         # Use the draft's own narration instead of untrusted reviewer strings.
-        old = re.sub(r"[^\\w äöüÄÖÜß,.!?;:'-]", " ",
+        old = re.sub(r"[^\w äöüÄÖÜß,.!?;:'-]", " ",
                      str(scenes[index - 1].narration))[:170]
-        old = re.sub(r"\\s+", " ", old).strip()
+        old = re.sub(r"\s+", " ", old).strip()
         messages.append(
             f"Scene {index}: the previous text was not supported by the provided "
             f"reference excerpts: '{old}'. Do not repeat this unsupported claim; "
             "replace it with a simpler, different fact explicitly present in "
             "the reference text. Preserve the topic and complete explanation.")
-    return "\\n".join(messages)[:900]
+    return "\n".join(messages)[:900]
 
 
 def _search_text(topic: str) -> str:
