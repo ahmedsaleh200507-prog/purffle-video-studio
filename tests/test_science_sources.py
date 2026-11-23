@@ -590,3 +590,56 @@ def test_groq_one_scene_wrong_scene_id_is_not_silently_accepted(tmp_path, monkey
     with pytest.raises(RuntimeError, match="science_review_unavailable"):
         screen_narration(scene(), mock_bundle(), GroqWrongScene(), path=target)
     assert json.loads(target.read_text())["state"] == "failed"
+
+
+def test_groq_strict_json_scope_is_only_science_review():
+    from science_sources import _strict_science_review_json
+
+    provider = SimpleNamespace(
+        name="groq", model="openai/gpt-oss-20b", _schema_mode=False)
+    class RealisticReviewClient:
+        providers = [provider]
+        def complete_json(self, system, prompt, schema):
+            assert provider._schema_mode is True
+            assert schema["type"] == "object"
+            return {"checks": []}
+    reviewer = RealisticReviewClient()
+    answer = _strict_science_review_json(
+        reviewer, "facts", "check", {"type": "object"})
+    assert answer == {"checks": []}
+    assert provider._schema_mode is False
+
+
+def test_science_strict_json_scope_resets_after_failure_and_skips_unsupported_models():
+    from science_sources import _strict_science_review_json
+    groq = SimpleNamespace(name="groq", model="openai/gpt-oss-120b", _schema_mode=False)
+    old_groq = SimpleNamespace(name="groq", model="llama-3.3-70b-versatile", _schema_mode=False)
+    class ReviewError:
+        providers = [groq, old_groq]
+        def complete_json(self, *args):
+            assert groq._schema_mode is True
+            assert old_groq._schema_mode is False
+            raise ValueError("bad result")
+    with pytest.raises(ValueError, match="bad result"):
+        _strict_science_review_json(ReviewError(), "s", "u", {"type": "object"})
+    assert not groq._schema_mode
+    assert not old_groq._schema_mode
+
+
+def test_source_review_schema_is_strict_json_compatible_no_array_length_keywords(tmp_path):
+    from science_sources import _strict_science_review_json
+    captured = {}
+    class StrictMock:
+        def complete_json(self, system, prompt, schema):
+            captured["schema"] = schema
+            return {"checks": [{
+                "scene": 1, "supported": True, "source_id": "wiki-1",
+                "quote": "Underwater volcanic eruptions can accumulate layers of lava and rock.",
+                "reason": "Directly supported"
+            }]}
+    screen_narration(scene(), mock_bundle(), StrictMock(), path=tmp_path/"science.json")
+    assert "minItems" not in captured["schema"]["properties"]["checks"]
+    assert "maxItems" not in captured["schema"]["properties"]["checks"]
+    inner = captured["schema"]["properties"]["checks"]["items"]
+    assert inner["additionalProperties"] is False
+    assert set(inner["required"]) == set(inner["properties"])
