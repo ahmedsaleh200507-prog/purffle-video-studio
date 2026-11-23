@@ -408,6 +408,41 @@ def _documentary_metadata_terms(value: str) -> set[str]:
     return terms
 
 
+def scene_specific_hard_negatives(spec):
+    """Contrast requested subject with plausible but misleading B-roll.
+
+    A generic 'portrait indoors' negative cannot catch a person WALKING
+    outdoors during narration about clouds, or a sunset substituted for a
+    clear blue daytime sky. These comparisons reuse local CLIP, no paid API.
+    """
+    if not isinstance(spec, SceneSpec):
+        spec = SceneSpec.from_dict(spec)
+    subject = str(spec.object).casefold()
+    query = str(spec.visual_search_query).casefold()
+    no_actor = not str(spec.main_character).strip()
+    if not no_actor:
+        return []
+    nature = {"sky", "sun", "sunlight", "cloud", "clouds", "atmosphere",
+              "rain", "snow", "river", "ocean", "sea", "wave", "water",
+              "forest", "mountain", "lightning", "volcano", "iceberg"}
+    terms = _terms(subject)
+    if not terms & set().union(*(_terms(w) for w in nature)):
+        return []
+    negative = [
+        "A close-up photograph of a person's face outside.",
+        "A person walking outdoors with nature in the background.",
+    ]
+    if "blue" in query and "sky" in query:
+        negative.extend([
+            "Orange sunset clouds over buildings without a blue sky.",
+            "A gray overcast sky above an urban city.",
+        ])
+    if "sunlight" in subject and "cloud" in query:
+        negative.append(
+            "A silhouette of a person walking at sunset with no visible sunlight rays.")
+    return negative
+
+
 class SceneMatcher:
     """Require metadata grounding plus sampled local CLIP evidence.
 
@@ -623,6 +658,10 @@ class SceneMatcher:
             negatives.append(f"An empty {spec.location or 'location'} with nobody present.")
         else:
             negatives.append("A close-up portrait of a person indoors.")
+        # Generic negative pictures were too easy to beat. In the actual
+        # blue-sky Short a person walking at sunset was chosen for sunlight
+        # and a gray cloudy urban sky stood in for clear blue daylight.
+        negatives.extend(scene_specific_hard_negatives(spec))
         captions = [positive, object_caption] + negatives
         scores = self._similarities(frames, captions)
         positive_scores = [row[0] for row in scores]
@@ -631,9 +670,20 @@ class SceneMatcher:
         visual_score = statistics.median(positive_scores)
         object_score = statistics.median(object_scores)
         visual_margin = statistics.median(margins)
+        # Two actual sampled moments must beat competing, plausible B-roll,
+        # not only the generic computer/guitar negatives. This remains an
+        # uncalibrated ranking gate, not proof of factual visual entailment.
+        requested_clear_blue_sky = ("blue" in spec.visual_search_query.casefold()
+                                    and "sky" in spec.visual_search_query.casefold())
+        required_margin = max(self.margin, .018 if requested_clear_blue_sky else
+                              .008 if scene_specific_hard_negatives(spec) else .0)
+        matching_moments = sum(
+            row[0] >= self.threshold and
+            row[0] - max(row[2:]) >= required_margin
+            for row in scores)
         if (visual_score < self.threshold or object_score < self.threshold - .055
-                or visual_margin < self.margin
-                or sum(s >= self.threshold for s in positive_scores) < 2):
+                or visual_margin < required_margin
+                or matching_moments < 2):
             raise ValidationError(f"Visual scene mismatch: cosine={visual_score:.3f}, object={object_score:.3f}, margin={visual_margin:.3f}")
         # Coarse horizontal localization: compare three 9:16 windows in the
         # source frame. The renderer may consume crop_focus_x to retain subject.
@@ -653,4 +703,7 @@ class SceneMatcher:
                 "object_score": round(object_score, 4), "visual_margin": round(visual_margin, 4),
                 "threshold": self.threshold, "model": os.environ.get("PURFFLE_CLIP_MODEL", "openai/clip-vit-base-patch32"),
                 "sample_scores": positive_scores, "crop_focus_x": centers[best],
+                "scene_hard_negative_count": len(scene_specific_hard_negatives(spec)),
+                "required_visual_margin": round(required_margin, 4),
+                "matching_moments": matching_moments,
                 "verification": "local_clip_screening", "limitations": "Similarity screening cannot prove exact actions, identity or denomination."}
