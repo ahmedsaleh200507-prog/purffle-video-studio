@@ -59,7 +59,8 @@ def test_batch_uses_unavailable_scene_not_an_earlier_failed_alias(tmp_path, monk
     assert details["scene"] == 2
     assert details["query"] == "lightning storm"
     assert details["rejection_categories"] == {"insufficient_native_resolution": 1}
-    failed_result = {"status": "failed", "failure_details": details}
+    failed_result = {"status": "failed", "failure_category": "insufficient_verified_clips",
+                     "failure_details": details}
     monkeypatch.setenv("RESOLUTION", "1080x1920")
     assert should_retry_at_720p(failed_result) is True
     monkeypatch.setenv("RESOLUTION", "720x1280")
