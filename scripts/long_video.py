@@ -540,7 +540,7 @@ def main():
         stage="script"
         text=chapters(a.topic,a.language)
         save(output/"script.json",{"language":a.language,"chapters":text})
-        stage="reference_voice" if a.language == "en" else "german_piper_voice"
+        stage="fixed_piper_voice"
         audio,subs,voice_seconds=narrate(text,work,a.language)
         with (output/"captions.srt").open("w",encoding="utf8") as f:
             for j,(start,end,line) in enumerate(subs,1):

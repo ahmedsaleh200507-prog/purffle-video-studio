@@ -2,7 +2,7 @@
 
 ## İncelenen mevcut durum
 
-Başlangıç commit: `c66aae3` (son üretim #94: `7e55e34`). Önceki #57–#59 görüntü düzeltmeleri, mevcut testler ve Shorts/uzun workflow'ları incelendi. Başlangıç testi temiz worktree'de **800 geçti, 9 subtest geçti**. Son gerçek üretim #94 üç istekten birini tamamlamış; İngilizce yıldırım ve aurora işleri görsel ön kontrolde durmuş. Başarı dosyasını var sayan bir toplu rapor hatası görülmedi.
+Başlangıç commit: `c66aae3` (son üretim #94: `7e55e34`). Önceki #57–#59 görüntü düzeltmeleri, mevcut testler ve Shorts/uzun workflow'ları incelendi. Başlangıç testi temiz worktree'de **800 geçti, 9 subtest geçti**. İnceleme başlangıcındaki son gerçek üretim #94 üç istekten birini tamamlamış; İngilizce yıldırım ve aurora işleri görsel ön kontrolde durmuş. Başarı dosyasını var sayan bir toplu rapor hatası görülmedi.
 
 Kaynak: https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/runs/45157102393 (job `137632738813`). Özellikle ilk sağlayıcının altı sorgusu, aynı reddedilen klipler ve sonraki kaynaklara geç ulaşılması görüldü. Konu dışı gökyüzü sorguları ve eski referans ses kurulumu maliyeti de mevcuttu.
 
@@ -19,7 +19,7 @@ Kaynak: https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/ru
 
 ## Gerçek kaynak denetimi
 
-Aşağıdaki tüm kaynakların depoda adapter kodu vardır. Liste, API'nin her konu için görüntü döndüreceği veya her adayın kullanılabileceği anlamına gelmez. Canlı yerel test `ocean waves` araması + lisans metadata filtresidir; klip indirme/render kanıtı değildir. #94 kayıtları GitHub Secrets kullanılan runner'dan alınmıştır. Secrets değerleri okunmadı/dışa aktarılmadı.
+Aşağıdaki tüm kaynakların depoda adapter kodu vardır. Liste, API'nin her konu için görüntü döndüreceği veya her adayın kullanılabileceği anlamına gelmez. Canlı yerel test `ocean waves` araması + lisans metadata filtresidir; klip indirme/render kanıtı değildir. #94 kayıtları GitHub Secrets kullanılan runner'dan alınmıştır; metadata cache kullanılmış olabileceğinden bunlar yeni HTTP sağlığı kanıtı değildir. V4 sağlık komutu artık cache'i atlar. Secrets değerleri okunmadı/dışa aktarılmadı.
 
 | Kaynak | Anahtar | Gözlenen API durumu | Ücretsiz/lisans ve otomasyon koşulu |
 |---|---|---|---|
@@ -50,7 +50,7 @@ Mevcut Piper 1.8 yazılımı GPL-3.0-or-later, ONNX Runtime MIT, Transformers Ap
 ## Test ve canlı üretim kanıtı
 
 - Başlangıç: 800 test ve 9 subtest geçti (temiz worktree).
-- V4 regresyon: 813 test, 9 subtest geçti; üç Pillow deprecation uyarısı. Sabit Joe/Thorsten isteğiyle çelişen eski reference-only/Edge varsayımları yeni sözleşmeye uyarlandı; eski referans araçlarının kendi birim testleri korundu.
+- V4 regresyon: 814 test, 9 subtest geçti; üç Pillow deprecation uyarısı. Sabit Joe/Thorsten isteğiyle çelişen eski reference-only/Edge varsayımları yeni sözleşmeye uyarlandı; eski referans araçlarının kendi birim testleri korundu.
 - Yeni paralel kaynak/arıza/deadline, DE sorgu, lav-buz çelişkisi ve sonraki cümle eylemi testleri geçti.
 - Gerçek FFmpeg fixture testleri: tüm dosya decode, siyah video, sessiz ses, yanlış FPS, kesilmiş MP4 ve yanlış altyazı zamanları. Sentetik fixture'lar üretim videosu değildir.
 - Gerçek Joe: 16 kelime, 5,492s; gerçek Thorsten: 13 kelime, 5,050s. Hash doğrulanmış indirme, ONNX inference, native phoneme timing ve ses sözleşmesi geçti. Bunlar tam stok video üretimi değildir.

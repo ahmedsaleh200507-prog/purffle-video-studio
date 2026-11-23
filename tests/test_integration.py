@@ -719,3 +719,12 @@ def test_earth_volcano_narration_rejects_explicit_other_planets(source_text):
 def test_related_subjects_or_non_volcanic_topics_remain_eligible(topic, source_text):
     from media_validation import reject_offtopic_science_source
     reject_offtopic_science_source(topic, source_text)
+
+
+def test_alias_retry_does_not_download_previously_rejected_clip(strict_env):
+    obj, _, down, _ = visuals(strict_env, {"first": [candidate()]}, Matcher(reject=True))
+    for query in (PLAN['visual_search_query'], 'euro banknote picking up'):
+        plan={**PLAN,'visual_search_query':query}
+        with pytest.raises(RuntimeError,match='No suitable verified REAL VIDEO'):
+            obj.for_scene(0,query,json.dumps(plan),'money',3,strict_env)
+    assert len(down.urls)==1

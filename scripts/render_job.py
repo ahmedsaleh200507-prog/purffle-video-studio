@@ -110,7 +110,7 @@ def main():
         gemini_ready = bool(os.environ.get('GEMINI_API_KEY'))
         if not (groq_ready or gemini_ready):
             raise RuntimeError(
-                'Missing free narration API: configure GROQ_API_KEY or GEMINI_API_KEY')
+                'Missing free script API: configure GROQ_API_KEY or GEMINI_API_KEY')
         # Existing approved narrator, scientific source screening and actual
         # video quality checks remain unchanged. This selects TEXT only.
         # Gemini 3.1 Flash-Lite has a higher request allowance on the
