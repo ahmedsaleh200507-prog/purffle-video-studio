@@ -476,26 +476,64 @@ def _validate_model_scene_checks(checks, scenes, bundle):
 
 
 def _strict_science_review_json(llm, system, prompt, schema):
-    """Require schema-constrained Groq GPT-OSS review when available.
+    """Evidence-review-only strict Groq JSON Schema, never silent JSON downgrade.
 
-    The pinned upstream Groq preset defaults to JSON-object mode, which
-    guarantees JSON syntax but NOT required fields. Groq GPT-OSS 20B/120B
-    support strict JSON-schema output. Scope the setting to fact checks only,
-    keeping other script generators and fallback providers unaffected.
+    Pinned upstream's OpenAICompatible.complete() silently switches from
+    json_schema to json_object on HTTP 400/422, so required `supported`
+    can disappear without the caller noticing. Send a dedicated strict
+    request to the documented Groq endpoint for this one safety-critical
+    reviewer. Fail closed on non-200, invalid JSON, or incomplete results;
+    no source citation checks or narration validation are bypassed.
     """
-    original = []
-    for provider in getattr(llm, "providers", ()):
-        if (getattr(provider, "name", "") == "groq"
-                and getattr(provider, "model", "") in (
-                    "openai/gpt-oss-20b", "openai/gpt-oss-120b")
-                and hasattr(provider, "_schema_mode")):
-            original.append((provider, provider._schema_mode))
-            provider._schema_mode = True
-    try:
-        return llm.complete_json(system, prompt, schema)
-    finally:
-        for provider, previous in original:
-            provider._schema_mode = previous
+    selected = next((p for p in getattr(llm, "providers", ())
+                     if getattr(p, "name", "") == "groq"
+                     and getattr(p, "model", "") in (
+                         "openai/gpt-oss-20b", "openai/gpt-oss-120b")), None)
+    # Mock clients and non-Groq providers retain their preexisting behavior.
+    # The live Groq science-review path must never silently downgrade.
+    if selected is not None and os.getenv("GROQ_API_KEY"):
+        import requests
+        payload = {
+            "model": selected.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "purffle_science_review",
+                    "strict": True,
+                    "schema": schema,
+                },
+            },
+            "max_completion_tokens": 4096,
+            "temperature": 0.0,
+        }
+        try:
+            response = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                json=payload,
+                headers={"Authorization": "Bearer " + os.environ["GROQ_API_KEY"],
+                         "Content-Type": "application/json"},
+                timeout=(10, 90))
+        except requests.RequestException:
+            raise RuntimeError("science_review_unavailable: strict_groq_network") from None
+        # Do not echo arbitrary provider error bodies (which may contain
+        # user prompts), HTTP headers or any authentication details.
+        if response.status_code != 200:
+            raise RuntimeError(
+                "science_review_unavailable: strict_groq_http_"
+                + str(int(response.status_code))) from None
+        try:
+            reply = response.json()["choices"][0]["message"]["content"]
+            result = json.loads(reply)
+        except (ValueError, KeyError, IndexError, TypeError):
+            raise RuntimeError("science_review_unavailable: strict_groq_invalid_json") from None
+        if not isinstance(result, dict):
+            raise RuntimeError("science_review_unavailable: strict_groq_invalid_object")
+        return result
+    return llm.complete_json(system, prompt, schema)
 
 
 def _review_scenes_individually(llm, system, source_text, scenes):
@@ -640,7 +678,10 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
                     error="source passage cannot substantiate all scene claims")
             raise RuntimeError("science_claim_unverified: unsupported narration scene")
         _report(report, bundle, "model_screened_reference", checks=accepted)
-    except RuntimeError:
+    except RuntimeError as exc:
+        if str(exc).startswith("science_review_unavailable:"):
+            _report(report, bundle, "failed",
+                    error=str(exc)[:150])
         raise
     except (ValueError, TypeError, KeyError) as exc:
         # A reviewer unable to return a valid structure is NOT evidence that
