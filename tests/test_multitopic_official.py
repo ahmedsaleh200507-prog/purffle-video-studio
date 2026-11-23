@@ -86,3 +86,30 @@ def test_105_curated_draft_does_not_call_groq(monkeypatch):
     assert approved_dossier_draft(
         "Why are clouds fluffy?", "en", SimpleNamespace(method="model_screened_reference")
     ) is None
+
+
+def test_105_science_failure_never_triggers_native720_video_retry(monkeypatch):
+    from batch import should_retry_at_720p
+    monkeypatch.setenv("RESOLUTION", "1080x1920")
+    monkeypatch.setenv("PURFFLE_AUTO_720_FALLBACK", "1")
+    failed = {
+        "status": "failed", "failure_category": "science_claim_unsupported",
+        "failure_details": {"rejection_categories": {
+            "insufficient_native_resolution": 110}},
+    }
+    assert should_retry_at_720p(failed) is False
+    failed["failure_category"] = "provider_rate_limit"
+    assert should_retry_at_720p(failed) is False
+    failed["failure_category"] = "insufficient_verified_clips"
+    assert should_retry_at_720p(failed) is True
+    failed["failure_details"]["rejection_categories"] = {}
+    assert should_retry_at_720p(failed) is False
+
+
+def test_105_no_model_budget_required_for_curated_science_pipeline():
+    from pathlib import Path
+    production = Path("scripts/render_job.py").read_text(encoding="utf-8")
+    assert "approved_dossier_draft(" in production
+    assert "if cached_draft is not None:" in production
+    assert "screen_narration(" in production
+    assert "if evidence.method == 'curated_editor_reviewed':" in production
