@@ -1,4 +1,4 @@
-"""Free offline production path: create ACTUAL complete MP4s without LLM or stock.
+"""Shorts-only offline 2D fallback; reject dishonest long documentaries.
 
 Used ONLY after normal Shorts or long documentary production fails. 2D
 educational animation with locally generated graphics, text, subtitles and
@@ -352,6 +352,14 @@ def make_video(*, topic, language, mode, output, root=None):
     """Actually render complete video and audio; no diagnostic-card shortcut."""
     if language not in ("en","de") or mode not in ("short","long"):
         raise ValueError("Only English/German short/long modes supported")
+    if mode == "long":
+        # A 7-sentence offline fact pack is NOT a full documentary.
+        # It used to be repeated 14 times, with ~39 silent seconds per shot.
+        # Never produce or label that as a ten-minute movie again.
+        raise RuntimeError(
+            "long_offline_fact_pack_has_insufficient_unique_narration: "
+            "cannot fabricate 10 minutes by repeating seven sentences or "
+            "padding audio silence; use verified full narration and footage")
     path=Path(output)
     path.parent.mkdir(parents=True,exist_ok=True)
     w,h=(1080,1920) if mode=="short" else (1920,1080)
