@@ -545,6 +545,26 @@ class StrictVisuals:
                             f"to {required_width}x{required_height}"
                         )
                     match = self.matcher.match(path, spec, metadata=item.text, duration=need)
+                    # #106: an octopus stock clip passed whole-frame motion
+                    # and CLIP but half of the final 9:16 render was black.
+                    # Sample the actual portrait crop before accepting it.
+                    # Ordinary dark storm footage with detail on both sides
+                    # is not penalized as a pillarbox.
+                    if isinstance(self.matcher, SceneMatcher):
+                        from opening_impact import _first_frames
+                        from visual_crop_integrity import assess_portrait_pillarbox
+                        crop_focus = float(match.get("crop_focus_x", .5))
+                        seconds = min(float(quality["duration"]), float(need))
+                        check_times = (.15, max(.2, seconds*.45),
+                                       max(.3, min(seconds*.85, seconds-.25)))
+                        crop_frames = _first_frames(
+                            path, focus=crop_focus, seconds=check_times)
+                        crop_integrity = assess_portrait_pillarbox(crop_frames)
+                        if not crop_integrity["verified"]:
+                            raise ValueError(
+                                "portrait_pillarbox_invalid: " +
+                                crop_integrity["reason"])
+                        match["portrait_integrity"] = crop_integrity
                     from scene_relevance import suitability
                     match["suitability"] = suitability(item.extra.get("relevance_evidence", {}), match, quality)
                     # #84: A generic 'ship outdoors' CLIP score let a mostly
