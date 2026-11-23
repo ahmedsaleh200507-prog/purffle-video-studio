@@ -232,7 +232,6 @@ def main():
                         # Keep at most two bounded same-job review snapshots
                         # in the normal finished/<video> artifact directory.
                         try:
-                            from pathlib import Path
                             source_report = Path(feedback_path)
                             if source_report.is_file():
                                 snapshot = source_report.with_name(
