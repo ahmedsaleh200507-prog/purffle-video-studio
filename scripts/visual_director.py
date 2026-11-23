@@ -287,7 +287,10 @@ def build_contract(scene, topic, index, *, _sentence=False):
                 'object', 'action', 'visual_search_query', 'main_character', 'location', 'time')}
             row['narration'] = need['text']
             requirements.append(build_contract(row, topic, index, _sentence=True))
+    from blue_sky_visual import requires_blue_sky_color
+    blue_sky_expected = requires_blue_sky_color(topic, narration, subject)
     return {
+        "visible_blue_sky_expected": blue_sky_expected,
         "required_metadata_groups": (
             [["lava", "molten"], ["ocean", "sea", "seawater", "coast", "shore", "laze"]]
             if family == "lava_ocean_entry" else
@@ -446,9 +449,23 @@ def verify_visible_event_or_illustrative_subject(
         path, duration, crop_focus, child, matched_scene, scorer=scorer,
         opening=opening and i == 0, event_inspector=event_inspector)
         for i, child in enumerate(contract.get("sentence_contracts", []))]
+    # V5 #103 genuinely produced a playable Short, but used gray overcast
+    # clouds for "blue wavelengths scatter more than red". CLIP approved
+    # broad sky/cloud similarity although the requested blue sky wasn't
+    # visible. Compare actual cropped source frames, never just tags.
+    blue_visual_check = None
+    if contract.get("visible_blue_sky_expected"):
+        from blue_sky_visual import check_visible_blue_sky
+        blue_visual_check = check_visible_blue_sky(
+            path, duration, crop_focus)
+        if not blue_visual_check["verified"]:
+            raise ValueError(
+                "visual_director_blue_sky_not_visible: actual 9:16 frames "
+                "are gray/overcast despite narrated blue-sky subject")
     if not contract.get("event_required"):
         return {
             "sentence_checks": sentence_checks,
+            "blue_sky_visual_check": blue_visual_check,
             "verified": True,
             "event_required": False,
             "family": contract["family"],
@@ -466,4 +483,5 @@ def verify_visible_event_or_illustrative_subject(
             "visual_director_action_not_visible: real 9:16 frames do not "
             "demonstrate " + str(contract["family"]))
     result["sentence_checks"] = sentence_checks
+    result["blue_sky_visual_check"] = blue_visual_check
     return result
