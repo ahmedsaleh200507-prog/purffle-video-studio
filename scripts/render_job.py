@@ -252,7 +252,35 @@ def main():
                         except OSError:
                             pass  # Diagnostic archival never bypasses QA.
                     if attempt >= 2:
-                        raise
+                        # The real V5 #102 proof screened two of four scenes
+                        # as true, then discarded them because the other two
+                        # contained unsourced assertions. Reuse *only* fully
+                        # approved source-checked scenes, with their original
+                        # exact narration and visual intent. Do NOT add a new
+                        # LLM science story. The new concise storyboard must
+                        # pass editorial, numerical, and independent science
+                        # review before any video can be accepted.
+                        if not str(script_error).startswith(
+                                'science_claim_unverified: unsupported narration scene'):
+                            raise
+                        from science_salvage import salvage_approved_narration
+                        salvaged = salvage_approved_narration(
+                            screenplay, feedback_path)
+                        if salvaged is None:
+                            raise
+                        print('[SCIENCE RECOVERY] Retain only genuinely '
+                              'source-screened narration scenes; recheck '
+                              'concise storyboard', flush=True)
+                        validate_unsourced_quantities(
+                            salvaged, os.environ['VIDEO_TOPIC'])
+                        storyboard_audit = audit_storyboard(
+                            os.environ['VIDEO_TOPIC'], salvaged, s.language)
+                        stage = 'science_review'
+                        screen_narration(
+                            salvaged, evidence, studio.llm,
+                            path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
+                        screenplay = salvaged
+                        break
                     logging.warning(
                         'Source/factuality/storyboard screen rejected draft (%s); '
                         'requesting one more source-grounded script',
