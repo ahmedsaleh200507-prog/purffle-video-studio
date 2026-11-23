@@ -84,7 +84,8 @@ def test_video_fails_early_without_enough_verified_clips(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="media_preflight_insufficient_footage"):
         prepare_verified_palette(TOPIC, object(), None, visuals=visuals)
     assert visuals.report["state"] == "failed"
-    assert visuals.report["scenes"][0]["status"] == "selected"
+    assert any(row["status"] == "selected" for row in visuals.report["scenes"])
+    assert any(row["status"] == "failed" for row in visuals.report["scenes"])
     report = json.loads((tmp_path / "media-first-plan.json").read_text())
     assert report["verified"] == 1
 

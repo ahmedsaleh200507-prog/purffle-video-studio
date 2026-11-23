@@ -1,6 +1,6 @@
-"""Free local German neural speech with native, measured phoneme word timings.
+"""Free local English/German neural speech with native, measured phoneme word timings.
 
-Only the audited German CC0 Piper voice may be loaded. Tokens
+Only the audited Joe and Thorsten Piper voices may be loaded. Tokens
 are phonemized individually, then synthesized together, so original caption
 words (including expanded numbers) retain exact phoneme-ID ranges. Timing comes
 from the model's native sample counts; unsupported alignment fails explicitly.
@@ -8,6 +8,7 @@ from the model's native sample counts; unsupported alignment fails explicitly.
 from __future__ import annotations
 
 from copy import deepcopy
+from functools import lru_cache
 import hashlib
 import json
 import math
@@ -22,9 +23,18 @@ import wave
 
 REVISION = 'e9ab671f2a0e50a701b34361136ba3e6a3a9eb0c'
 REPOSITORY = 'rhasspy/piper-voices'
-# All generic English Piper voices (Joe and LJSpeech) were removed at the
-# user's request. Only the private reference pipeline may narrate English.
+# V4: exactly the two user-requested Piper identities; no voice fallback.
 VOICES = {
+    'en': {
+        'model': 'en_US-joe-medium',
+        'folder': 'en/en_US/joe/medium',
+        'revision': '0ca208afc2a2ee102b1e961e72e0a7e4907be3d0',
+        'license': {'id': 'CC0', 'source': 'https://github.com/OHF-Voice/voice-datasets'},
+        'files': {
+            '.onnx': ('abf4b998e34045cbd00eaf050de2de620f81ded6eb8b85a24b022a1c2b3f08d2', 63221984),
+        },
+        'verify_text_files': True,
+    },
     'de': {
         'model': 'de_DE-thorsten-medium', 'folder': 'de/de_DE/thorsten/medium',
         'license': {'id': 'CC0-1.0', 'source': 'https://github.com/thorstenMueller/Thorsten-Voice'},
@@ -41,9 +51,9 @@ VOICES = {
 def _voice_key(language):
     # Selection is per job, never per sentence. A failed locked male voice
     # must fail visibly, not silently switch to a different/female narrator.
-    if language != 'de':
-        raise RuntimeError('Generic English Piper voices have been removed; approved reference required')
-    return 'de'
+    if language not in ('en', 'de'):
+        raise RuntimeError('Local narration supports only de/en')
+    return language
 
 
 def provenance(language):
@@ -183,6 +193,7 @@ def _voice_files(language):
     return root / (voice['model'] + '.onnx')
 
 
+@lru_cache(maxsize=2)
 def _load_voice(language):
     import onnx
     import onnxruntime

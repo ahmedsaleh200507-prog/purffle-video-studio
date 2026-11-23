@@ -24,14 +24,13 @@ def fake_voice(*, native=True, silent=False):
 
 def test_only_audited_free_models_are_available():
     de = local_voice.provenance('de')
-    assert list(local_voice.VOICES) == ['de']
+    assert set(local_voice.VOICES) == {'en','de'}
     assert de['license']['id'] == 'CC0-1.0'
     assert de['alignment'] == 'native_phoneme_samples'
     assert len(de['model_sha256']) == 64
     assert local_voice.REVISION in de['model_url']
-    with pytest.raises(RuntimeError, match='removed'):
-        local_voice.provenance('en')
-    with pytest.raises(RuntimeError, match='removed'):
+    assert local_voice.provenance('en')['model'] == 'en_US-joe-medium'
+    with pytest.raises(RuntimeError, match='only de/en'):
         local_voice.provenance('fr')
     de['license']['id'] = 'changed'
     assert local_voice.provenance('de')['license']['id'] == 'CC0-1.0'

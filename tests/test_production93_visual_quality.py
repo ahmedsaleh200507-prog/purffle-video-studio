@@ -74,6 +74,6 @@ def test_usgs_gets_priority_for_actual_ocean_entry_not_every_lava_scene():
               "scripts/studio_runtime.py").read_text()
     assert 'exact_ocean_entry = (is_lava_ocean_topic(topic)' in source
     assert 'source_order.insert(0, "usgs-video")' in source
-    assert 'for source in source_order:' in source
+    assert 'for source, candidates in discover(self.registry, source_order' in source
     assert 'seconds=(.15, mid, near_end)' in source
     assert 'require_all_frames=permanent_subject' in source

@@ -136,7 +136,8 @@ def test_native_german_voice_selected_only_for_german_long_form(monkeypatch,tmp_
         target=tmp_path/"piper-thorsten.wav"
         target.write_bytes(b"wav fixture")
         return SimpleNamespace(
-            audio=target,duration=43.0,
+            audio=target,duration=43.0,engine='piper',voice='de_DE-thorsten-medium',timing='aligned',
+            provenance=local_voice.provenance('de'),
             words=[SimpleNamespace(text="Guten",start=.2,end=.6),
                    SimpleNamespace(text="Tag",start=.7,end=1.0)])
     monkeypatch.setattr(local_voice,"synthesize",fake_voice)

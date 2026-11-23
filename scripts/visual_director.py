@@ -21,6 +21,20 @@ from PIL import Image
 from topic_footage import words
 
 _SCENE_TARGET = ContextVar("purffle_director_scene_target", default=None)
+_FOOTAGE_FEEDBACK = ContextVar("purffle_footage_feedback", default="")
+
+
+@contextmanager
+def use_footage_feedback(feedback):
+    token = _FOOTAGE_FEEDBACK.set(str(feedback or "")[:800])
+    try:
+        yield
+    finally:
+        _FOOTAGE_FEEDBACK.reset(token)
+
+
+def footage_feedback():
+    return _FOOTAGE_FEEDBACK.get()
 
 
 @contextmanager
@@ -40,6 +54,20 @@ def story_scene_target():
 # takes priority over later questions (lava flows / why explosions happen).
 # These are reusable across subjects, not exception paths for individual jobs.
 _EVENT_FAMILIES = (
+    (
+        "lava_ocean_entry", r"(?=.*\b(?:lava|lavastrom)\b)(?=.*\b(?:ocean|sea|seawater|meer|meerwasser)\b)",
+        ("lava entering ocean steam", "lava flowing into sea", "lava ocean entry laze"),
+        "Real camera footage showing molten lava entering ocean water at the coastline, with seawater and steam visible.",
+        "Inland lava flows or a volcanic crater eruption with no ocean water or coastline visible.",
+        ("ocean", "sea", "seawater", "coast", "laze", "meer"),
+    ),
+    (
+        "coastal_lava_collapse", r"(?=.*(?:coast|lavaküste|lava delta))(?=.*(?:collaps|stürzt|einstürz))",
+        ("lava delta collapse ocean", "coastal lava land collapse", "lava bench collapse steam explosion"),
+        "Real footage of a coastal lava delta or lava bench collapsing into the ocean with steam.",
+        "An inland lava fountain or an ordinary flowing lava stream without a collapsing ocean coastline.",
+        ("collapse", "collapsing", "bench", "delta"),
+    ),
     (
         "lava_flow", r"\b(lava|lavastrom|glühende lava)\b",
         ("lava flowing", "molten lava flow", "glowing lava close up"),
@@ -104,7 +132,44 @@ def _first_statement(narration):
     return re.split(r"[.!?]", str(narration).strip(), maxsplit=1)[0]
 
 
-def build_contract(scene, topic, index):
+def anchor_observational_science_scene(scene, topic):
+    """Avoid a human reaction shot when the factual subject is the scenery.
+
+    In an explanation of the *blue sky*, 'we see' and 'look upward' are
+    observational language, not a request for a person's face. Keep the
+    narration untouched: only its filmable visual plan is repaired.
+    """
+    if not isinstance(scene, dict):
+        return scene
+    subject = str(topic or "").casefold()
+    about_blue_sky = bool(
+        re.search(r"\bsky\b.{0,40}\bblue\b|\bblue\b.{0,40}\bsky\b", subject)
+        or re.search(r"\bhimmel\b.{0,40}\bblau\w*|\bblau\w*.{0,40}\bhimmel\b", subject))
+    if not about_blue_sky:
+        return scene
+    narration = str(scene.get("narration") or "").casefold()
+    character = str(scene.get("main_character") or "").casefold()
+    obj = str(scene.get("object") or "").casefold()
+    query = str(scene.get("visual_search_query") or "").casefold()
+    # This is NOT a generic ban on humans or footage of experiments.
+    # Only rewrite the observational *gaze*, not a claim about a human actor.
+    observational = bool(re.search(
+        r"\b(we see|we look|look upward|look up|looking up|"
+        r"when we look|observe the sky|wir sehen|wir schauen|"
+        r"nach oben sehen|hinaufsehen|himmel betrachten)\b", narration))
+    gaze_shot = bool(
+        re.search(r"\b(eyes?|face|portrait|person|people|human)\b", obj + " " + character)
+        and re.search(r"\b(look|watch|gaze|stare|observ)\w*\b", query + " " + str(scene.get("action", "")).casefold()))
+    if not (observational and gaze_shot):
+        return scene
+    return {
+        **scene, "main_character": "", "object": "sky",
+        "action": "ambient", "location": "outdoors", "time": "day",
+        "visual_search_query": "clear blue daytime sky",
+    }
+
+
+def build_contract(scene, topic, index, *, _sentence=False):
     """Prepare a bounded ordered search plan tied to THIS spoken scene."""
     narration = _scene_value(scene, "narration").strip()
     subject = _scene_value(scene, "object").strip()
@@ -120,7 +185,8 @@ def build_contract(scene, topic, index):
         # source subject rather than general English verb similarities.
         subject_lower = subject.casefold()
         relevant = (
-            name == "lava_flow" and bool(re.search(r"volcan|lava|magma|vulkan", subject_lower))
+            name in ("lava_ocean_entry", "coastal_lava_collapse") and bool(re.search(r"volcan|lava|magma|vulkan", subject_lower))
+            or name == "lava_flow" and bool(re.search(r"volcan|lava|magma|vulkan", subject_lower))
             or name == "eruption" and bool(re.search(r"volcan|lava|magma|vulkan", subject_lower))
             or name == "breaching" and bool(re.search(r"whale|dolphin|wal|ocean", subject_lower))
             or name == "breaking" and bool(re.search(r"ice|glacier|iceberg|eis", subject_lower))
@@ -150,6 +216,8 @@ def build_contract(scene, topic, index):
         if family == "lava_flow" and subject == "volcano":
             search = ["volcano glowing lava flow", "volcano lava flowing",
                       "molten lava close up"]
+        elif family in ("lava_ocean_entry", "coastal_lava_collapse"):
+            search = list(variants)
         elif family == "eruption" and subject == "volcano":
             search = ["volcano explosive eruption ash", "volcano eruption lava fountain",
                       "volcano erupting ash plume"]
@@ -204,7 +272,32 @@ def build_contract(scene, topic, index):
             unique.append(query)
     if not unique:
         raise ValueError("visual_director_no_queries")
+    from scene_relevance import sentence_needs
+    needs = sentence_needs(narration, subject, base)
+    if any(n['interaction'] == 'lava_ice' for n in needs):
+        unique = ['lava ice contact', 'lava flowing on ice', 'lava glacier interaction']
+        family, event_required = 'lava_ice_contact', True
+        positive = 'Real camera footage of molten lava contacting ice or snow, with both lava and ice visible.'
+        negative = 'Lava without ice, an ordinary volcano, a mountain, ocean water or fire without ice.'
+        keywords = ('lava',)
+    requirements = []
+    if not _sentence and len(needs) > 1:
+        for need in needs:
+            row = {field: _scene_value(scene, field) for field in (
+                'object', 'action', 'visual_search_query', 'main_character', 'location', 'time')}
+            row['narration'] = need['text']
+            requirements.append(build_contract(row, topic, index, _sentence=True))
+    from blue_sky_visual import requires_blue_sky_color
+    blue_sky_expected = requires_blue_sky_color(topic, narration, subject)
     return {
+        "visible_blue_sky_expected": blue_sky_expected,
+        "required_metadata_groups": (
+            [["lava", "molten"], ["ocean", "sea", "seawater", "coast", "shore", "laze"]]
+            if family == "lava_ocean_entry" else
+            [["lava", "volcanic"], ["coast", "ocean", "sea", "bench", "delta"], ["collapse", "collapsing"]]
+            if family == "coastal_lava_collapse" else []),
+        "sentence_contracts": requirements,
+        "sentence_needs": needs,
         "version": "evidence_first_shot_director_v1",
         "index": int(index),
         "subject": subject,
@@ -221,10 +314,17 @@ def build_contract(scene, topic, index):
 
 def metadata_allows(contract, provider_text):
     """Necessary preflight, never a substitute for viewing source frames."""
+    if any(not metadata_allows(child, provider_text)
+           for child in contract.get("sentence_contracts", [])):
+        return False
     if not contract.get("event_required"):
         return True
     text = str(provider_text or "").casefold().replace("-", " ").replace("_", " ")
-    clues = tuple(str(w) for w in contract.get("metadata_keywords", ()))
+    for group in contract.get("required_metadata_groups", []):
+        if not any(re.search(r"\b" + re.escape(word) + r"\b", text) for word in group):
+            return False
+    clues = tuple(dict.fromkeys([str(w) for w in contract.get("metadata_keywords", ())] +
+                  [w for group in contract.get("required_metadata_groups", []) for w in group]))
     # A negated mention ('ocean without lava') is evidence AGAINST the event,
     # not confirmation. This caught a false hit in the first v4 regression.
     if clues:
@@ -254,13 +354,19 @@ def visual_scores(contract, scores, *, opening=False):
     # A single middle/late frame can reveal the exact physical action, while
     # an opening frame may show the buildup. Thresholds are conservative
     # editorial heuristics, not measured accuracy or viewer-retention scores.
-    passed = peak >= 0.24 and margin >= 0.02
+    composite = contract.get('family') in {'lava_ocean_entry', 'coastal_lava_collapse', 'lava_ice_contact'}
+    required_margin = .04 if composite else .02
+    matching_frames = sum(float(row[0]) >= .24 and delta >= required_margin
+                          for row, delta in zip(scores, scored))
+    passed = peak >= 0.24 and margin >= required_margin
+    if composite:
+        passed = passed and matching_frames >= 2
     # On scene 1 a late event cannot rescue a sky-only or dormant first
     # three seconds. First two timestamps are within roughly 0-2s.
     opening_action_visible = None
     if opening and contract["event_required"]:
         opening_action_visible = any(
-            float(row[0]) >= 0.24 and float(row[0]) - float(row[1]) >= 0.02
+            float(row[0]) >= 0.24 and float(row[0]) - float(row[1]) >= required_margin
             for row in scores[:2])
         passed = passed and opening_action_visible
     return {
@@ -270,6 +376,8 @@ def visual_scores(contract, scores, *, opening=False):
         "event_required": bool(contract["event_required"]),
         "max_similarity": round(peak, 4),
         "best_action_margin": round(margin, 4),
+        "required_margin": required_margin,
+        "matching_frames": matching_frames,
         "sampled_scene_frames": len(scores),
         "method": "multi_timestamp_portrait_clip_action_vs_inactive_scene",
         "limitations": "Does not prove causal process or audience retention",
@@ -337,8 +445,27 @@ def verify_visible_event_or_illustrative_subject(
     if not isinstance(matched_scene, dict) or (
             matched_scene.get("verification") != "local_clip_screening"):
         raise RuntimeError("visual_director_missing_independent_clip_match")
+    sentence_checks = [verify_visible_event_or_illustrative_subject(
+        path, duration, crop_focus, child, matched_scene, scorer=scorer,
+        opening=opening and i == 0, event_inspector=event_inspector)
+        for i, child in enumerate(contract.get("sentence_contracts", []))]
+    # V5 #103 genuinely produced a playable Short, but used gray overcast
+    # clouds for "blue wavelengths scatter more than red". CLIP approved
+    # broad sky/cloud similarity although the requested blue sky wasn't
+    # visible. Compare actual cropped source frames, never just tags.
+    blue_visual_check = None
+    if contract.get("visible_blue_sky_expected"):
+        from blue_sky_visual import check_visible_blue_sky
+        blue_visual_check = check_visible_blue_sky(
+            path, duration, crop_focus)
+        if not blue_visual_check["verified"]:
+            raise ValueError(
+                "visual_director_blue_sky_not_visible: actual 9:16 frames "
+                "are gray/overcast despite narrated blue-sky subject")
     if not contract.get("event_required"):
         return {
+            "sentence_checks": sentence_checks,
+            "blue_sky_visual_check": blue_visual_check,
             "verified": True,
             "event_required": False,
             "family": contract["family"],
@@ -355,4 +482,6 @@ def verify_visible_event_or_illustrative_subject(
         raise ValueError(
             "visual_director_action_not_visible: real 9:16 frames do not "
             "demonstrate " + str(contract["family"]))
+    result["sentence_checks"] = sentence_checks
+    result["blue_sky_visual_check"] = blue_visual_check
     return result

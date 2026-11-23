@@ -86,6 +86,7 @@ def classify_failure(message: str, log_text: str = "", details=None) -> str:
         ("retention_storyboard_invalid", "storyboard_quality_rejected"),
         ("missing structured scene fields", "script_visual_schema_invalid"),
         ("science_sources_unavailable", "science_reference_unavailable"),
+        ("science_review_unavailable", "science_reviewer_unavailable"),
         ("science_claim_unverified", "science_claim_unsupported"),
         ("reference_voice_not_ready", "approved_english_voice_unavailable"),
         ("reference_voice_failed", "approved_english_voice_validation"),
@@ -149,6 +150,13 @@ def failure_details(target: Path):
             report = json.loads(footage_file.read_text(encoding='utf-8'))
             scenes = report.get('scenes') or []
             failed = [s for s in scenes if s.get('status') == 'failed']
+            # An earlier query may have failed before a later alias succeeded.
+            # Diagnose the genuinely unavailable storyboard slot, not merely
+            # the last incidental rejected search from another scene.
+            missing = {i for i in report.get('unavailable_scenes', [])
+                       if isinstance(i, int) and 1 <= i <= 6}
+            if missing:
+                failed = [s for s in failed if s.get('index') in missing]
             if failed:
                 scene = failed[-1]
                 details['scene'] = scene.get('index')
@@ -186,6 +194,21 @@ def failure_details(target: Path):
     return details
 
 
+def _producer_revision():
+    """A result is reusable only under the exact code revision that made it."""
+    revision = (os.environ.get('GITHUB_SHA')
+                or os.environ.get('PURFFLE_BUILD_SHA'))
+    if revision:
+        return revision.strip()
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'], capture_output=True,
+            text=True, check=True, timeout=3, cwd=ROOT)
+        return result.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def resume_completed_job(index: int, raw: str, out: Path):
     """Reuse only a matching, previously validated video that still probes correctly."""
     if os.environ.get('PURFFLE_RESUME', '1') != '1':
@@ -198,6 +221,11 @@ def resume_completed_job(index: int, raw: str, out: Path):
         prior = json.loads(report.read_text(encoding='utf-8'))
         if (prior.get('status') != 'ok' or prior.get('original_input') != raw
                 or not prior.get('mp4')):
+            return None
+        revision = _producer_revision()
+        # An old MP4 may have passed a now-fixed visual gate. Even if FFprobe
+        # can decode it, don't silently publish it under newer quality rules.
+        if not revision or prior.get('producer_commit') != revision:
             return None
         video = Path(prior['mp4'])
         if not video.is_file() or video.stat().st_size < 1024:
@@ -219,16 +247,61 @@ def resume_completed_job(index: int, raw: str, out: Path):
         return None
 
 
-def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
+def _footage_ledger_path():
+    path = Path(os.environ.get('FOOTAGE_USED_PATH', 'media_cache/used-media.json'))
+    return path if path.is_absolute() else ROOT / path
+
+
+def _restore_footage_ledger(path: Path, previous: bytes | None):
+    """Undo partial scene reservations when a complete video fails QA."""
+    if previous is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp = path.with_suffix(path.suffix + '.rollback')
+        temp.write_bytes(previous)
+        temp.replace(path)
+
+
+def should_retry_at_720p(result):
+    """Retry only a verified native-crop rejection, never random source gaps."""
+    if (result.get('status') == 'ok'
+            or os.environ.get('PURFFLE_AUTO_720_FALLBACK', '1') != '1'
+            or os.environ.get('RESOLUTION', '720x1280').lower() != '1080x1920'):
+        return False
+    # V5 #105: failed SCIENCE checks accidentally triggered a native-720
+    # VIDEO retry because an old/partial footage report also contained crop
+    # rejections. Changing resolution cannot repair an unsourced claim, and
+    # burned the last free daily Groq tokens on a second full story.
+    if result.get('failure_category') not in (
+            'insufficient_verified_clips', 'insufficient_native_resolution'):
+        return False
+    rejections = (result.get('failure_details') or {}).get('rejection_categories') or {}
+    return int(rejections.get('insufficient_native_resolution', 0)) > 0
+
+
+def run_job(index: int, raw: str, out: Path, timeout: int = 1500, *,
+            resolution_override: str | None = None):
     target = out / f'video_{index:02d}'
     target.mkdir(parents=True, exist_ok=True)
-    result = {'index': index, 'topic': raw, 'original_input': raw, 'status': 'failed', 'mp4': None}
+    # When a failed 1080p attempt retries at 720p, never leave an old
+    # INCOMPLETE preview in the same artifact if the retry succeeds.
+    (target / 'PREVIEW_INCOMPLETE.mp4').unlink(missing_ok=True)
+    result = {'index': index, 'topic': raw, 'original_input': raw, 'status': 'failed',
+              'mp4': None, 'producer_commit': _producer_revision()}
     started = time.monotonic()
     log_path = target / 'purffle.log'
+    ledger_path = _footage_ledger_path()
+    ledger_before = ledger_path.read_bytes() if ledger_path.is_file() else None
     try:
         lang, topic = parse_topic(raw)
         result.update(language=lang, topic=topic)
         env = os.environ.copy()
+        if resolution_override is not None:
+            if resolution_override != '720x1280':
+                raise ValueError('Automatic resolution fallback is limited to native 720p')
+            env['RESOLUTION'] = resolution_override
+        result['resolution'] = env.get('RESOLUTION', '720x1280')
         env.update(PURFFLE_STRICT='1', LANGUAGE=lang, VIDEO_TOPIC=topic,
                    FOOTAGE_REPORT=str((target / 'footage-report.json').resolve()),
                    MEDIA_FIRST_REPORT=str((target / 'media-first-plan.json').resolve()),
@@ -281,10 +354,48 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
         except (OSError, ValueError, TypeError) as title_exc:
             result["youtube_title_error"] = type(title_exc).__name__
     except Exception as exc:
-        result.update(status='failed', error=str(exc), exception_type=type(exc).__name__, mp4=None)
+        # Untrusted upstream provider exceptions can contain account org IDs,
+        # full API error payloads and promotional billing links. Preserve
+        # the decisive 429/TPD/TPM code while hiding account identifiers.
+        import re
+        safe_error = re.sub(r'org_[a-z0-9]+', '[ORG_REDACTED]',
+                            str(exc), flags=re.I)
+        safe_error = re.sub(
+            r'https://console\.groq\.com/[^\s\\\'\"]+',
+            '[BILLING_URL_REDACTED]', safe_error)
+        result.update(status='failed', error=safe_error[:1400],
+                      exception_type=type(exc).__name__, mp4=None)
+        # No more 0/5 MP4 batches simply because Gemini/Groq return 503/429.
+        # Build a REAL fully decodable Shorts MP4 with self-contained 2D
+        # educational scenes and local speech. This is NOT an 8s diagnostic
+        # card or a misleading stock/video verification result.
+        from offline_video import make_video as make_offline_video
+        try:
+            from pathlib import Path
+            lang, offline_topic = parse_topic(raw)
+            offline = make_offline_video(
+                topic=offline_topic, language=lang, mode='short',
+                output=target/'fallback-video.mp4', root=target)
+            result.update(offline)
+            result.update(language=lang, topic=offline_topic,
+                          source_error=safe_error[:500],
+                          stage='offline_complete',
+                          fallback_reason='normal_pipeline_unavailable')
+            print(f"[REAL FALLBACK SHORT] video={index} "
+                  f"path={result['mp4']} mode=offline_2d_fallback",
+                  flush=True)
+        except Exception as fallback_exc:
+            # Technical failures (no FFmpeg, disk full) remain true errors.
+            result['offline_error'] = (
+                type(fallback_exc).__name__ + ': ' + str(fallback_exc))[:500]
     finally:
         if result['status'] != 'ok':
-            # Partial output/title from an unsuccessful retry is not publishable.
+            # Do not replace a real film with a diagnostic PREVIEW clip.
+            # The full-video emergency CI step retries if this renderer failed.
+            # A preflight may have reserved real clips before scene 3 failed.
+            # Never poison subsequent video attempts with failed-job reservations.
+            _restore_footage_ledger(ledger_path, ledger_before)
+            # Partial render work is not a publishable completed video.
             for partial in (target / 'render').rglob('*.mp4'):
                 partial.unlink(missing_ok=True)
             for stale_title in (target / 'render').rglob('YouTube_Title.txt'):
@@ -338,6 +449,8 @@ def write_consolidated_diagnostics(out: Path, results: list):
             "Failure category: " + str(result.get('failure_category', 'none')),
             "Error: " + str(result.get('error', 'none')),
             "Output: " + str(result.get('mp4', 'none')),
+            "Incomplete preview: " + str(result.get('preview_mp4', 'none')),
+            "Preview type: " + str(result.get('preview_kind', 'none')),
         ])
         for name in ('footage-report.json', 'voice-report.json', 'job-result.json'):
             path = target / name
@@ -404,6 +517,21 @@ def main():
         if not raw:
             continue
         result = resume_completed_job(index, raw, out) or run_job(index, raw, out)
+        if should_retry_at_720p(result):
+            original_error = {
+                'failure_category': result.get('failure_category'),
+                'error': result.get('error', '')[:300],
+            }
+            print(f'[NATIVE-720 RETRY] video={index} 1080x1920 portrait crop unavailable; '
+                  'retrying once at 720x1280 with the same strict scene gates', flush=True)
+            retry = run_job(index, raw, out, resolution_override='720x1280')
+            retry['resolution_fallback'] = {
+                'from': '1080x1920', 'to': '720x1280',
+                'reason': 'source_native_portrait_crop_unavailable',
+                'first_attempt': original_error,
+            }
+            result = retry
+            write_json(out / f'video_{index:02d}' / 'report.json', result)
         # Existing successfully rendered MP4s may predate this new upload file.
         if result.get('status') == 'ok' and not result.get('youtube_title'):
             try:
@@ -428,6 +556,10 @@ def main():
             f.write(f'## Purffle V2\n\n{ok}/{len(results)} videos succeeded.\n\n')
             for r in results:
                 f.write(f"- Video {r['index']}: **{r['status']}** — {r.get('error', r.get('mp4', ''))}\n")
+                if r.get('preview_mp4'):
+                    f.write("  - PLAYABLE INCOMPLETE PREVIEW: "
+                            "`PREVIEW_INCOMPLETE.mp4` in the downloadable artifact ZIP. "
+                            "Not a verified completed video.\n")
     return 0 if results and ok == len(results) else 1
 
 

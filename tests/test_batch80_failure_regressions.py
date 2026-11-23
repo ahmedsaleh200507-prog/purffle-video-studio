@@ -87,7 +87,7 @@ def test_reviewer_malformed_all_attempts_still_fails_closed(tmp_path, monkeypatc
     monkeypatch.setattr("science_sources.time.sleep", lambda seconds: None)
     model = SimpleNamespace(complete_json=lambda *args: {"checks": []})
     path = tmp_path / "science-report.json"
-    with pytest.raises(RuntimeError, match="science_claim_unverified"):
+    with pytest.raises(RuntimeError, match="science_review_unavailable"):
         screen_narration(_scene(), _bundle(), model, path=path)
     assert json.loads(path.read_text())["state"] == "failed"
 
@@ -97,3 +97,11 @@ def test_unverified_measurement_still_cannot_get_to_tts():
         "The volcanic plume rises 20,000 feet into the sky.")])
     with pytest.raises(RuntimeError, match="unverified_quantitative_claim"):
         validate_unsourced_quantities(script, "What Makes a Volcano Suddenly Erupt?")
+
+
+def test_malformed_science_reviewer_is_not_misreported_as_bad_science():
+    from batch import classify_failure
+    assert classify_failure("science_review_unavailable: invalid_model_json") == (
+        "science_reviewer_unavailable")
+    assert classify_failure("science_claim_unverified: unsupported narration scene") == (
+        "science_claim_unsupported")

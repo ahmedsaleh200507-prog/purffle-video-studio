@@ -21,6 +21,7 @@ from urllib.parse import quote
 from topic_footage import words
 
 _CURRENT = ContextVar("purffle_science_evidence", default=None)
+_REVIEW_FEEDBACK = ContextVar("purffle_science_review_feedback", default="")
 _STOP = set("what why where when how which who does do is are can a an the to of in for on "
             "with from and or this that some have has do you your what happens makes "
             "warum wie was wann wo wer wieso weshalb ist sind die der das den dem "
@@ -31,6 +32,10 @@ _WEAK_TITLE_TERMS = {"wild", "people", "night", "list", "show", "series",
                      "movie", "film", "strom", "nacht", "winter", "auto"}
 
 _OFFICIAL = {
+    "octopus_three_hearts": (
+        "https://ocean.si.edu/ocean-life/invertebrates/octopuses-squids-and-relatives",
+        "https://www.horniman.ac.uk/story/fact-file-octopus/",
+    ),
     "volcano_eruption": (
         "https://www.usgs.gov/faqs/how-do-volcanoes-erupt",
         "https://www.usgs.gov/programs/VHP/about-volcanoes",
@@ -124,10 +129,133 @@ def use_evidence(bundle):
         _CURRENT.reset(token)
 
 
+def _blue_sky_question(topic: str) -> bool:
+    """Identify questions about the sky's colour, not companies or songs.
+
+    Used only for evidence retrieval. It does not assert a scientific fact.
+    """
+    value = str(topic).casefold()
+    return bool(
+        re.search(r"\bsky\b.{0,40}\bblue\b|\bblue\b.{0,40}\bsky\b", value)
+        or re.search(r"\bhimmel\b.{0,40}\bblau\w*\b|\bblau\w*\b.{0,40}\bhimmel\b", value)
+    )
+
+
+def _blue_sky_scientific_article(title: str, extract: str) -> bool:
+    """Don't mistake 'Blue Sky Studios' or a song for optics references."""
+    label = str(title).casefold().strip()
+    # The scientist's biography and nonlinear laboratory optics are not
+    # sources explaining the scattering that colours the daytime sky.
+    if re.search(r"hyper[\s\-–—]*rayleigh|john william strutt|baron rayleigh", label):
+        return False
+    if re.search(r"rayleigh|scattering|streuung|atmospher|atmosphär|optics|optik|himmelsblau|diffuse sky radiation", label):
+        return True
+    # The bare Sky/Himmel encyclopaedia entries may contain the physical
+    # explanation, whereas 'Blue Sky Studios' is not a sky article.
+    return label in {"sky", "himmel"} and bool(
+        re.search(r"rayleigh|scatter|streuung", str(extract).casefold()))
+
+
+@contextmanager
+def use_review_feedback(feedback):
+    """One redraft receives only bounded, independently rejected claim text."""
+    token = _REVIEW_FEEDBACK.set(str(feedback or "")[:1250])
+    try:
+        yield
+    finally:
+        _REVIEW_FEEDBACK.reset(token)
+
+
+def review_feedback():
+    return _REVIEW_FEEDBACK.get()
+
+
+def rejected_claim_feedback(report_path, script):
+    """Source-checked facts to keep; unsupported facts to replace.
+
+    A factuality reviewer can approve only two of four generated sentences.
+    Earlier V5 tests showed three full rewrites invented *new* claims and
+    exhausted the free Groq quota. Prefer preserving explicitly approved
+    statements while shortening the story to evidence depth.
+
+    Read only the actual validated booleans and the script's own narration:
+    never feed model-authored reviewer reasons or provider error text back as
+    instructions. All guidance remains non-authoritative; independent review
+    still validates the next script.
+    """
+    try:
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return ""
+    if report.get("state") != "failed":
+        return ""
+    scenes = list(getattr(script, "scenes", []) or [])
+    if not scenes:
+        return ""
+    approved = []
+    rejected = []
+    seen = set()
+    for row in report.get("scene_checks", []):
+        if not isinstance(row, dict) or type(row.get("supported")) is not bool:
+            continue
+        index = row.get("scene")
+        if type(index) is not int or index < 1 or index > len(scenes) or index in seen:
+            continue
+        seen.add(index)
+        narration = re.sub(
+            r"[^\w äöüÄÖÜß,.!?;:'-]", " ",
+            str(scenes[index - 1].narration))[:165]
+        narration = re.sub(r"\s+", " ", narration).strip()
+        if row["supported"]:
+            approved.append(f"VERIFIED AGAINST EXCERPT, keep its meaning: '{narration}'.")
+        else:
+            rejected.append(
+                f"Scene {index} UNSUPPORTED: '{narration}'. "
+                "Do not repeat or lightly paraphrase it; omit it unless "
+                "you can state a different fact directly in the sources.")
+    if not rejected:
+        return ""
+    return ("PREVIOUS SOURCE SCREEN: " + " ".join(approved[:3])
+            + " " + " ".join(rejected[:5]))[:1250]
+
+
+def source_revision_scene_count(report_path, script):
+    """A scientific Short should not force four facts from two grounded facts.
+
+    Reduce one slot at a time after an actual source-backed rejection.
+    Never shrink below two scenes, and never infer success from the count.
+    The new script must still pass all science, completeness and visual QA.
+    """
+    try:
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    scenes = list(getattr(script, "scenes", []) or [])
+    if report.get("state") != "failed" or len(scenes) <= 2:
+        return None
+    checks = report.get("scene_checks")
+    if not isinstance(checks, list):
+        return None
+    valid = {
+        row["scene"]: row["supported"]
+        for row in checks if isinstance(row, dict)
+        and type(row.get("scene")) is int
+        and 1 <= row["scene"] <= len(scenes)
+        and type(row.get("supported")) is bool
+    }
+    if len(valid) != len(scenes) or all(valid.values()):
+        return None
+    return max(2, len(scenes) - 1)
+
+
 def _search_text(topic: str) -> str:
     # Use the relevant mechanism as a retrieval term for recurring questions.
     # These words are search queries only, not facts asserted in narration.
     subject = words(topic)
+    if _blue_sky_question(topic):
+        return ("Rayleigh-Streuung" if re.search(
+            r"\bhimmel\b", str(topic).casefold()) else
+            "Rayleigh scattering")
     if {"steel", "ship"} <= subject and "float" in subject:
         return "ship buoyancy displacement"
     if "shark" in subject and ("swim" in subject or "swimming" in subject):
@@ -150,6 +278,10 @@ def _fallback_search_queries(topic: str, language: str) -> tuple[str, ...]:
     """
     text = str(topic).casefold()
     queries = []
+    if _blue_sky_question(topic):
+        queries += (["Rayleigh scattering", "Diffuse sky radiation", "Atmospheric optics"]
+                    if language == "en" else
+                    ["Rayleigh-Streuung", "Himmelsblau", "Atmosphärische Optik"])
     if language == "en":
         if "octopus" in text or "octopuses" in text:
             queries += ["octopus", "octopus anatomy"]
@@ -274,6 +406,12 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
             # about surviving a freezing night.
             if not overlap or overlap <= _WEAK_TITLE_TERMS:
                 continue
+            # For a blue-sky physics question, title-token overlap alone
+            # wrongly accepted the song 'Mr. Blue Sky' and animation company
+            # 'Blue Sky Studios'. Only optics/atmospheric science entries
+            # may underpin a factual narration about scattering.
+            if _blue_sky_question(topic) and not _blue_sky_scientific_article(title, extract):
+                continue
             collected.append((len(overlap), title, extract[:3100]))
         # One directly relevant source is enough to get a screenable draft.
         # No broad search fan-out once a real independent reference is present.
@@ -301,6 +439,47 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
     return Evidence(str(topic), sources, "model_screened_reference")
 
 
+def source_fact_cards(bundle: Evidence, limit=6):
+    """Highlight *actual* relevant source sentences; invent no extra facts.
+
+    Ranking only locates source text for the author. It is NOT a scientific
+    reliability score or a replacement for independent claim screening.
+    """
+    topic_terms = {token for token in words(bundle.topic)
+                   if len(token) > 3 and token not in _STOP}
+    candidates = []
+    for source_rank, source in enumerate(bundle.sources[:2]):
+        title_terms = {token for token in words(source.get("title", ""))
+                       if len(token) > 3 and token not in _STOP}
+        excerpt = str(source.get("excerpt", ""))[:4000]
+        for order, raw in enumerate(re.split(r"(?<=[.!?])\s+", excerpt)):
+            line = re.sub(r"\s+", " ", raw).strip()
+            if not 40 <= len(line) <= 300:
+                continue
+            if re.search(r"citation needed|^https?://|\[edit\]", line, re.I):
+                continue
+            terms = set(words(line))
+            topic_overlap = len(terms & topic_terms)
+            title_overlap = len(terms & title_terms)
+            if not topic_overlap and not title_overlap:
+                continue
+            # The first ranked retrieved article is typically more relevant,
+            # but only literal excerpt content, not our ranking, is usable.
+            rank = 4 * topic_overlap + title_overlap + (2 if source_rank == 0 else 0)
+            candidates.append((rank, source_rank, order, str(source["id"]), line))
+    candidates.sort(key=lambda row: (-row[0], row[1], row[2]))
+    result, seen = [], set()
+    for _score, _source_rank, _order, identifier, line in candidates:
+        key = re.sub(r"\W+", " ", line).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(f"[{identifier}] {line}")
+        if len(result) >= limit:
+            break
+    return result
+
+
 def evidence_prompt(bundle: Evidence) -> str:
     if bundle.method == "curated_editor_reviewed":
         return ("Use the editor-reviewed factual narration for this recognized "
@@ -318,6 +497,19 @@ def evidence_prompt(bundle: Evidence) -> str:
         "Every factual assertion must be supported by the provided excerpts.",
         "If uncertain, give a simpler statement directly supported by the excerpts.",
     ]
+    cards = source_fact_cards(bundle)
+    if cards:
+        lines.extend([
+            "SOURCE-OWNED FACT CARDS (literal sentences from the retrieved "
+            "reference excerpts, NOT externally verified truth):",
+            "Write each narration sentence from only ONE explicitly supported "
+            "fact card. Do not manufacture intermediate causal steps, visual "
+            "metaphors treated as physics, reflected-light claims, timings, "
+            "sunsets, measurements or named discoveries unless the card states "
+            "them explicitly. A shorter correct explanation is better than "
+            "four imaginative unsupported sentences.",
+        ])
+        lines.extend(cards)
     for source in bundle.sources:
         lines.extend([f"[{source['id']}] {source['title']} — {source['url']}",
                       source["excerpt"]])
@@ -352,6 +544,178 @@ def write_source_failure(reason: str, path=None):
             None, "failed", error=reason)
 
 
+def _validate_model_scene_checks(checks, scenes, bundle):
+    """Validate every model assertion against literal, source-owned excerpts.
+
+    A JSON schema match is not sufficient: quotes must be exact excerpts of
+    a real retrieved source. Unsupported/partially supported scenes stay false.
+    """
+    if not isinstance(checks, list) or len(checks) != len(scenes):
+        raise ValueError("review returned incomplete scene checks")
+    source_by_id = {source["id"]: source for source in bundle.sources}
+    accepted = []
+    for i, item in enumerate(checks, 1):
+        if (not isinstance(item, dict) or type(item.get("scene")) is not int
+                or item["scene"] != i):
+            raise ValueError("review returned invalid scene index")
+        source = source_by_id.get(item.get("source_id"))
+        quote = str(item.get("quote") or "").strip()
+        supported = item.get("supported") is True
+        anchored = (
+            source is not None and 20 <= len(quote) <= 300
+            and _normalize_quote(quote) in _normalize_quote(source.get("excerpt", "")))
+        narration = str(scenes[i - 1].narration).casefold()
+        absolutes = re.findall(r"\b(always|never|only|immer|niemals|nur)\b", narration)
+        if absolutes and not all(word in quote.casefold() for word in absolutes):
+            anchored = False
+        accepted.append({
+            "scene": i, "source_id": str(item.get("source_id") or "")[:40],
+            "supported": supported and anchored,
+            "quote": quote[:180] if anchored else "",
+            "reason": str(item.get("reason") or "")[:180],
+        })
+    return accepted
+
+
+def _strict_science_review_json(llm, system, prompt, schema):
+    """Evidence-review-only strict Groq JSON Schema, never silent JSON downgrade.
+
+    Pinned upstream's OpenAICompatible.complete() silently switches from
+    json_schema to json_object on HTTP 400/422, so required `supported`
+    can disappear without the caller noticing. Send a dedicated strict
+    request to the documented Groq endpoint for this one safety-critical
+    reviewer. Fail closed on non-200, invalid JSON, or incomplete results;
+    no source citation checks or narration validation are bypassed.
+    """
+    selected = next((p for p in getattr(llm, "providers", ())
+                     if getattr(p, "name", "") == "groq"
+                     and getattr(p, "model", "") in (
+                         "openai/gpt-oss-20b", "openai/gpt-oss-120b")), None)
+    # Mock clients and non-Groq providers retain their preexisting behavior.
+    # The live Groq science-review path must never silently downgrade.
+    if selected is not None and os.getenv("GROQ_API_KEY"):
+        import requests
+        payload = {
+            "model": selected.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "purffle_science_review",
+                    "strict": True,
+                    "schema": schema,
+                },
+            },
+            "max_completion_tokens": 4096,
+            "temperature": 0.0,
+        }
+        # A transient free-tier TPM 429 is not a science failure. Keep the
+        # *same* review request and wait for its real token-window reset rather
+        # than redrafting the entire story or buying another API. At most two
+        # bounded waits; never spin or retry a different HTTP error.
+        response = None
+        for rate_attempt in range(3):
+            try:
+                response = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    json=payload,
+                    headers={"Authorization": "Bearer " + os.environ["GROQ_API_KEY"],
+                             "Content-Type": "application/json"},
+                    timeout=(10, 90))
+            except requests.RequestException:
+                raise RuntimeError("science_review_unavailable: strict_groq_network") from None
+            if response.status_code != 429 or rate_attempt == 2:
+                break
+            # Read only a bounded numerical delay from the server; never copy
+            # API response bodies (which can reveal account identifiers) to
+            # application logs or artifacts. Cap each pause at 65 seconds.
+            retry_after = getattr(response, "headers", {}).get("Retry-After", "")
+            try:
+                seconds = float(retry_after)
+            except (TypeError, ValueError):
+                seconds = 0
+            if not (0 < seconds <= 65):
+                seconds = 0
+                try:
+                    message = str(response.json().get("error", {}).get("message", ""))
+                    found = re.search(
+                        r"try again in\s+([0-9]+(?:\.[0-9]+)?)s", message, re.I)
+                    if found:
+                        seconds = float(found.group(1))
+                except (ValueError, TypeError, AttributeError, KeyError):
+                    pass
+            wait = min(65, max(1, seconds + 1)) if seconds > 0 else 20
+            print(f"[SCIENCE REVIEW] Free Groq token limit; waiting {wait:.1f}s "
+                  f"before retry {rate_attempt + 1}/2", flush=True)
+            time.sleep(wait)
+        # Do not echo arbitrary provider error bodies (which may contain
+        # prompts or account identifiers), HTTP headers or auth details.
+        if response.status_code != 200:
+            raise RuntimeError(
+                "science_review_unavailable: strict_groq_http_"
+                + str(int(response.status_code))) from None
+        try:
+            reply = response.json()["choices"][0]["message"]["content"]
+            result = json.loads(reply)
+        except (ValueError, KeyError, IndexError, TypeError):
+            raise RuntimeError("science_review_unavailable: strict_groq_invalid_json") from None
+        if not isinstance(result, dict):
+            raise RuntimeError("science_review_unavailable: strict_groq_invalid_object")
+        return result
+    return llm.complete_json(system, prompt, schema)
+
+
+def _review_scenes_individually(llm, system, source_text, scenes):
+    """Last-resort smaller JSON review if a large array is repeatedly malformed.
+
+    This NEVER bypasses the independent source-quote verifier. It only changes
+    the JSON output shape to reduce model formatting failures.
+    """
+    properties = {
+        "supported": {"type": "boolean"}, "source_id": {"type": "string"},
+        "quote": {"type": "string"}, "reason": {"type": "string"}}
+    schema = {
+        "type": "object", "properties": properties,
+        "required": list(properties), "additionalProperties": False}
+    output = []
+    for i, scene in enumerate(scenes, 1):
+        answer = _strict_science_review_json(
+            llm,
+            system + " Review exactly ONE scene. Return ONE JSON object, not an array.",
+            source_text + f"\n\nNARRATION TO CHECK:\nSCENE {i}: {scene.narration}",
+            schema)
+        # Groq's JSON-object mode is not strict JSON-schema mode. Even for
+        # a one-scene schema it may wrap the answer in {"checks": [{...}]}.
+        # Unwrap ONLY when it contains exactly one scene, with the expected
+        # index. Never borrow a quoted source from a different scene.
+        if isinstance(answer, dict) and isinstance(answer.get("checks"), list):
+            rows = answer["checks"]
+            if len(rows) != 1 or not isinstance(rows[0], dict):
+                raise ValueError("single-scene review returned wrong number of checks")
+            answer = rows[0]
+        if not isinstance(answer, dict):
+            raise ValueError("single-scene review did not return a JSON object")
+        index = answer.get("scene", i)
+        if str(index) != str(i):
+            raise ValueError("single-scene review returned wrong scene index")
+        if type(answer.get("supported")) is not bool:
+            raise ValueError("single-scene review did not supply a verdict")
+        # Never interpret an omitted quote or verdict as evidence in favour:
+        # missing data become an explicit unsupported claim, not success.
+        normalized = {
+            "scene": i,
+            "supported": answer.get("supported") is True,
+            "source_id": str(answer.get("source_id") or ""),
+            "quote": str(answer.get("quote") or ""),
+            "reason": str(answer.get("reason") or "review did not supply evidence"),
+        }
+        output.append(normalized)
+    return output
+
+
 def screen_narration(script, bundle: Evidence, llm, *, path=None):
     """Check a cited passage per scene; a missing/mismatched quote blocks TTS.
 
@@ -370,7 +734,7 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         if kind in (
                 "ocean_waves", "ocean_glow_bioluminescence", "lava_ocean_entry",
                 "northern_lights_dance", "steel_ship_buoyancy",
-                "lightning_thunder_delay",
+                "octopus_three_hearts", "lightning_thunder_delay",
                 "volcano_eruption", "iceberg_breakup", "whale_breaching",
                 "shark_ventilation", "sea_turtle_rest", "waterfall_freezing",
                 "northern_lights_glow", "mirror_condensation",
@@ -400,7 +764,7 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         _report(report, bundle, "failed", error="no independent model review")
         raise RuntimeError("science_claim_unverified: model reviewer missing")
     schema = {"type": "object", "properties": {
-        "checks": {"type": "array", "minItems": len(scenes), "maxItems": len(scenes),
+        "checks": {"type": "array",
             "items": {"type": "object", "properties": {
                 "scene": {"type": "integer"}, "supported": {"type": "boolean"},
                 "source_id": {"type": "string"}, "quote": {"type": "string"},
@@ -423,51 +787,54 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
     script_text = "\n".join(f"SCENE {i}: {x.narration}"
                             for i, x in enumerate(scenes, 1))
     try:
-        # A valid HTTP response can still contain malformed model JSON.
-        # Retry the SAME independent review without redrafting or bypassing
-        # any evidence/quote checks. Unsupported claims remain rejected.
+        # The primary bulk review uses a bounded JSON array. If repeated
+        # valid-HTTP replies have malformed shape, retry once with small,
+        # single-scene objects. No unverified citation can pass either path.
+        accepted = None
         for review_attempt in range(3):
             try:
-                result = llm.complete_json(
-                    system, source_text + "\n\nNARRATION TO CHECK:\n" + script_text, schema)
+                result = _strict_science_review_json(
+                    llm, system, source_text + "\n\nNARRATION TO CHECK:\n" + script_text, schema)
                 checks = result.get("checks") if isinstance(result, dict) else None
-                if not isinstance(checks, list) or len(checks) != len(scenes):
-                    raise ValueError("review returned incomplete scene checks")
-                sources_by_id = {s["id"]: s for s in bundle.sources}
-                accepted = []
-                for i, item in enumerate(checks, 1):
-                    if not isinstance(item, dict) or type(item.get("scene")) is not int or item["scene"] != i:
-                        raise ValueError("review returned invalid scene index")
-                    source = sources_by_id.get(item.get("source_id"))
-                    quote = str(item.get("quote") or "").strip()
-                    supported = item.get("supported") is True
-                    anchored = (source is not None and 20 <= len(quote) <= 300
-                                and _normalize_quote(quote) in _normalize_quote(source["excerpt"]))
-                    # Simple literal checks supplement, but never replace, the semantic
-                    # review: 'always' and 'never' cannot be inferred from hedged text.
-                    narration = str(scenes[i-1].narration).casefold()
-                    absolutes = re.findall(r"\b(always|never|only|immer|niemals|nur)\b", narration)
-                    if absolutes and not all(word in quote.casefold() for word in absolutes):
-                        anchored = False
-                    accepted.append({
-                        "scene": i, "source_id": str(item.get("source_id") or "")[:40],
-                        "supported": supported and anchored,
-                        "quote": quote[:180] if anchored else "",
-                        "reason": str(item.get("reason") or "")[:180],
-                    })
+                accepted = _validate_model_scene_checks(checks, scenes, bundle)
                 break
             except (ValueError, TypeError, KeyError):
                 if review_attempt == 2:
-                    raise
+                    checks = _review_scenes_individually(
+                        llm, system, source_text, scenes)
+                    accepted = _validate_model_scene_checks(checks, scenes, bundle)
+                    break
                 time.sleep(2 * (review_attempt + 1))
         if not all(row["supported"] for row in accepted):
             _report(report, bundle, "failed", checks=accepted,
                     error="source passage cannot substantiate all scene claims")
             raise RuntimeError("science_claim_unverified: unsupported narration scene")
         _report(report, bundle, "model_screened_reference", checks=accepted)
-    except RuntimeError:
+    except RuntimeError as exc:
+        if str(exc).startswith("science_review_unavailable:"):
+            _report(report, bundle, "failed",
+                    error=str(exc)[:150])
         raise
+    except (ValueError, TypeError, KeyError) as exc:
+        # A reviewer unable to return a valid structure is NOT evidence that
+        # the script's science is wrong. Distinguish this infrastructure error
+        # from actual unsupported claims; do not burn quota redrafting.
+        # Only report our own fixed structural labels. Never expose an LLM
+        # response body, API key, provider URL, or arbitrary model text.
+        known_structure_errors = {
+            "review returned incomplete scene checks",
+            "review returned invalid scene index",
+            "single-scene review returned wrong number of checks",
+            "single-scene review did not return a JSON object",
+            "single-scene review returned wrong scene index",
+            "single-scene review did not supply a verdict",
+        }
+        safe_detail = (str(exc) if str(exc) in known_structure_errors
+                       else type(exc).__name__)
+        _report(report, bundle, "failed",
+                error=f"reviewer JSON unavailable: {safe_detail}")
+        raise RuntimeError("science_review_unavailable: invalid_model_json") from None
     except Exception as exc:
         _report(report, bundle, "failed",
                 error=f"source-grounded review unavailable: {type(exc).__name__}")
-        raise RuntimeError(f"science_claim_unverified: {type(exc).__name__}") from None
+        raise RuntimeError("science_review_unavailable: model_error") from None

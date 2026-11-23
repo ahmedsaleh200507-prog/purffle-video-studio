@@ -298,6 +298,12 @@ def opening_subject_prompts(topic: str):
             "negatives": (
                 "A wide empty seascape with blue waves, a horizon and cloudy sky.",
                 "An empty port waterfront showing the ocean without a vessel.",
+                # V5 #106 picked container stacks/gantry cranes instead of
+                # an actually visible floating ship in the portrait crop.
+                "An aerial view of stacked shipping containers at a large "
+                "container terminal, many cranes and warehouses, no ship.",
+                "Dockyard cranes, container yard and busy industrial harbor "
+                "seen from above, with no boat or vessel in the foreground.",
             ),
         }
     categories = [
