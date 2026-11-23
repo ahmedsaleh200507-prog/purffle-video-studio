@@ -1,8 +1,8 @@
-"""Last-resort ACTUAL MP4 creator for CI setup, LLM or source failures.
+"""Recover failed CI jobs honestly.
 
-Called from an always-on CI step BEFORE artifacts are uploaded.
-Independent of torch, CLIP, PEXELS, Gemini, Groq and Piper.
-Creates a FULL 32-second Short or 602-second long film, NOT a preview.
+Shorts: generate full offline 2D video when the normal pipeline fails.
+Long films: preserve independently screened, completed chapters if possible,
+but do not counterfeit 10 minutes with repeated slides and silent padding.
 """
 from __future__ import annotations
 
@@ -48,33 +48,53 @@ def shorts(index, raw):
     return result
 
 
-def long(raw,language):
+def long(raw, language):
+    """Recover real recorded chapters, never invent a 10-minute documentary.
+
+    On source/LLM failure we can deliver genuinely finished chapters as a
+    separately marked partial MP4. It is not a completed 10-minute movie.
+    The old 602-second offline slideshow repeated seven facts and padded
+    forty-second silence; it must never be reported as success.
+    """
     from batch import write_json
-    out=Path("long_video_output/result")
-    out.mkdir(parents=True,exist_ok=True)
-    report_path=out/"report.json"
-    old=_read(report_path)
-    if old.get("status")=="ok" and (out/"long-video.mp4").is_file():
-        print("[EMERGENCY] Existing complete long MP4 preserved")
-        return old
-    result=make_video(topic=raw,language=language,mode="long",
-                      output=out/"long-video.mp4",root=out)
-    (out/"PREVIEW_INCOMPLETE.mp4").unlink(missing_ok=True)
-    result.update({
-        "mp4":"long-video.mp4","mode":"long_video","topic":raw,
-        "language":language,"stage":"complete_offline_fallback",
-        "earlier_pipeline_error":str(old.get("error",""))[:350],
-        "burnt_in_subtitles":False,
-        "subtitle_track":"separate_srt_sidecar_only",
-        "render_origin":"standalone_offline_ci_emergency",
-    })
-    write_json(report_path,result)
-    write_json(out/"output-qa.json",{
-        "mode":"offline_2d_fallback","mp4_verified":"ffprobe",
-        "duration":result["duration"],
-    })
-    print(f"[FULL LONG MP4 AVAILABLE] {out/'long-video.mp4'}",flush=True)
-    return result
+    import subprocess
+    out = Path("long_video_output/result")
+    work = Path("long_video_output/work")
+    out.mkdir(parents=True, exist_ok=True)
+    report_path = out / "report.json"
+    report = _read(report_path)
+    qa = _read(out / "documentary-quality.json")
+    finished = out / "long-video.mp4"
+    if (report.get("status") == "ok"
+            and qa.get("publication_quality") == "narrated_real_footage_validated"
+            and finished.is_file()):
+        print("[LONG VERIFIED] genuine 10-minute documentary preserved")
+        return report
+    chapters = sorted(work.glob("chapter-*.mp4"))
+    partial = out / "PARTIAL_REAL_CHAPTERS.mp4"
+    if chapters:
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="long-recovery-") as directory:
+            playlist = Path(directory) / "chapters.txt"
+            playlist.write_text("".join(
+                "file '" + str(x.resolve()).replace("'", "'\\''") + "'\n"
+                for x in chapters), encoding="utf8")
+            subprocess.run([
+                "ffmpeg", "-hide_banner", "-nostdin", "-y",
+                "-loglevel", "error", "-f", "concat", "-safe", "0",
+                "-i", str(playlist), "-c", "copy",
+                "-movflags", "+faststart", str(partial)
+            ], check=True, timeout=180)
+        report["partial_real_mp4"] = str(partial)
+        report["completed_real_chapters"] = len(chapters)
+        print(f"[LONG PARTIAL REAL FOOTAGE] completed_chapters={len(chapters)} "
+              "not a completed documentary")
+    report.update(status="failed", mp4=None,
+                  quality_reason="Full real-footage 10-minute documentary could "
+                                 "not be verified; padded/repeated 2D was rejected",
+                  original_error=report.get("error", ""))
+    write_json(report_path, report)
+    return report
 
 
 def main():
