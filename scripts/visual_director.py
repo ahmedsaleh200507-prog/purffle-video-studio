@@ -132,6 +132,43 @@ def _first_statement(narration):
     return re.split(r"[.!?]", str(narration).strip(), maxsplit=1)[0]
 
 
+def anchor_observational_science_scene(scene, topic):
+    """Avoid a human reaction shot when the factual subject is the scenery.
+
+    In an explanation of the *blue sky*, 'we see' and 'look upward' are
+    observational language, not a request for a person's face. Keep the
+    narration untouched: only its filmable visual plan is repaired.
+    """
+    if not isinstance(scene, dict):
+        return scene
+    subject = str(topic or "").casefold()
+    about_blue_sky = bool(
+        re.search(r"\bsky\b.{0,40}\bblue\b|\bblue\b.{0,40}\bsky\b", subject)
+        or re.search(r"\bhimmel\b.{0,40}\bblau\w*|\bblau\w*.{0,40}\bhimmel\b", subject))
+    if not about_blue_sky:
+        return scene
+    narration = str(scene.get("narration") or "").casefold()
+    character = str(scene.get("main_character") or "").casefold()
+    obj = str(scene.get("object") or "").casefold()
+    query = str(scene.get("visual_search_query") or "").casefold()
+    # This is NOT a generic ban on humans or footage of experiments.
+    # Only rewrite the observational *gaze*, not a claim about a human actor.
+    observational = bool(re.search(
+        r"\b(we see|we look|look upward|look up|looking up|"
+        r"when we look|observe the sky|wir sehen|wir schauen|"
+        r"nach oben sehen|hinaufsehen|himmel betrachten)\b", narration))
+    gaze_shot = bool(
+        re.search(r"\b(eyes?|face|portrait|person|people|human)\b", obj + " " + character)
+        and re.search(r"\b(look|watch|gaze|stare|observ)\w*\b", query + " " + str(scene.get("action", "")).casefold()))
+    if not (observational and gaze_shot):
+        return scene
+    return {
+        **scene, "main_character": "", "object": "sky",
+        "action": "ambient", "location": "outdoors", "time": "day",
+        "visual_search_query": "clear blue daytime sky",
+    }
+
+
 def build_contract(scene, topic, index, *, _sentence=False):
     """Prepare a bounded ordered search plan tied to THIS spoken scene."""
     narration = _scene_value(scene, "narration").strip()
