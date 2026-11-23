@@ -116,3 +116,18 @@ def test_production_85_matrix_respects_shared_free_groq_rate_limit():
                 ".github" / "workflows" / "videos.yml").read_text()
     assert "max-parallel: 1" in workflow
     assert "Reject combined topics before costly setup" in workflow
+
+
+def test_previous_commit_mp4_cannot_be_resumed_even_when_decodable(tmp_path, monkeypatch):
+    import json
+    import batch
+    monkeypatch.setenv("GITHUB_SHA", "new-commit-sha")
+    out = tmp_path / "finished"
+    target = out / "video_01"
+    target.mkdir(parents=True)
+    video = target / "old.mp4"
+    video.write_bytes(b"x" * 4096)
+    (target / "report.json").write_text(json.dumps({
+        "status": "ok", "original_input": "en|Why is the sky blue?",
+        "producer_commit": "old-commit-sha", "mp4": str(video)}))
+    assert batch.resume_completed_job(1, "en|Why is the sky blue?", out) is None
