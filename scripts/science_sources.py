@@ -540,7 +540,7 @@ def _strict_science_review_json(llm, system, prompt, schema):
                 try:
                     message = str(response.json().get("error", {}).get("message", ""))
                     found = re.search(
-                        r"try again in\\s+([0-9]+(?:\\.[0-9]+)?)s", message, re.I)
+                        r"try again in\s+([0-9]+(?:\.[0-9]+)?)s", message, re.I)
                     if found:
                         seconds = float(found.group(1))
                 except (ValueError, TypeError, AttributeError, KeyError):
