@@ -493,9 +493,30 @@ def _review_scenes_individually(llm, system, source_text, scenes):
             system + " Review exactly ONE scene. Return ONE JSON object, not an array.",
             source_text + f"\n\nNARRATION TO CHECK:\nSCENE {i}: {scene.narration}",
             schema)
-        if not isinstance(answer, dict) or any(k not in answer for k in properties):
-            raise ValueError("single-scene review returned malformed JSON")
-        output.append({"scene": i, **{k: answer[k] for k in properties}})
+        # Groq's JSON-object mode is not strict JSON-schema mode. Even for
+        # a one-scene schema it may wrap the answer in {"checks": [{...}]}.
+        # Unwrap ONLY when it contains exactly one scene, with the expected
+        # index. Never borrow a quoted source from a different scene.
+        if isinstance(answer, dict) and isinstance(answer.get("checks"), list):
+            rows = answer["checks"]
+            if len(rows) != 1 or not isinstance(rows[0], dict):
+                raise ValueError("single-scene review returned wrong number of checks")
+            answer = rows[0]
+        if not isinstance(answer, dict):
+            raise ValueError("single-scene review did not return a JSON object")
+        index = answer.get("scene", i)
+        if str(index) != str(i):
+            raise ValueError("single-scene review returned wrong scene index")
+        # Never interpret an omitted quote or verdict as evidence in favour:
+        # missing data become an explicit unsupported claim, not success.
+        normalized = {
+            "scene": i,
+            "supported": answer.get("supported") is True,
+            "source_id": str(answer.get("source_id") or ""),
+            "quote": str(answer.get("quote") or ""),
+            "reason": str(answer.get("reason") or "review did not supply evidence"),
+        }
+        output.append(normalized)
     return output
 
 
