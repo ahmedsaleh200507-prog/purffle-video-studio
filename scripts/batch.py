@@ -457,6 +457,8 @@ def write_consolidated_diagnostics(out: Path, results: list):
             "Failure category: " + str(result.get('failure_category', 'none')),
             "Error: " + str(result.get('error', 'none')),
             "Output: " + str(result.get('mp4', 'none')),
+            "Incomplete preview: " + str(result.get('preview_mp4', 'none')),
+            "Preview type: " + str(result.get('preview_kind', 'none')),
         ])
         for name in ('footage-report.json', 'voice-report.json', 'job-result.json'):
             path = target / name
@@ -562,6 +564,10 @@ def main():
             f.write(f'## Purffle V2\n\n{ok}/{len(results)} videos succeeded.\n\n')
             for r in results:
                 f.write(f"- Video {r['index']}: **{r['status']}** — {r.get('error', r.get('mp4', ''))}\n")
+                if r.get('preview_mp4'):
+                    f.write("  - PLAYABLE INCOMPLETE PREVIEW: "
+                            "`PREVIEW_INCOMPLETE.mp4` in the downloadable artifact ZIP. "
+                            "Not a verified completed video.\n")
     return 0 if results and ok == len(results) else 1
 
 
