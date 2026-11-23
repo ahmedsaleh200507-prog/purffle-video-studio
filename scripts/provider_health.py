@@ -1,7 +1,7 @@
 """One bounded live query per eligible provider; no downloads or secret export."""
 import json
 from pathlib import Path
-from video_sources import ProviderRegistry, JsonClient
+from video_sources import ProviderRegistry, JsonClient, STATIC_CATALOGS
 
 
 def main():
@@ -15,9 +15,9 @@ def main():
             continue
         candidates = registry.search(name, 'ocean waves')
         event = registry.events[-1]
-        results.append({'provider': name, 'live_test': event['status'],
+        results.append({'provider': name, 'live_test': 'catalog_only' if name in STATIC_CATALOGS else event['status'],
                         'candidate_count': len(candidates), 'detail': event['detail'],
-                        'cache': 'bypassed', 'scope': 'search and license metadata only; not download/FFprobe/scene/render'})
+                        'cache': 'bypassed', 'scope': ('static manifest filter; no remote API request' if name in STATIC_CATALOGS else 'fresh HTTP search and license metadata only; not download/FFprobe/scene/render')})
     target = Path('finished/provider-health.json')
     target.parent.mkdir(exist_ok=True)
     target.write_text(json.dumps(results, indent=2), encoding='utf-8')

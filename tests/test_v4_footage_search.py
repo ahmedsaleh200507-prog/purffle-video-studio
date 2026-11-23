@@ -57,3 +57,12 @@ def test_german_query_translation_and_uncertainty():
     assert e['score']==1 and e['visual_proof'] is False
     r=suitability(e,{'visual_score':.3},{'width':1920,'height':1080})
     assert 'uncalibrated' in r['reliability']
+
+
+def test_static_catalog_never_reports_verified_remote_api():
+    from video_sources import ProviderRegistry
+    registry=ProviderRegistry(MediaItem=SimpleNamespace)
+    registry.event('freenaturestock-video','ok',count=1)
+    report=next(p for p in registry.health() if p['provider']=='freenaturestock-video')
+    assert report['integration_type']=='static_catalog'
+    assert report['api_test']=='not_applicable_static_catalog'

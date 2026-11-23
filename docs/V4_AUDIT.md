@@ -33,7 +33,7 @@ Aşağıdaki tüm kaynakların depoda adapter kodu vardır. Liste, API'nin her k
 | USGS | Yok | Ocean-waves araması boş; statik resmi katalog adaptörü | Genel arama API'si değil, küratörlü USGS ScienceBase kayıtları ve resmi dosyalar; PDM/orijinal kredi doğrulaması |
 | Vecteezy | VECTEEZY_API_KEY bağlı | Lisans nedeniyle kapalı; API başarısı iddiası yok | Free atıf zorunluluğu ile mevcut no-attribution politikası uyuşmuyor; ücretli plan kullanılmaz |
 | Coverr | COVERR_API_KEY / COVER2 | #94: boş; yeni yerelde anahtar yok | Resmi ücretsiz API bağlantısı mevcut; indirme sayımı PATCH, en fazla 5 çağrı, atıf gerekiyorsa no-attribution filtresi |
-| Free Nature Stock | Yok | Yeni test ve #94: 1 aday | Açık CC0 katalog/feed adaptörü; genel sınırsız video API'si değildir |
+| Free Nature Stock | Yok | 1 statik aday; ayrıca gerçek CC0 MP4 indirme/FFprobe/hareket/CLIP geçti (3840×2160, 15,057s, CLIP 0,3045); uzak API yok | Statik, önceden denetlenmiş CC0 manifest adaptörü; API/HTML/feed çağrısı yapmaz |
 
 Resmi koşul bağlantıları: [Pixabay API](https://pixabay.com/api/docs/), [Pixabay lisans](https://pixabay.com/service/license-summary/), [Pexels API](https://www.pexels.com/api/documentation/), [Pexels lisans](https://www.pexels.com/license/), [Wikimedia reuse](https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia), [NASA](https://www.nasa.gov/nasa-brand-center/images-and-media/), [Archive](https://archive.org/about/terms.php), [Europeana](https://pro.europeana.eu/page/apis), [NPS](https://www.nps.gov/subjects/digital/nps-data-api.htm), [USGS](https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits), [Coverr](https://coverr.co/license), [Vecteezy](https://www.vecteezy.com/licensing-agreement), [Free Nature Stock](https://freenaturestock.com/).
 
@@ -50,12 +50,12 @@ Mevcut Piper 1.8 yazılımı GPL-3.0-or-later, ONNX Runtime MIT, Transformers Ap
 ## Test ve canlı üretim kanıtı
 
 - Başlangıç: 800 test ve 9 subtest geçti (temiz worktree).
-- V4 regresyon: 815 test, 9 subtest geçti; üç Pillow deprecation uyarısı. Sabit Joe/Thorsten isteğiyle çelişen eski reference-only/Edge varsayımları yeni sözleşmeye uyarlandı; eski referans araçlarının kendi birim testleri korundu.
+- V4 regresyon: 816 test, 9 subtest geçti; üç Pillow deprecation uyarısı. Sabit Joe/Thorsten isteğiyle çelişen eski reference-only/Edge varsayımları yeni sözleşmeye uyarlandı; eski referans araçlarının kendi birim testleri korundu.
 - Yeni paralel kaynak/arıza/deadline, DE sorgu, lav-buz çelişkisi ve sonraki cümle eylemi testleri geçti.
 - Gerçek FFmpeg fixture testleri: tüm dosya decode, siyah video, sessiz ses, yanlış FPS, kesilmiş MP4 ve yanlış altyazı zamanları. Sentetik fixture'lar üretim videosu değildir.
 - Gerçek Joe: 16 kelime, 5,492s; gerçek Thorsten: 13 kelime, 5,050s. Hash doğrulanmış indirme, ONNX inference, native phoneme timing ve ses sözleşmesi geçti. Bunlar tam stok video üretimi değildir.
 - EN/DE Shorts, uzun bölüm/al­t­yazı sözleşmesi, 10 konu hata izolasyonu, eksik anahtar/kapalı kaynak/görüntüsüzlük/bozuk medya mevcut mock regresyonlarında sınanır. 10 gerçek konu ve tam 10 dakikalık V4 video üretimi bu yerel testlerden çıkarılamaz.
-- Branch için iki gerçek Shorts üretim denemesi launcher'ı eklendi; Actions sonuçları ayrıca kaydedilecektir. CI başarısı, gerçek üretim başarısı değildir.
+- Branch için iki gerçek Shorts üretim denemesi launcher'ı eklendi; Actions sonuçları ayrıca kaydedilecektir. Kod commit `7bcbad3` için Actions [45165717956](https://github.com/ahmedsaleh200507-prog/purffle-video-studio/actions/runs/45165717956) hızlı test ve tam regresyonu geçti. Son statik-katalog sağlık raporu/test ve cache düzeltmeleri bu koşudan sonradır. CI başarısı, gerçek üretim başarısı değildir.
 
 ## Kalan sınırlar / kullanıcı işlemi
 

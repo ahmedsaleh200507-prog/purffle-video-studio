@@ -111,6 +111,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
 
       - name: Test long documentary languages and slot isolation
         if: steps.selected.outputs.render == 'true'
@@ -161,7 +162,7 @@ jobs:
           path: |
             .cache/huggingface
             .cache/piper
-          key: purffle-v4-long-model-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}
+          key: purffle-v4-long-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/media_validation.py') }}
 
       - name: Render only this long documentary; never publish automatically
         if: steps.selected.outputs.render == 'true'

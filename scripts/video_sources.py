@@ -242,12 +242,16 @@ class VideoProvider:
         return ""
 
 
+STATIC_CATALOGS = {"usgs-video", "freenaturestock-video"}
+
+
 class ProviderHealthCheck:
     @staticmethod
     def check(provider):
         reason = provider.unavailable_reason()
         return {"provider": provider.name, "enabled": not bool(reason), "reason": reason,
-                "api_test": "not_requested"}
+                "integration_type": "static_catalog" if provider.name in STATIC_CATALOGS else "api",
+                "api_test": "not_applicable_static_catalog" if provider.name in STATIC_CATALOGS else "not_requested"}
 
 
 PROVIDERS = [
@@ -293,7 +297,8 @@ class ProviderRegistry:
             latest = next((e for e in reversed(self.events) if e["provider"] == p.name), None)
             if latest:
                 check["last_status"] = latest["status"]
-                check["api_test"] = latest["status"]
+                if p.name not in STATIC_CATALOGS:
+                    check["api_test"] = latest["status"]
             checks.append(check)
         return checks
 

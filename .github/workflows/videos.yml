@@ -171,6 +171,7 @@ jobs:
         if: steps.selected.outputs.render == 'true'
         with:
           python-version: '3.12'
+          cache: 'pip'
       - name: Install video tools
         if: steps.selected.outputs.render == 'true'
         run: |
@@ -207,7 +208,7 @@ jobs:
           path: |
             .cache/huggingface
             .cache/piper
-          key: purffle-v2-model-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}
+          key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/media_validation.py') }}
       - name: Restore API metadata cache
         if: steps.selected.outputs.render == 'true'
         uses: actions/cache/restore@v4
@@ -242,7 +243,7 @@ jobs:
           path: |
             .cache/huggingface
             .cache/piper
-          key: purffle-v2-model-${{ runner.os }}-${{ hashFiles('requirements*.txt') }}
+          key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/media_validation.py') }}
       - name: Save API responses and quota cooldowns
         if: always() && steps.selected.outputs.render == 'true'
         continue-on-error: true
@@ -287,6 +288,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
       - name: Gather completed videos (including from failed jobs)
         continue-on-error: true
         uses: actions/download-artifact@v4
