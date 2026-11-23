@@ -9,6 +9,20 @@ Mevcut Purffle ve sabitlenmiş `purffle-shorts` motoru üzerinde: konu → denet
 
 `INPUT_1`–`INPUT_10` korunur. Her konu bağımsız job; kota için aynı anda bir üretim. `fail-fast: false`: hata diğer konuları iptal etmez. Başarılı MP4'ler ve başarısızlık raporları Artifacts'ta 7 gün tutulur. Kısmi MP4 başarı sayılmaz. Shorts worker süresi 25 dakika, runner kurulum dahil 65 dakika; uzun runner sınırı 330 dakika. GitHub hesabının ücretsiz dakika/depolama sınırları geçerlidir.
 
+## Hata olsa da izlenebilir MP4
+
+Video tam olarak doğrulanırsa normal MP4 dosyası oluşturulur. Normal üretim
+durursa kullanıcı ayrıca `PREVIEW_INCOMPLETE.mp4` dosyasını Artifacts
+ZIP'inden indirebilir. Sistem önce mevcut işlenmiş MP4'ü veya uzun videodaki
+sesli, tamamlanmış bölümleri korumaya çalışır. Bunlar yoksa mevcut ses üzerine
+açıklayıcı önizleme kartı oluşturur; ses de yoksa yaklaşık 8 saniyelik
+bir hata/konu önizlemesi verir.
+
+**ÖNİZLEME TAMAMLANDI DEMEK DEĞİLDİR:** Eksik, bilimsel olarak doğrulanmamış
+veya görseli bulunmamış bir içerik yayımlanmaya hazır sayılmaz. Bu nedenle
+`status=failed` ve hata raporu korunur; önizleme yalnızca sonucu görebilmek
+içindir. FFmpeg/runner/disk tamamen çalışamazsa MP4 teknik olarak üretilemez.
+
 ## Görüntü eşleştirme
 
 Her sahnenin konusu, nesnesi, eylemi, ortamı ve her anlatım cümlesi raporlanır. İngilizce sorgular ve sınırlı Almanca görsel sözlük desteklenir; bilinmeyen kelimelerde senaristin İngilizce görsel planı kullanılır. Tam çeviri modeli değildir.
