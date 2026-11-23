@@ -388,16 +388,23 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
              "reason": "A narrated scene has no verified corresponding footage"})
     else:
         opening_review = prioritize_opening(topic, items, plans, selected_rows)
-    # Re-number successful selections because rejected candidates occupied
-    # transient scene indexes. Never mistake skipped attempts for final scenes.
-    for index, row in enumerate(selected_rows, 1):
-        original_slot = int(row.get("index", index))
-        contract = (options[original_slot - 1].get("_visual_contract")
-                    if director_mode and 1 <= original_slot <= len(options) else None)
-        row["index"] = index
-        row["visual_mode"] = "media_first_verified"
-        row["illustrative_not_exact_event"] = illustrative_status(contract)
-    visuals.report["scenes"] = selected_rows
+    # Preserve failed candidate records when the preflight is incomplete.
+    # Replacing them with selected_rows hid the real rejection reasons from
+    # batch.failure_details and disabled the native-720 recovery decision.
+    visuals.report["unavailable_scenes"] = sorted({
+        int(row["scene"]) for row in attempts
+        if row.get("status") == "unavailable"})
+    if len(items) >= min_scenes:
+        # Only complete palettes may renumber their selected scene slots.
+        for index, row in enumerate(selected_rows, 1):
+            original_slot = int(row.get("index", index))
+            contract = (options[original_slot - 1].get("_visual_contract")
+                        if director_mode and 1 <= original_slot <= len(options) else None)
+            row["index"] = index
+            row["visual_mode"] = "media_first_verified"
+            row["illustrative_not_exact_event"] = illustrative_status(contract)
+        visuals.report["scenes"] = selected_rows
+    # On failure leave ALL original attempt rows, indexes and rejections.
     visuals.report["state"] = "footage_ready" if len(items) >= min_scenes else "failed"
     visuals.report["strategy"] = (
         "v4_evidence_first_director_verified_before_voice" if director_mode
@@ -441,6 +448,32 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
                            "scene-to-clip coverage is not one-to-one")
     print(f"[MEDIA FIRST] {len(items)} verified clips ready BEFORE script or voice", flush=True)
     return VerifiedPalette(str(topic), plans, items, visuals.credits.copy(), attempts)
+
+
+def footage_failure_feedback(report):
+    """Bounded, non-provider-text hints for one source-checked redraft.
+
+    Provider metadata, URLs, HTTP errors and arbitrary candidate descriptions
+    are never passed to the model as instructions.
+    """
+    missing = sorted({int(i) for i in report.get("unavailable_scenes", [])
+                      if isinstance(i, int) and 1 <= i <= 6})
+    if not missing:
+        return ""
+    attempts = report.get("preflight_attempts") or []
+    lines = []
+    for scene in missing:
+        queries = []
+        for attempt in attempts:
+            if attempt.get("scene") != scene:
+                continue
+            query = re.sub(r"[^a-zA-Z0-9 äöüÄÖÜß-]", " ",
+                           str(attempt.get("query", "")))[:90].strip()
+            if query and query not in queries:
+                queries.append(query)
+        details = ", ".join(queries[:3]) if queries else "previous visual plan"
+        lines.append(f"Scene {scene}: no eligible real footage for {details}.")
+    return "\n".join(lines)[:800]
 
 
 def footage_prompt(palette) -> str:
