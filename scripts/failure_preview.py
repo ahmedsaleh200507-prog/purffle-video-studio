@@ -192,7 +192,10 @@ def make_failure_preview(*, output: Path, topic: str, stage: str,
             "preview_duration": round(
                 float(proof["format"]["duration"]), 2),
         }
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+    except Exception as exc:
+        # An unavailable codec, font/Pillow installation or out-of-disk
+        # failure must NEVER replace the original science/stock error with
+        # a new exception from optional preview creation.
         out.unlink(missing_ok=True)
         return {
             "preview_status": "unavailable",
