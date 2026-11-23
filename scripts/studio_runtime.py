@@ -270,7 +270,7 @@ class StrictVisuals:
                                       "hashes": sorted(self.used_hashes)})
 
     def for_scene(self, idx, query, image_prompt, topic, need, dest_dir):
-        from media_validation import SceneSpec, reject_offtopic_science_source
+        from media_validation import SceneSpec, SceneMatcher, reject_offtopic_science_source
         from video_sources import LicenseValidator
         try:
             raw_plan = json.loads(image_prompt)
