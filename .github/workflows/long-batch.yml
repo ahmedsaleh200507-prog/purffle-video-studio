@@ -176,7 +176,7 @@ jobs:
           LONG_LANGUAGE: ${{ steps.selected.outputs.language }}
         run: timeout 12600 python scripts/long_video.py --topic "$LONG_TOPIC" --language "$LONG_LANGUAGE"
 
-      - name: Guarantee complete 10-minute MP4 after any normal pipeline error
+      - name: Preserve completed real-footage chapters after failures (no fake 10-minute slideshow)
         if: always() && steps.selected.outputs.render == 'true'
         env:
           LONG_TOPIC: ${{ steps.selected.outputs.topic }}
@@ -217,6 +217,11 @@ jobs:
           root=Path('long_video_output/result')
           report=json.loads((root/'report.json').read_text())
           assert report['status']=='ok' and report['language']==os.environ['EXPECT_LANGUAGE']
+          publication=json.loads((root/'documentary-quality.json').read_text())
+          assert publication['publication_quality']=='narrated_real_footage_validated'
+          assert publication['spoken_words']>=1200
+          assert publication['unique_verified_source_videos']>=10
+          assert publication['long_silence_gaps_over_5_seconds']==0
           path=root/'long-video.mp4'
           # Animated 2D H.264 scenes compress extremely well; size isn't quality.
           # Enforce 10-minute duration, real video+AAC streams and exact HD below.
@@ -243,6 +248,9 @@ jobs:
           path: |
             long_video_output/result/report.json
             long_video_output/result/long-video.mp4
+            long_video_output/result/PARTIAL_REAL_CHAPTERS.mp4
+            long_video_output/result/documentary-quality.json
+            long_video_output/result/script-quality.json
             long_video_output/result/captions.srt
             long_video_output/result/script.json
             long_video_output/result/credits.json
