@@ -561,7 +561,9 @@ def test_landscape_720p_requires_upscale_and_is_rejected(strict_env):
     }
     with pytest.raises(RuntimeError, match="No suitable verified REAL VIDEO"):
         obj.for_scene(0, "", json.dumps(PLAN), "", 3, strict_env)
-    assert down.urls == [horizontal.url]
+    # Known native dimensions are enough to reject unsafe portrait crops.
+    # Never waste an HTTP download just to discover the same resolution.
+    assert down.urls == []
     assert any("insufficient_native_resolution" in x.get("reason", "")
                for x in obj.report["scenes"][0]["rejections"])
 
