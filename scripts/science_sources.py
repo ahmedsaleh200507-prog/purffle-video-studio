@@ -21,6 +21,7 @@ from urllib.parse import quote
 from topic_footage import words
 
 _CURRENT = ContextVar("purffle_science_evidence", default=None)
+_REVIEW_FEEDBACK = ContextVar("purffle_science_review_feedback", default="")
 _STOP = set("what why where when how which who does do is are can a an the to of in for on "
             "with from and or this that some have has do you your what happens makes "
             "warum wie was wann wo wer wieso weshalb ist sind die der das den dem "
@@ -139,12 +140,64 @@ def _blue_sky_question(topic: str) -> bool:
 def _blue_sky_scientific_article(title: str, extract: str) -> bool:
     """Don't mistake 'Blue Sky Studios' or a song for optics references."""
     label = str(title).casefold().strip()
+    # Hyper-Rayleigh is a specialized nonlinear optics experiment, not
+    # the atmospheric Rayleigh scattering that gives the sky its colour.
+    if re.search(r"hyper[\\s\\-–—]*rayleigh", label):
+        return False
     if re.search(r"rayleigh|scattering|streuung|atmospher|atmosphär|optics|optik|himmelsblau|diffuse sky radiation", label):
         return True
     # The bare Sky/Himmel encyclopaedia entries may contain the physical
     # explanation, whereas 'Blue Sky Studios' is not a sky article.
     return label in {"sky", "himmel"} and bool(
         re.search(r"rayleigh|scatter|streuung", str(extract).casefold()))
+
+
+@contextmanager
+def use_review_feedback(feedback):
+    """One redraft receives only bounded, independently rejected claim text."""
+    token = _REVIEW_FEEDBACK.set(str(feedback or "")[:900])
+    try:
+        yield
+    finally:
+        _REVIEW_FEEDBACK.reset(token)
+
+
+def review_feedback():
+    return _REVIEW_FEEDBACK.get()
+
+
+def rejected_claim_feedback(report_path, script):
+    """Build safe revision guidance from unsupported scenes in a QA report.
+
+    No provider descriptions, model-generated reviewer reasons, excerpts,
+    URLs or potentially sensitive values are copied into the prompt.
+    """
+    try:
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return ""
+    if report.get("state") != "failed":
+        return ""
+    scenes = list(getattr(script, "scenes", []) or [])
+    messages = []
+    seen = set()
+    for row in report.get("scene_checks", []):
+        if not isinstance(row, dict) or row.get("supported") is not False:
+            continue
+        index = row.get("scene")
+        if type(index) is not int or index < 1 or index > len(scenes) or index in seen:
+            continue
+        seen.add(index)
+        # Use the draft's own narration instead of untrusted reviewer strings.
+        old = re.sub(r"[^\\w äöüÄÖÜß,.!?;:'-]", " ",
+                     str(scenes[index - 1].narration))[:170]
+        old = re.sub(r"\\s+", " ", old).strip()
+        messages.append(
+            f"Scene {index}: the previous text was not supported by the provided "
+            f"reference excerpts: '{old}'. Do not repeat this unsupported claim; "
+            "replace it with a simpler, different fact explicitly present in "
+            "the reference text. Preserve the topic and complete explanation.")
+    return "\\n".join(messages)[:900]
 
 
 def _search_text(topic: str) -> str:
