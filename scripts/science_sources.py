@@ -507,6 +507,8 @@ def _review_scenes_individually(llm, system, source_text, scenes):
         index = answer.get("scene", i)
         if str(index) != str(i):
             raise ValueError("single-scene review returned wrong scene index")
+        if type(answer.get("supported")) is not bool:
+            raise ValueError("single-scene review did not supply a verdict")
         # Never interpret an omitted quote or verdict as evidence in favour:
         # missing data become an explicit unsupported claim, not success.
         normalized = {
