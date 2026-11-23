@@ -475,6 +475,29 @@ def _validate_model_scene_checks(checks, scenes, bundle):
     return accepted
 
 
+def _strict_science_review_json(llm, system, prompt, schema):
+    """Require schema-constrained Groq GPT-OSS review when available.
+
+    The pinned upstream Groq preset defaults to JSON-object mode, which
+    guarantees JSON syntax but NOT required fields. Groq GPT-OSS 20B/120B
+    support strict JSON-schema output. Scope the setting to fact checks only,
+    keeping other script generators and fallback providers unaffected.
+    """
+    original = []
+    for provider in getattr(llm, "providers", ()):
+        if (getattr(provider, "name", "") == "groq"
+                and getattr(provider, "model", "") in (
+                    "openai/gpt-oss-20b", "openai/gpt-oss-120b")
+                and hasattr(provider, "_schema_mode")):
+            original.append((provider, provider._schema_mode))
+            provider._schema_mode = True
+    try:
+        return llm.complete_json(system, prompt, schema)
+    finally:
+        for provider, previous in original:
+            provider._schema_mode = previous
+
+
 def _review_scenes_individually(llm, system, source_text, scenes):
     """Last-resort smaller JSON review if a large array is repeatedly malformed.
 
@@ -489,7 +512,8 @@ def _review_scenes_individually(llm, system, source_text, scenes):
         "required": list(properties), "additionalProperties": False}
     output = []
     for i, scene in enumerate(scenes, 1):
-        answer = llm.complete_json(
+        answer = _strict_science_review_json(
+            llm,
             system + " Review exactly ONE scene. Return ONE JSON object, not an array.",
             source_text + f"\n\nNARRATION TO CHECK:\nSCENE {i}: {scene.narration}",
             schema)
@@ -570,7 +594,7 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         _report(report, bundle, "failed", error="no independent model review")
         raise RuntimeError("science_claim_unverified: model reviewer missing")
     schema = {"type": "object", "properties": {
-        "checks": {"type": "array", "minItems": len(scenes), "maxItems": len(scenes),
+        "checks": {"type": "array",
             "items": {"type": "object", "properties": {
                 "scene": {"type": "integer"}, "supported": {"type": "boolean"},
                 "source_id": {"type": "string"}, "quote": {"type": "string"},
@@ -599,8 +623,8 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         accepted = None
         for review_attempt in range(3):
             try:
-                result = llm.complete_json(
-                    system, source_text + "\n\nNARRATION TO CHECK:\n" + script_text, schema)
+                result = _strict_science_review_json(
+                    llm, system, source_text + "\n\nNARRATION TO CHECK:\n" + script_text, schema)
                 checks = result.get("checks") if isinstance(result, dict) else None
                 accepted = _validate_model_scene_checks(checks, scenes, bundle)
                 break
