@@ -242,6 +242,15 @@ def scene_footage_seconds(narration, language="en"):
     return round(max(4.0, words / rate + 1.45), 2)
 
 
+def illustrative_status(contract):
+    """An observed on-screen event is NOT merely illustrative footage.
+
+    In the absence of an event contract, stock may only be described as
+    illustrative context, not documentary proof of an exact occurrence.
+    """
+    return not bool((contract or {}).get("event_required"))
+
+
 def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
                              min_scenes=3, max_scenes=4, clip_seconds=10.0,
                              storyboard=None):
@@ -382,9 +391,12 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
     # Re-number successful selections because rejected candidates occupied
     # transient scene indexes. Never mistake skipped attempts for final scenes.
     for index, row in enumerate(selected_rows, 1):
+        original_slot = int(row.get("index", index))
+        contract = (options[original_slot - 1].get("_visual_contract")
+                    if director_mode and 1 <= original_slot <= len(options) else None)
         row["index"] = index
         row["visual_mode"] = "media_first_verified"
-        row["illustrative_not_exact_event"] = True
+        row["illustrative_not_exact_event"] = illustrative_status(contract)
     visuals.report["scenes"] = selected_rows
     visuals.report["state"] = "footage_ready" if len(items) >= min_scenes else "failed"
     visuals.report["strategy"] = (
