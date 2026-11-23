@@ -186,6 +186,21 @@ def failure_details(target: Path):
     return details
 
 
+def _producer_revision():
+    """A result is reusable only under the exact code revision that made it."""
+    revision = (os.environ.get('GITHUB_SHA')
+                or os.environ.get('PURFFLE_BUILD_SHA'))
+    if revision:
+        return revision.strip()
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'], capture_output=True,
+            text=True, check=True, timeout=3, cwd=ROOT)
+        return result.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def resume_completed_job(index: int, raw: str, out: Path):
     """Reuse only a matching, previously validated video that still probes correctly."""
     if os.environ.get('PURFFLE_RESUME', '1') != '1':
@@ -198,6 +213,11 @@ def resume_completed_job(index: int, raw: str, out: Path):
         prior = json.loads(report.read_text(encoding='utf-8'))
         if (prior.get('status') != 'ok' or prior.get('original_input') != raw
                 or not prior.get('mp4')):
+            return None
+        revision = _producer_revision()
+        # An old MP4 may have passed a now-fixed visual gate. Even if FFprobe
+        # can decode it, don't silently publish it under newer quality rules.
+        if not revision or prior.get('producer_commit') != revision:
             return None
         video = Path(prior['mp4'])
         if not video.is_file() or video.stat().st_size < 1024:
@@ -222,7 +242,8 @@ def resume_completed_job(index: int, raw: str, out: Path):
 def run_job(index: int, raw: str, out: Path, timeout: int = 1500):
     target = out / f'video_{index:02d}'
     target.mkdir(parents=True, exist_ok=True)
-    result = {'index': index, 'topic': raw, 'original_input': raw, 'status': 'failed', 'mp4': None}
+    result = {'index': index, 'topic': raw, 'original_input': raw, 'status': 'failed',
+              'mp4': None, 'producer_commit': _producer_revision()}
     started = time.monotonic()
     log_path = target / 'purffle.log'
     try:
