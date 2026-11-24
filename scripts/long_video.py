@@ -165,24 +165,47 @@ def real_word_captions(speech, chapter_start):
     return captions
 
 
-def narrate(data,work,language="en"):
+def narrate(data,work,language="en",checkpoint=None):
     if language not in ("en","de"):
         raise RuntimeError("Only English or German long documentaries are supported")
     from local_voice import synthesize as piper_synthesize
     audios, lines, offset=[],[],0.0
     for i,c in enumerate(data):
         text=c["narration"]
-        speech=piper_synthesize(text,work/f"voice-{i+1}",SimpleNamespace(language=language))
-        from studio_runtime import _validate_free_speech
-        _validate_free_speech(speech, "piper", language)
-        if (not Path(speech.audio).is_file() or not speech.words
-                or not 20<=speech.duration<=110):
-            raise RuntimeError(f"Chapter {i+1} {language} voice invalid")
-        audios.append((Path(speech.audio),float(speech.duration)))
-        lines.extend(real_word_captions(speech,offset))
-        offset+=speech.duration
+        from local_voice import provenance
+        identity=[text,language,provenance(language)["model_sha256"]]
+        key=f"voice-{i+1:02d}"
+        saved=checkpoint.get_file(key,identity,".wav") if checkpoint else None
+        if saved:
+            import wave
+            path,info=saved
+            try:
+                with wave.open(str(path),"rb") as wav:
+                    duration=wav.getnframes()/wav.getframerate()
+                if not 20<=duration<=110 or abs(duration-info["duration"])>.02:
+                    saved=None
+            except (OSError,ValueError,KeyError,wave.Error,EOFError):
+                saved=None
+        if saved:
+            captions=info["captions"]
+            print(f"[VOICE RESUME] chapter={i+1}",flush=True)
+        else:
+            speech=piper_synthesize(text,work/f"voice-{i+1}",SimpleNamespace(language=language))
+            from studio_runtime import _validate_free_speech
+            _validate_free_speech(speech, "piper", language)
+            if (not Path(speech.audio).is_file() or not speech.words
+                    or not 20<=speech.duration<=110):
+                raise RuntimeError(f"Chapter {i+1} {language} voice invalid")
+            duration=float(speech.duration)
+            captions=real_word_captions(speech,0.)
+            path=Path(speech.audio)
+            if checkpoint:
+                path=checkpoint.store_file(key,identity,path,{"duration":duration,"captions":captions})
+        audios.append((path,duration))
+        lines.extend((offset+a,offset+b,line) for a,b,line in captions)
+        offset+=duration
         print(f"[VOICE] language={language} chapter={i+1}/14 "
-              f"seconds={speech.duration:.1f}",flush=True)
+              f"seconds={duration:.1f}",flush=True)
     if not 540<=offset<=660:
         raise RuntimeError(
             f"Real {language} narration duration={offset:.1f}s "
@@ -574,6 +597,10 @@ def main():
     work.mkdir(parents=True,exist_ok=True)
     report={"mode":"long_video","status":"failed","mp4":None,"topic":a.topic,
             "language":a.language,"target_duration":600,"resolution":"1920x1080"}
+    from production_checkpoint import Checkpoint,digest
+    revision=os.getenv("GITHUB_SHA") or run(["git","rev-parse","HEAD"],10).strip()
+    checkpoint=Checkpoint(OUT/"checkpoints",a.topic,a.language,revision)
+    os.environ["PURFFLE_SCRIPT_CHECKPOINT"]=str(checkpoint.root)
     stage="preflight"
     try:
         from english_reference_policy import enforce_english_reference_only
@@ -587,13 +614,19 @@ def main():
         except RuntimeError as exc:
             print("[LONG SOURCES FALLBACK]", str(exc), flush=True)
         stage="script"
-        text=chapters(a.topic,a.language)
+        identity=[a.topic,a.language]
+        text=checkpoint.get("complete-script",identity)
+        if text is None:
+            text=chapters(a.topic,a.language)
+        else:
+            print("[SCRIPT RESUME] complete script",flush=True)
         from long_quality_gate import verify_narration
         preliminary_qa=verify_narration(text,a.language)
+        checkpoint.put("complete-script",identity,text)
         save(output/"script.json",{"language":a.language,"chapters":text})
         save(output/"script-quality.json",preliminary_qa)
         stage="fixed_piper_voice"
-        audio,subs,voice_seconds=narrate(text,work,a.language)
+        audio,subs,voice_seconds=narrate(text,work,a.language,checkpoint=checkpoint)
         with (output/"captions.srt").open("w",encoding="utf8") as f:
             for j,(start,end,line) in enumerate(subs,1):
                 f.write(f"{j}\n{srt_time(start)} --> {srt_time(end)}\n{line}\n\n")
@@ -602,25 +635,78 @@ def main():
         from long_still_recovery import render_recovery
         stock_bank, reused_source_ids = [], set()
         still_ids, recovery_chapters = set(), []
+        failed_chapters=[]
+        resumed_chapters=[]
         for i,(wav,seconds) in enumerate(audio):
+            chapter_identity=[text[i],digest(wav),a.language]
+            key=f"chapter-{i+1:02d}"
+            saved=checkpoint.get_file(key,chapter_identity,".mp4")
+            if saved:
+                saved_path,info=saved
+                try:
+                    dur,w,h,audible=probe(saved_path)
+                    if abs(dur-seconds)>.75 or (w,h)!=(1920,1080) or not audible:
+                        saved=None
+                except Exception:
+                    saved=None
+            if saved:
+                chapter_credits=info["credits"]
+                scenes.append(saved_path)
+                credits.extend(chapter_credits)
+                for credit in chapter_credits:
+                    source_id=(credit["source"],str(credit["id"]))
+                    if credit.get("media_type")=="photo":
+                        still_ids.add(source_id)
+                    else:
+                        used.add(source_id)
+                if info["recovery"]:
+                    recovery_chapters.append(i+1)
+                resumed_chapters.append(i+1)
+                print(f"[CHAPTER RESUME] {i+1}/14",flush=True)
+                continue
+            was_recovery=False
             try:
                 clips=find_stock(i,seconds,used,work,registry=registry,topic=a.topic,
                                  bank=stock_bank,reused=reused_source_ids,chapter=text[i])
                 stage=f"render_chapter_{i+1}"
-                scenes.append(render_scene(i+1,wav,seconds,clips,work))
+                scene=render_scene(i+1,wav,seconds,clips,work)
                 stock_bank.extend(c for c in clips if not c[2].get("reused"))
-                credits.extend(c[2] for c in clips)
+                chapter_credits=[c[2] for c in clips]
             except Exception as exc:
                 print("[LONG CHAPTER RECOVERY]", i+1, type(exc).__name__, flush=True)
                 stage=f"recover_chapter_{i+1}"
-                scene, recovery_credits=render_recovery(
-                    i+1,wav,seconds,{**text[i],"topic":a.topic},work,still_ids,run)
-                scenes.append(scene)
-                credits.extend(recovery_credits)
-                recovery_chapters.append(i+1)
+                try:
+                    scene,chapter_credits=render_recovery(
+                        i+1,wav,seconds,{**text[i],"topic":a.topic},work,still_ids,run)
+                    was_recovery=True
+                except Exception as recovery_error:
+                    failed_chapters.append(i+1)
+                    (work/f"chapter-{i+1:02d}.mp4").unlink(missing_ok=True)
+                    print(f"[CHAPTER DEFERRED] {i+1} {type(recovery_error).__name__}",flush=True)
+                    continue
+            try:
+                dur,w,h,audible=probe(scene)
+                if abs(dur-seconds)>.75 or (w,h)!=(1920,1080) or not audible:
+                    raise RuntimeError("chapter checkpoint failed duration/HD/audio")
+                run(["ffmpeg","-nostdin","-v","error","-xerror","-i",str(scene),"-f","null","-"],240)
+                saved_path=checkpoint.store_file(key,chapter_identity,scene,
+                    {"credits":chapter_credits,"recovery":was_recovery})
+                scenes.append(saved_path)
+                credits.extend(chapter_credits)
+                if was_recovery:
+                    recovery_chapters.append(i+1)
+            except Exception as check_error:
+                failed_chapters.append(i+1)
+                Path(scene).unlink(missing_ok=True)
+                print(f"[CHAPTER DEFERRED] {i+1} {type(check_error).__name__}",flush=True)
+                continue
             print(f"[RENDER] {i+1}/14",flush=True)
             stage="real_stock"
+        report.update(resumed_chapters=resumed_chapters,failed_chapters=failed_chapters,
+                      completed_chapters=len(scenes))
         save(output/"credits.json",credits)
+        if failed_chapters or len(scenes)!=14:
+            raise RuntimeError("documentary has missing chapters; verified completed chapters saved: "+str(failed_chapters))
         stage="final_mp4"
         final=output/"long-video.mp4"
         finish(scenes,output/"captions.srt",final,work)

@@ -288,7 +288,16 @@ def build_documentary(topic: str, client=None, *, sleep=time.sleep):
     at = 0
     for batch_number, size in enumerate(BATCH_SIZES, 1):
         requested = subjects[at:at+size]
-        group = request_verified_group(requested, at+1, batch_number)
+        from production_checkpoint import get_script_part,put_script_part
+        key=f"volcano-group-{batch_number}"
+        identity=[topic,list(requested)]
+        saved=get_script_part(key,identity)
+        if saved is not None:
+            group=_validate_spoken_batch(validate_batch({"chapters":saved},requested),topic)
+            print(f"[SCRIPT RESUME] volcano group {batch_number}",flush=True)
+        else:
+            group = request_verified_group(requested, at+1, batch_number)
+            put_script_part(key,identity,group)
         if len(group) != size:
             raise RuntimeError(f"script_batch_{batch_number}_incomplete")
         finished.extend(group)

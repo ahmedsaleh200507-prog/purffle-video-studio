@@ -195,7 +195,14 @@ def build_multilingual_documentary(topic: str, language: str, client=None,
         from long_llm import get_long_client
         client = get_long_client()
 
-    outline = generate_outline(topic, language, client, sleep=sleep)
+    from production_checkpoint import get_script_part,put_script_part
+    identity=[topic,language]
+    outline=get_script_part("generic-outline",identity)
+    if outline is not None:
+        outline=validate_outline({"sections":outline})
+    else:
+        outline=generate_outline(topic, language, client, sleep=sleep)
+        put_script_part("generic-outline",identity,outline)
     low, high = SPOKEN_TARGET[language]
     written = []
     for offset in range(0, 14, 2):
@@ -219,11 +226,19 @@ def build_multilingual_documentary(topic: str, language: str, client=None,
             f"Return ONLY JSON with exactly chapters as an array of exactly "
             f"two objects, each with title and narration strings."
         )
-        valid = _retried_json(
-            client, prompt, CHAPTER_SCHEMA, "long_documentary_chapters",
-            lambda raw: _validate_group(
-                raw, [p["title"] for p in current], language),
-            sleep=sleep, max_tokens=3000)
+        group_identity=[topic,language,current]
+        key=f"generic-group-{offset}"
+        saved=get_script_part(key,group_identity)
+        if saved is not None:
+            valid=_validate_group({"chapters":saved},[p["title"] for p in current],language)
+            print(f"[SCRIPT RESUME] chapters {offset+1}-{offset+2}",flush=True)
+        else:
+            valid = _retried_json(
+                client, prompt, CHAPTER_SCHEMA, "long_documentary_chapters",
+                lambda raw: _validate_group(
+                    raw, [p["title"] for p in current], language),
+                sleep=sleep, max_tokens=3000)
+            put_script_part(key,group_identity,valid)
         for i, row in enumerate(valid):
             row["title"] = current[i]["title"]
             row["visual_search_query"] = current[i]["visual_search_query"]
