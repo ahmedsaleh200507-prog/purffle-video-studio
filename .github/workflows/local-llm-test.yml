@@ -14,10 +14,17 @@ permissions:
 jobs:
   bilingual:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        tier: [fast, quality]
     env:
       PYTHONPATH: ${{ github.workspace }}/scripts
       PURFFLE_LOCAL_LLM: '1'
+      PURFFLE_TEST_MODEL: ${{ matrix.tier }}
+      PURFFLE_LOCAL_QUALITY: '1'
       GROQ_API_KEY: ''
       GEMINI_API_KEY: ''
     steps:
@@ -35,15 +42,15 @@ jobs:
           path: |
             .cache/local-llm/*.gguf
             .cache/local-llm/*.tar.gz
-          key: purffle-qwen-cpu-v1-${{ runner.os }}-${{ hashFiles('scripts/local_llm.py') }}
+          key: purffle-qwen-${{ matrix.tier }}-v1-${{ runner.os }}
       - name: Run actual English and German structured inference with no API keys
         run: python scripts/local_llm.py
       - name: Preserve local startup diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: local-qwen-startup
-          path: .cache/local-llm/server.log
+          name: local-qwen-startup-${{ matrix.tier }}
+          path: .cache/local-llm/server-*.log
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 3

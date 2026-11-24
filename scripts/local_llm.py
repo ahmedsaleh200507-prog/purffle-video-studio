@@ -12,8 +12,13 @@ import time
 from types import SimpleNamespace
 
 MODEL="Qwen3-4B-Instruct-2507-Q4_K_M"
-MODEL_URL="https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/5ba9dff/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+MODEL_URL="https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/d3037fec123e6fcf1b894f42ff01bd83d4622955/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
 MODEL_SHA="2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e"
+QUALITY_MODEL="Qwen3-8B-Q4_K_M"
+QUALITY_URL="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/6a569868d07d3bd59e8b97fb001bf8c0b254bb20/Qwen3-8B-Q4_K_M.gguf"
+QUALITY_SHA="d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785"
+MODELS={"fast":(MODEL,MODEL_URL,MODEL_SHA,3*1024**3),
+        "quality":(QUALITY_MODEL,QUALITY_URL,QUALITY_SHA,6*1024**3)}
 ENGINE_URL="https://github.com/ggml-org/llama.cpp/releases/download/b12644/llama-b12644-bin-ubuntu-x64.tar.gz"
 ENGINE_SHA="7cff30bdd348bd2cf1b999e9323c97491d77dab4f5ce129629f590d75f9e6756"
 
@@ -55,7 +60,9 @@ def download(url,path,expected,max_bytes):
         tmp.unlink(missing_ok=True)
 
 class LocalQwen:
-    def __init__(self):
+    def __init__(self,tier="fast"):
+        self.tier=tier
+        self.model,self.model_url,self.model_sha,self.max_bytes=MODELS[tier]
         self.lock=threading.RLock()
         self.process=None
         self.port=None
@@ -86,7 +93,7 @@ class LocalQwen:
                 raise RuntimeError("Local model runtime requires Linux x64")
             self.root.mkdir(parents=True,exist_ok=True)
             archive=download(ENGINE_URL,self.root/"llama-b12644.tar.gz",ENGINE_SHA,350*1024**2)
-            model=download(MODEL_URL,self.root/(MODEL+".gguf"),MODEL_SHA,3*1024**3)
+            model=download(self.model_url,self.root/(self.model+".gguf"),self.model_sha,self.max_bytes)
             # Always extract from the verified release; never run an unverified
             # executable restored from a cache.
             runtime=self.root/"runtime"
@@ -102,10 +109,10 @@ class LocalQwen:
                 sock.bind(("127.0.0.1",0))
                 self.port=sock.getsockname()[1]
             env={**os.environ,"LD_LIBRARY_PATH":str(binary.parent)}
-            self.log=(self.root/"server.log").open("w",encoding="utf8")
+            self.log=(self.root/("server-"+self.tier+".log")).open("w",encoding="utf8")
             threads=max(1,min(4,os.cpu_count() or 1))
             self.process=subprocess.Popen([str(binary),"-m",str(model),"--host","127.0.0.1",
-                "--port",str(self.port),"--alias",MODEL,"-ngl","0","-c","8192","-t",str(threads),
+                "--port",str(self.port),"--alias",self.model,"-ngl","0","-c","8192","-t",str(threads),
                 "-np","1","--no-webui"],stdout=self.log,stderr=subprocess.STDOUT,env=env)
             end=time.monotonic()+180
             with requests.Session() as session:
@@ -115,7 +122,7 @@ class LocalQwen:
                         raise RuntimeError("Local Qwen runtime exited during initialization")
                     try:
                         if session.get(f"http://127.0.0.1:{self.port}/health",timeout=3).status_code==200:
-                            print("[LOCAL LLM] Qwen ready on CPU; model SHA256 verified",flush=True)
+                            print("[LOCAL LLM]",self.model,"ready on CPU; model SHA256 verified",flush=True)
                             return
                     except requests.RequestException:
                         pass
@@ -129,8 +136,18 @@ class LocalQwen:
         import requests
         with self.lock:
             self.start()
-            payload={"model":MODEL,"messages":messages,"temperature":max(0.,min(.5,float(temperature))),
+            messages=[dict(m) for m in messages]
+            if self.tier=="quality":
+                # Qwen3-8B supports the documented soft /no_think switch.
+                # Avoid hidden reasoning consuming the CPU/token budget.
+                for m in reversed(messages):
+                    if m.get("role")=="user":
+                        m["content"]=str(m["content"])+"\n/no_think"
+                        break
+            payload={"model":self.model,"messages":messages,"temperature":max(0.,min(.5,float(temperature))),
                      "max_tokens":min(4500,max(64,int(max_tokens))),"stream":False}
+            if self.tier=="quality":
+                payload["chat_template_kwargs"]={"enable_thinking":False}
             if schema:
                 payload["response_format"]={"type":"json_schema","json_schema":{"name":"purffle","schema":schema,"strict":True}}
             else:
@@ -144,24 +161,56 @@ class LocalQwen:
                 content=choice["message"]["content"]
                 if choice.get("finish_reason")!="stop" or not isinstance(json.loads(content),dict):
                     raise RuntimeError("Local model returned incomplete/nonobject JSON")
-                print("[LOCAL LLM] Qwen JSON candidate generated; normal validators still required",flush=True)
+                print("[LOCAL LLM]",self.model,"JSON candidate generated; normal validators still required",flush=True)
                 return content
             except Exception as exc:
                 # No prompt, source excerpts, model output or API secrets in error reports.
                 raise RuntimeError("Local Qwen JSON generation failed: "+type(exc).__name__) from None
 
 _INSTANCE=None
-def instance():
+_ROUTER_LOCK=threading.RLock()
+_FAILED=set()
+def instance(tier="fast"):
     global _INSTANCE
-    if _INSTANCE is None:
-        _INSTANCE=LocalQwen()
-    return _INSTANCE
+    with _ROUTER_LOCK:
+        if _INSTANCE is not None and _INSTANCE.tier!=tier:
+            _INSTANCE.close()
+            _INSTANCE=None
+        if _INSTANCE is None:
+            _INSTANCE=LocalQwen(tier)
+        return _INSTANCE
+
+def complete_adaptive(messages,*,schema=None,max_tokens=3000,temperature=.2,prefer="fast"):
+    """One loaded model at a time. Switch only for infrastructure or invalid JSON.
+    Substantive negative scientific reviews are returned as-is, never voted away.
+    """
+    global _INSTANCE
+    with _ROUTER_LOCK:
+        quality_enabled=os.getenv("PURFFLE_LOCAL_QUALITY","0")=="1"
+        order=["quality","fast"] if quality_enabled and prefer=="quality" else ["fast","quality"] if quality_enabled else ["fast"]
+        if quality_enabled and _INSTANCE is not None and _INSTANCE.tier=="quality":
+            # Keep the larger model warm after escalation rather than swap
+            # between generation and review on every chapter.
+            order=["quality","fast"]
+        for tier in order:
+            if tier in _FAILED:
+                continue
+            try:
+                return instance(tier).complete(messages,schema=schema,max_tokens=max_tokens,temperature=temperature)
+            except Exception as exc:
+                print("[LOCAL ROUTER]",tier,"failed",type(exc).__name__,flush=True)
+                if _INSTANCE is not None and _INSTANCE.failed:
+                    _FAILED.add(tier)
+                if _INSTANCE is not None:
+                    _INSTANCE.close()
+                    _INSTANCE=None
+        raise RuntimeError("All permitted local models unavailable")
 
 def local_completion(**kwargs):
     fmt=kwargs.get("response_format") or {}
     schema=(fmt.get("json_schema") or {}).get("schema")
-    content=instance().complete(kwargs["messages"],schema=schema,
-        max_tokens=kwargs.get("max_tokens",3000),temperature=kwargs.get("temperature",.2))
+    content=complete_adaptive(kwargs["messages"],schema=schema,
+        max_tokens=kwargs.get("max_tokens",3000),temperature=kwargs.get("temperature",.2),prefer="quality")
     return SimpleNamespace(choices=[SimpleNamespace(finish_reason="stop",message=SimpleNamespace(content=content))])
 
 def install_short_provider(upstream):
@@ -174,7 +223,7 @@ def install_short_provider(upstream):
         name="purffle-local"
         model=MODEL
         def complete(self,system,user,*,schema=None,temperature=.2,max_tokens=4000):
-            return instance().complete([{"role":"system","content":system},{"role":"user","content":user}],
+            return complete_adaptive([{"role":"system","content":system},{"role":"user","content":user}],
                 schema=schema,max_tokens=max_tokens,temperature=temperature)
     def build(name,settings,model=""):
         return Provider() if name=="purffle-local" else original(name,settings,model)
@@ -182,11 +231,26 @@ def install_short_provider(upstream):
 
 if __name__=="__main__":
     # Real CPU inference smoke check; independent of paid APIs.
+    tier=os.getenv("PURFFLE_TEST_MODEL","fast")
     schema={"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":False}
     for lang,prompt,expected in (("en","Reply in English with only the answer to 2+2 in words.","four"),
                                  ("de","Antworte auf Deutsch: Zwei plus zwei, als Wort.","vier")):
-        result=json.loads(instance().complete([{"role":"system","content":"Return JSON with answer."},
+        result=json.loads(instance(tier).complete([{"role":"system","content":"Return JSON with answer."},
                     {"role":"user","content":prompt}],schema=schema,max_tokens=64))
         if expected not in result["answer"].casefold():
             raise RuntimeError("Local bilingual smoke test failed: "+lang)
-        print("[LOCAL SMOKE PASS]",lang,flush=True)
+        print("[LOCAL SMOKE PASS]",tier,lang,flush=True)
+    # Exercise actual narration-shaped output and literal source evidence,
+    # not only arithmetic or a mocked provider.
+    scene_schema={"type":"object","properties":{"narration":{"type":"string"},
+        "visual_search_query":{"type":"string"},"source_quote":{"type":"string"}},
+        "required":["narration","visual_search_query","source_quote"],"additionalProperties":False}
+    source="Ocean surface waves are commonly generated by wind transferring energy to the water."
+    for lang in ("en","de"):
+        started=time.monotonic()
+        answer=json.loads(instance(tier).complete([{"role":"system","content":"Return only JSON. Quote the supplied source verbatim. Do not invent facts."},
+            {"role":"user","content":f"Write one short educational narration in {lang}, an English video search query and a literal quote from this source: {source}"}],
+            schema=scene_schema,max_tokens=350))
+        if answer["source_quote"] not in source or len(answer["source_quote"])<15 or len(answer["narration"].split())<8 or not answer["visual_search_query"].strip():
+            raise RuntimeError("Narration/source quote smoke failed "+lang)
+        print("[LOCAL NARRATION PASS]",tier,lang,"seconds",round(time.monotonic()-started,1),flush=True)

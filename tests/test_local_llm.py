@@ -23,9 +23,22 @@ class LocalLLMTests(unittest.TestCase):
             call.assert_called_once()
     def test_schema_preserved(self):
         schema={"type":"object"}
-        with patch("local_llm.instance") as q:
-            q.return_value.complete.return_value='{"ok":true}'
+        with patch("local_llm.complete_adaptive") as q:
+            q.return_value='{"ok":true}'
             result=local_completion(messages=[],response_format={"type":"json_schema","json_schema":{"schema":schema}})
             self.assertEqual(result.choices[0].message.content,'{"ok":true}')
-            self.assertEqual(q.return_value.complete.call_args.kwargs["schema"],schema)
+            self.assertEqual(q.call_args.kwargs["schema"],schema)
+    def test_quality_selection_and_schema(self):
+        from local_llm import complete_adaptive
+        with patch.dict("os.environ",{"PURFFLE_LOCAL_QUALITY":"1"}), patch("local_llm._INSTANCE",None), patch("local_llm.instance") as q:
+            q.return_value.complete.return_value='{"ok":true}'
+            self.assertEqual(complete_adaptive([],prefer="quality"),'{"ok":true}')
+            q.assert_called_once_with("quality")
+    def test_quality_failure_falls_back_to_fast(self):
+        from local_llm import complete_adaptive
+        with patch.dict("os.environ",{"PURFFLE_LOCAL_QUALITY":"1"}), patch("local_llm._INSTANCE",None), patch("local_llm.instance") as q:
+            q.side_effect=[SimpleNamespace(complete=lambda *a,**k: (_ for _ in ()).throw(RuntimeError("failed"))),
+                           SimpleNamespace(complete=lambda *a,**k:'{"ok":true}')]
+            self.assertEqual(complete_adaptive([],prefer="quality"),'{"ok":true}')
+            self.assertEqual([x.args for x in q.call_args_list],[("quality",),("fast",)])
 if __name__=="__main__": unittest.main()

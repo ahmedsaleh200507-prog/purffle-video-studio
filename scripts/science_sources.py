@@ -583,12 +583,12 @@ def _strict_science_review_json(llm, system, prompt, schema):
     except RuntimeError as exc:
         # Only infrastructure/structured-output failures, never override a
         # substantive unsupported-claim decision or literal quote validation.
-        from local_llm import enabled,instance
+        from local_llm import enabled,complete_adaptive
         if not enabled() or not str(exc).startswith("science_review_unavailable:"):
             raise
         print("[SCIENCE REVIEW] Strict cloud reviewer unavailable; trying Qwen with identical schema",flush=True)
-        return json.loads(instance().complete([{"role":"system","content":system},
-            {"role":"user","content":prompt}],schema=schema,max_tokens=4096,temperature=0.0))
+        return json.loads(complete_adaptive([{"role":"system","content":system},
+            {"role":"user","content":prompt}],schema=schema,max_tokens=4096,temperature=0.0,prefer="quality"))
 
 def _strict_science_review_cloud(llm, system, prompt, schema):
     """Evidence-review-only strict Groq JSON Schema, never silent JSON downgrade.
