@@ -107,19 +107,21 @@ def main():
         from purffle_shorts.pipeline import Studio
         groq_ready = bool(os.environ.get('GROQ_API_KEY'))
         gemini_ready = bool(os.environ.get('GEMINI_API_KEY'))
-        if not (groq_ready or gemini_ready):
-            raise RuntimeError(
-                'Missing free script API: configure GROQ_API_KEY or GEMINI_API_KEY')
+        from local_llm import enabled as local_enabled, MODEL as local_model
+        local_ready=local_enabled()
+        if not (groq_ready or gemini_ready or local_ready):
+            raise RuntimeError('No configured text provider')
         # Existing approved narrator, scientific source screening and actual
         # video quality checks remain unchanged. This selects TEXT only.
         # Gemini 3.1 Flash-Lite has a higher request allowance on the
         # user's configured free project. Reserve Groq as a live secondary.
         # The pinned upstream retries the same JSON schema with the fallback.
-        main_llm = 'gemini' if gemini_ready else 'groq'
-        selected_model = (
-            'gemini-3.1-flash-lite' if gemini_ready
-            else 'openai/gpt-oss-20b')
+        main_llm = 'gemini' if gemini_ready else ('groq' if groq_ready else 'purffle-local')
+        selected_model = ('gemini-3.1-flash-lite' if gemini_ready
+                          else 'openai/gpt-oss-20b' if groq_ready else local_model)
         fallbacks = ['groq'] if gemini_ready and groq_ready else []
+        if local_ready and main_llm!='purffle-local':
+            fallbacks.append('purffle-local')
         print(f"[SHORTS LLM] primary={main_llm} "
               f"fallback={'groq' if fallbacks else 'none'}",flush=True)
         s = replace(Settings.from_env(), language=os.environ['LANGUAGE'],

@@ -1105,6 +1105,8 @@ def install():
     verify_upstream()
     import purffle_shorts.script as script
     import purffle_shorts.llm as upstream_llm
+    from local_llm import install_short_provider
+    install_short_provider(upstream_llm)
     # The pinned upstream still defaults to the older Gemini 2.5 Flash
     # family. Select a documented free-tier text model ONLY for Gemini,
     # leaving existing Groq model, narrator and Shorts scene rules intact.

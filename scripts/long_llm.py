@@ -55,7 +55,8 @@ def _groq_retryable(error: Exception) -> bool:
 
 class _Completion:
     def __init__(self, *, groq=None, gemini_key: str = "", post=None,
-                 prefer: str = "groq"):
+                 prefer: str = "groq", local=False):
+        self._local=local
         self._groq = groq
         self._gemini_key = gemini_key
         self._post = post
@@ -131,11 +132,15 @@ class _Completion:
         available = [provider for provider in configured
                      if enabled[provider] and
                      provider not in self._quota_exhausted]
+        if self._local:
+            available.append("local")
         if not available:
-            raise LongLLMUnavailable(
-                "No free LLM provider available. Check Groq/Gemini quotas.")
+            raise LongLLMUnavailable("No free LLM provider available")
         for index, provider in enumerate(available):
             try:
+                if provider == "local":
+                    from local_llm import local_completion
+                    return local_completion(**kwargs)
                 if provider == "gemini":
                     return self._gemini(**kwargs)
                 for attempt in range(5):
@@ -171,10 +176,10 @@ class _Completion:
 
 class LongLLM:
     def __init__(self, *, groq=None, gemini_key: str = "", post=None,
-                 prefer: str = "groq"):
+                 prefer: str = "groq", local=False):
         self.chat = SimpleNamespace(completions=_Completion(
             groq=groq, gemini_key=gemini_key,
-            post=post, prefer=prefer))
+            post=post, prefer=prefer,local=local))
 
 
 def get_long_client(*, groq=None, post=None, environ=None):
@@ -192,7 +197,8 @@ def get_long_client(*, groq=None, post=None, environ=None):
     if not groq and groq_key:
         from groq import Groq
         groq = Groq(api_key=groq_key, timeout=120)
-    if not groq and not gemini_key:
-        raise LongLLMUnavailable(
-            "No long-video LLM key. Add GROQ_API_KEY or GEMINI_API_KEY as GitHub Secrets.")
-    return LongLLM(groq=groq, gemini_key=gemini_key, post=post, prefer=primary)
+    from local_llm import enabled
+    local=enabled(env)
+    if not groq and not gemini_key and not local:
+        raise LongLLMUnavailable("No configured free text provider.")
+    return LongLLM(groq=groq, gemini_key=gemini_key, post=post, prefer=primary,local=local)

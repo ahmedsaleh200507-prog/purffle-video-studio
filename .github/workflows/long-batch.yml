@@ -85,6 +85,7 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      PURFFLE_LOCAL_LLM: '1'
       PURFFLE_LONG_LLM_PRIMARY: ${{ vars.PURFFLE_LONG_LLM_PRIMARY || 'gemini' }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
