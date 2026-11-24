@@ -332,7 +332,7 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
         # One bounded wall-clock budget for ALL aliases of one spoken scene.
         # Otherwise each alias gets a fresh 75s provider scan and a ten-video
         # batch can exceed the runner timeout before reaching the next scene.
-        shot_budget_deadline = time.monotonic() + 135
+        shot_budget_deadline = time.monotonic() + 210
         for query in queries:
             if time.monotonic() >= shot_budget_deadline:
                 attempts.append({"scene": slot, "query": query,

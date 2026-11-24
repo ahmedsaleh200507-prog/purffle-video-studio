@@ -59,8 +59,8 @@ def discover_portrait_first(registry, sources, queries, deadline, deferred, *, w
     """
     start=time.monotonic()
     budget=max(0.,deadline-start)
-    portrait_deadline=start+budget*.58
-    unknown_deadline=start+budget*.75
+    portrait_deadline=start+budget*.42
+    unknown_deadline=start+budget*.58
     unknown=[]
     for source,candidates in discover(registry,sources,queries,portrait_deadline,workers=workers):
         vertical=[]
@@ -80,6 +80,8 @@ def discover_portrait_first(registry, sources, queries, deadline, deferred, *, w
         yield source,[item for src,item in unknown if src==source],"unknown_orientation",unknown_deadline
     # Measured nonportrait candidates discovered during earlier phases
     # can also be appended by the caller. Keep all candidates unique.
+    deferred.sort(key=lambda row:(-min(int(row[1].width or 0),int(row[1].height or 0)),
+                                  -max(int(row[1].width or 0),int(row[1].height or 0))))
     for source in dict.fromkeys(src for src,_ in deferred):
         seen=set()
         items=[]

@@ -658,7 +658,8 @@ class ProviderRegistry:
         # Don't propose lava for generic ocean footage, whales, mirrors, etc.
         qwords = set(re.findall(r"[a-z]+", query.casefold()))
         if not qwords.intersection({"lava", "volcano", "volcanic",
-                                   "magma", "eruption", "laze", "kilauea"}):
+                                   "magma", "eruption", "laze", "kilauea",
+                                   "geyser","geothermal","landslide","debris","flood","mudflow"}):
             return []
         result = []
         for rank, row in enumerate(data["clips"][:48]):
@@ -675,8 +676,9 @@ class ProviderRegistry:
                     or u.scheme != "https"
                     or u.hostname !=
                       "usgs-ocapsv2-public-input-media.s3.us-west-2.amazonaws.com"
-                    or not u.path.startswith(
-                        "/assets/palladium/production/s3fs-public/atoms/video/")
+                    or not u.path.startswith((
+                        "/assets/palladium/production/s3fs-public/atoms/video/",
+                        "/assets/palladium/production/s3fs-public/media/video/"))
                     or not u.path.lower().endswith(".mp4")
                     or u.query or u.fragment
                     or u.username or u.password):

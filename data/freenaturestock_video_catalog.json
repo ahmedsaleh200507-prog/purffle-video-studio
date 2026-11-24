@@ -114,6 +114,24 @@
       "width": 4096,
       "height": 2304,
       "duration": 29
+    },
+    {
+      "id": "leaves-dancing-before-a-waterfall",
+      "title": "Leaves Dancing Before a Waterfall",
+      "duration": 28,
+      "width": 3840,
+      "height": 2160,
+      "source_page": "https://freenaturestock.com/video/leaves-dancing-before-a-waterfall/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-leaves-dancing-waterfall.mp4"
+    },
+    {
+      "id": "golden-water-ripples-at-sunset",
+      "title": "Golden Water Ripples at Sunset",
+      "duration": 17,
+      "width": 1920,
+      "height": 1080,
+      "source_page": "https://freenaturestock.com/video/golden-water-ripples-at-sunset/",
+      "video_url": "https://cdn.freenaturestock.com/videos/freenaturestock-golden-water-ripples.mp4"
     }
   ]
 }

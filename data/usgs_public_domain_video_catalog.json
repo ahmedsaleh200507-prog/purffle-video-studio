@@ -82,6 +82,39 @@
       "video_url": "https://usgs-ocapsv2-public-input-media.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/video/compilation.mp4",
       "rights_statement": "Public Domain",
       "creator": "USGS Hawaiian Volcano Observatory"
+    },
+    {
+      "id": "las-lomas-debris-flow",
+      "title": "Las Lomas Debris Flow",
+      "description": "Recorded debris flow in Colorado.",
+      "tags": "debris flow landslide mud flood colorado",
+      "duration": 68,
+      "creator": "USGS Office of Communications",
+      "rights_statement": "Public Domain",
+      "source_page": "https://www.usgs.gov/media/videos/las-lomas-debris-flow",
+      "video_url": "https://usgs-ocapsv2-public-input-media.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/media/video/LasLomasNoIntro.mp4"
+    },
+    {
+      "id": "steamboat-geyser-yellowstone-national-park",
+      "title": "Steamboat Geyser Yellowstone",
+      "description": "Steamboat geyser in Yellowstone National Park.",
+      "tags": "geyser geothermal hot water steam eruption yellowstone",
+      "duration": 30,
+      "creator": "USGS Scott Horvath",
+      "rights_statement": "Public Domain",
+      "source_page": "https://www.usgs.gov/media/videos/steamboat-geyser-yellowstone-national-park",
+      "video_url": "https://usgs-ocapsv2-public-input-media.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/media/video/Steamboat%2030s.mp4"
+    },
+    {
+      "id": "postfire-debris-flow-2024-elk-fire-burn-area",
+      "title": "Postfire debris flow in Elk Fire burn area",
+      "description": "USGS monitoring station recording of rainfall-triggered debris flow in Wyoming.",
+      "tags": "landslide debris flow rainfall flood mud wildfire wyoming",
+      "duration": 136,
+      "creator": "USGS Landslide Hazards Program",
+      "rights_statement": "Public Domain",
+      "source_page": "https://www.usgs.gov/media/videos/postfire-debris-flow-2024-elk-fire-burn-area",
+      "video_url": "https://usgs-ocapsv2-public-input-media.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/media/video/Elk_For_Web_Final_Cut_%281%29.mp4"
     }
   ]
 }

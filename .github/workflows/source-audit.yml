@@ -13,6 +13,8 @@ on:
       - 'tests/test_portrait_priority.py'
       - 'tests/test_portrait_layout.py'
       - 'scripts/video_sources.py'
+      - 'data/usgs_public_domain_video_catalog.json'
+      - 'data/freenaturestock_video_catalog.json'
       - 'tests/test_range_segment.py'
       - 'tests/test_localized_motion.py'
       - '.github/workflows/source-audit.yml'

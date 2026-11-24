@@ -351,7 +351,7 @@ class StrictVisuals:
         # Each scene has a bounded shared budget across all search strategies.
         # Without this, exact scene + five fallbacks can exhaust the entire
         # 25-minute worker timeout before subsequent scenes are attempted.
-        attempt_deadline = min(scene_start + 75,
+        attempt_deadline = min(scene_start + (150 if os.environ.get("PURFFLE_SHORTS_PORTRAIT_FIRST")=="1" else 75),
                                getattr(self, "_shot_deadline", float("inf")))
         max_candidates = max(1, min(12, int(os.getenv("CANDIDATES_PER_SOURCE", "4"))))
         # #93: the precise "lava entering ocean" shot was filled by a
