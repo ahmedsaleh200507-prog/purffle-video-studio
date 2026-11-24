@@ -1,0 +1,45 @@
+name: '03 - Test All Video Sources'
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/source_audit.py'
+      - '.github/workflows/source-audit.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
+      NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
+      COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
+      COVER2: ${{ secrets.COVER2 }}
+      VECTEEZY_API_KEY: ${{ secrets.VECTEEZY_API_KEY }}
+      PURFFLE_NO_ATTRIBUTION: '1'
+      PURFFLE_API_INTERVAL_SECONDS: '1.6'
+      RESOLUTION: '720x1280'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install lightweight test dependencies
+        run: |
+          python -m pip install requests Pillow
+          command -v ffmpeg && command -v ffprobe
+      - name: Test each provider independently
+        run: python scripts/source_audit.py
+      - name: Upload source audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-audit
+          path: source-audit/
+          if-no-files-found: warn
+          retention-days: 7
