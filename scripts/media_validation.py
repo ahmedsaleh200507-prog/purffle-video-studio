@@ -718,6 +718,10 @@ def download_hd_variant(item, downloader, validator, *, need=0, check=None,
     urls = list(dict.fromkeys([item.url, *variants]))[:4]
     last = None
     range_candidates = []
+    range_failures = []
+    range_attempts = []
+    if hasattr(item, "extra"):
+        item.extra["partial_attempts"] = range_attempts
     segment_seconds = min(90., max(float(segment_seconds or 0), float(need or 0)+.3))
     # Keep ordinary stock fast. Known long assets may be sliced before their
     # full download; unknown-size assets fall back after the normal byte cap.
@@ -737,12 +741,44 @@ def download_hd_variant(item, downloader, validator, *, need=0, check=None,
         return path,quality
     def partial(url):
         from range_segment import extract_segment
-        path,evidence=extract_segment(url,downloader,segment_seconds)
-        try:
-            return accept(path,evidence)
-        except Exception:
-            path.unlink(missing_ok=True)
-            raise
+        # A long recording may begin with a slate, black frames or a static
+        # title. Try later actual footage rather than relaxing HD/motion gates.
+        # Scope extra seeks to NPS large files; at most three intervals total
+        # for each rendition and never seek past a known duration.
+        offsets = [0.]
+        if getattr(item, "source", "") == "nps-video":
+            offsets += [max(20.,segment_seconds+5),max(60.,2*segment_seconds+10)]
+            if known_duration > 0:
+                offsets = [x for x in offsets if x+segment_seconds <= known_duration+.1] or [0.]
+        failure = None
+        for offset in offsets:
+            try:
+                path,evidence=extract_segment(url,downloader,segment_seconds,offset=offset)
+            except Exception as exc:
+                failure=exc
+                range_attempts.append({"offset":offset,"status":"transfer_failed",
+                    "reason":re.sub(r"https?://\S+","[url omitted]",str(exc))[:180]})
+                print("[PARTIAL TRANSFER REJECT]", getattr(item,"source","unknown"),
+                      offset,range_attempts[-1]["reason"],flush=True)
+                # No later seek helps when the server itself refuses ranges.
+                break
+            try:
+                result=accept(path,evidence)
+                range_attempts.append({**evidence,"status":"quality_passed"})
+                return result
+            except Exception as exc:
+                failure=exc
+                path.unlink(missing_ok=True)
+                reason=re.sub(r"https?://\S+","[url omitted]",str(exc))[:180]
+                range_attempts.append({**evidence,"status":"quality_rejected","reason":reason})
+                print("[PARTIAL QUALITY REJECT]",getattr(item,"source","unknown"),offset,reason,flush=True)
+                # Resolution cannot be improved by seeking within one encode.
+                if "requires short side" in reason or "framing requirements" in reason:
+                    break
+        if failure is not None:
+            range_failures.append(failure)
+            raise failure
+        raise ValidationError("No usable partial interval")
     for url in urls:
         if prefer_range:
             try:
@@ -767,6 +803,13 @@ def download_hd_variant(item, downloader, validator, *, need=0, check=None,
             print("[PARTIAL SOURCE REJECT]",getattr(item,"source","unknown"),
                   type(exc).__name__,str(exc)[:120],flush=True)
             last=exc
+    if range_failures:
+        # Preserve the actual partial-download/quality failure rather than
+        # overwriting it with the later full-download size rejection.
+        quality_failures = [x for x in range_attempts if x["status"]=="quality_rejected"]
+        if quality_failures:
+            raise ValidationError("Partial clip quality rejected: "+quality_failures[-1]["reason"])
+        raise range_failures[-1]
     if last is not None:
         raise last
     raise ValidationError("No downloadable source variants")

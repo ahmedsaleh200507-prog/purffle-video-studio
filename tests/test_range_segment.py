@@ -54,6 +54,14 @@ class RangeTests(unittest.TestCase):
                 self.assertGreaterEqual(q["duration"],2.8)
                 self.assertLess(q["duration"],4)
                 self.assertEqual(q["height"],720)
+                later,proof2=extract_segment(f"http://127.0.0.1:{server.server_port}/video",dl,3,offset=12)
+                self.assertEqual(proof2["source_offset_seconds"],12)
+                self.assertLess(proof2["transferred_bytes"],total)
+                self.assertNotEqual(later,dest)
+                q2=QualityValidator().validate(later)
+                self.assertGreaterEqual(q2["duration"],2.8)
+                self.assertLess(q2["duration"],4)
+                self.assertEqual(q2["height"],720)
             finally:
                 server.shutdown();server.server_close();t.join(timeout=2)
 

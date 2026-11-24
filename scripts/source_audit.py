@@ -86,6 +86,7 @@ def audit(provider):
                     path, quality = download_hd_variant(item, dl, validator, segment_seconds=15)
                     attempt["downloaded"] = True
                     attempt["download_evidence"] = item.extra.get("download_evidence", {})
+                    attempt["partial_attempts"] = item.extra.get("partial_attempts", [])
                     w,h = quality["width"],quality["height"]
                     scale = max(720/min(w,h*9/16),1280/h)
                     attempt.update(status="hd_motion_ok",width=w,height=h,
@@ -96,7 +97,8 @@ def audit(provider):
                     row.update(status="verified_hd_download",reason="Licensed moving HD sample downloaded and decoded")
                     return row
                 except Exception as exc:
-                    attempt.update(status="rejected",reason=safe_error(exc))
+                    attempt.update(status="rejected",reason=safe_error(exc),
+                                   partial_attempts=item.extra.get("partial_attempts", []))
                     row["downloads"].append(attempt)
             if row["queries"][-1]["status"] in ("http_401","http_403","http_429","circuit_open"):
                 break

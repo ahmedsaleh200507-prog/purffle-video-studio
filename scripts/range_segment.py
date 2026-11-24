@@ -171,15 +171,18 @@ def handler_for(asset):
     return Handler
 
 
-def extract_segment(url, downloader, seconds):
-    """Extract opening interval; retain source resolution and actual timestamps.
+def extract_segment(url, downloader, seconds, *, offset=0):
+    """Extract a bounded interval; preserve native dimensions and motion.
 
     Byte count is bounded, not guaranteed to equal exactly the desired
     playback duration: MP4 indexes and GOP/keyframe data can add overhead.
     """
     seconds=float(seconds)
+    offset=float(offset)
     if not math.isfinite(seconds) or not 0.6<=seconds<=90:
         raise ValidationError("Invalid partial clip duration")
+    if not math.isfinite(offset) or not 0<=offset<=86400:
+        raise ValidationError("Invalid partial clip offset")
     budget=min(downloader.max_bytes,64*1024*1024)
     timeout=min(downloader.total_timeout,85)
     folder=Path(downloader.cache_dir)
@@ -203,20 +206,26 @@ def extract_segment(url, downloader, seconds):
         env={k:v for k,v in os.environ.items() if k.lower() not in
              ("http_proxy","https_proxy","all_proxy","no_proxy")}
         env["NO_PROXY"]="127.0.0.1,localhost"
+        # Input seeking uses upstream byte ranges. Nonzero seeks are
+        # decoded and re-encoded to cut at the requested time, not an
+        # earlier keyframe. No resolution or frame-rate enlargement.
+        seek=["-ss",f"{offset:.3f}"] if offset else []
+        encoding=(["-c:v","libx264","-preset","veryfast","-crf","20","-threads","2","-pix_fmt","yuv420p"]
+                  if offset else ["-c:v","copy"])
         result=subprocess.run(["ffmpeg","-hide_banner","-nostdin","-y","-loglevel","error",
             "-protocol_whitelist","http,tcp","-format_whitelist","mov,matroska,webm",
             "-rw_timeout","10000000","-probesize","4194304","-analyzeduration","4000000",
-            "-i",local,"-map","0:v:0","-an","-sn","-dn","-t",f"{seconds:.3f}",
-            "-c:v","copy","-fs",str(budget),"-movflags","+faststart",str(temp)],
+            *seek,"-i",local,"-map","0:v:0","-an","-sn","-dn","-t",f"{seconds:.3f}",
+            *encoding,"-fs",str(budget),"-movflags","+faststart",str(temp)],
             capture_output=True,timeout=max(1,asset.deadline-time.monotonic()),env=env)
         if result.returncode or temp.stat().st_size<1024:
             raise ValidationError("Range extraction failed: unsupported container or insufficient range data")
         # ffmpeg may emit a short file when input is truncated. The shared
         # validator checks measured duration before any acceptance.
-        key=hashlib.sha256((url+"|opening|"+str(seconds)).encode()).hexdigest()
+        key=hashlib.sha256((url+"|"+str(offset)+"|"+str(seconds)).encode()).hexdigest()
         target=folder/(key+".segment.mp4")
         temp.replace(target)
-        evidence={"mode":"http_range","source_offset_seconds":0.0,
+        evidence={"mode":"http_range","source_offset_seconds":offset,
                   "requested_seconds":seconds,"transferred_bytes":asset.transferred,
                   "source_bytes":asset.total,"byte_budget":budget}
         print("[PARTIAL VIDEO]",evidence,flush=True)
