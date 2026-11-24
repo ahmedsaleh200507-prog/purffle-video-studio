@@ -14,6 +14,8 @@ on:
       - 'scripts/media_validation.py'
       - 'scripts/portrait_layout.py'
       - 'scripts/studio_runtime.py'
+      - 'scripts/crop_subject_policy.py'
+      - 'tests/test_crop_subject_policy.py'
       - 'scripts/short_recovery.py'
       - 'scripts/long_still_recovery.py'
       - 'tests/test_verified_photo_policy.py'
@@ -92,6 +94,7 @@ jobs:
           python -m unittest discover -s tests -p test_batch_path_scope.py
           python -m unittest discover -s tests -p test_local_llm.py
           python -m unittest discover -s tests -p test_long_sentence_plan.py
+          python -m unittest discover -s tests -p test_crop_subject_policy.py
           python -m compileall -q scripts
       - name: Test each provider independently
         run: python scripts/source_audit.py

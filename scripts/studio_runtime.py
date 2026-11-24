@@ -622,6 +622,8 @@ class StrictVisuals:
                                 "portrait_pillarbox_invalid: " +
                                 crop_integrity["reason"])
                         match["portrait_integrity"] = crop_integrity
+                        from crop_subject_policy import verify_crop_subject
+                        match["crop_subject_proof"]=verify_crop_subject(crop_frames,spec,self.matcher)
                     from scene_relevance import suitability
                     match["suitability"] = suitability(item.extra.get("relevance_evidence", {}), match, quality)
                     # #84: A generic 'ship outdoors' CLIP score let a mostly

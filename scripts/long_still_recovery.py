@@ -157,7 +157,8 @@ def stills(chapter,index,work,seen,*,size=(1920,1080),limit=4,require_verified=F
         chapter.get("visual_subject")) if q))
     from geography_policy import scene_requirement,scoped_queries,require_geography
     from era_policy import scene_era,footage_allowed
-    required_regions=scene_requirement(chapter,chapter.get("topic",""))
+    required_regions=(chapter["required_regions"] if "required_regions" in chapter
+                      else scene_requirement(chapter,chapter.get("topic","")))
     queries=scoped_queries(queries,required_regions)
     era=scene_era(chapter)
     selected=[]

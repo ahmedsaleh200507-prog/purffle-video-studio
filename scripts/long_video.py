@@ -711,6 +711,9 @@ def main():
                 record_completed(i+1,saved_path)
                 print(f"[CHAPTER RESUME] {i+1}/14",flush=True)
                 continue
+            used_before=set(used)
+            still_before=set(still_ids)
+            reused_before=set(reused_source_ids)
             was_recovery=False
             timed_plan=None
             if scene_groups is not None:
@@ -769,6 +772,9 @@ def main():
                         i+1,wav,seconds,{**text[i],"topic":a.topic},work,still_ids,run)
                     was_recovery=True
                 except Exception as recovery_error:
+                    used.intersection_update(used_before)
+                    still_ids.intersection_update(still_before)
+                    reused_source_ids.intersection_update(reused_before)
                     failed_chapters.append(i+1)
                     (work/f"chapter-{i+1:02d}.mp4").unlink(missing_ok=True)
                     print(f"[CHAPTER DEFERRED] {i+1} {type(recovery_error).__name__}",flush=True)
@@ -786,6 +792,9 @@ def main():
                 if was_recovery:
                     recovery_chapters.append(i+1)
             except Exception as check_error:
+                used.intersection_update(used_before)
+                still_ids.intersection_update(still_before)
+                reused_source_ids.intersection_update(reused_before)
                 failed_chapters.append(i+1)
                 Path(scene).unlink(missing_ok=True)
                 print(f"[CHAPTER DEFERRED] {i+1} {type(check_error).__name__}",flush=True)
@@ -831,7 +840,7 @@ def main():
                       visual_verification="mixed_media_review" if recovery_chapters else "local_clip_screening",
                       illustrative_subject_clips=sum(
                           c.get("visual_role") == "illustrative_subject_only" for c in credits),
-                      note=("Contains licensed photos or marked original illustrations; review before publishing." if recovery_chapters else "All clips pass metadata + local CLIP screening. Illustrative B-roll is not exact footage of narrated events."))
+                      note=("Contains photo recovery or chapter-level visual fallback; review before publishing." if recovery_chapters else "All clips pass metadata + local CLIP screening. Illustrative B-roll is not exact footage of narrated events."))
     except Exception as e:
         report.update(status="failed",mp4=None,stage=stage,error=(type(e).__name__+": "+str(e))[:800])
         # A technically invalid final must not be exported as a review movie.
