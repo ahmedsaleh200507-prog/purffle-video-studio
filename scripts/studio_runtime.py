@@ -1339,6 +1339,8 @@ exact suitable footage cannot be verified; never weaken the scene to hide that f
     media.background_item = pipeline.background_item = background
     render.prepare_segment = strict_prepare_segment
     install_attention_hook(overlays)
+    from short_caption_style import install_style
+    install_style(overlays)
     pipeline.Studio._speak = speak
     tts._edge = strict_edge
     ffmpeg.run = ffmpeg_run

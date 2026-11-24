@@ -74,7 +74,9 @@ def recover_short(topic,language,target):
 
 def _recover_short(topic,language,target):
     from local_voice import synthesize,provenance
-    from long_video import real_word_captions,srt_time
+    from long_video import real_word_captions
+    from purffle_shorts.timing import Word
+    from short_caption_style import recovery_captions
     from long_still_recovery import stills
     from media_validation import QualityValidator,SceneMatcher,SceneSpec
     from portrait_layout import center_filter
@@ -97,7 +99,7 @@ def _recover_short(topic,language,target):
     quality=QualityValidator()
     work=target/"real-recovery"
     work.mkdir(exist_ok=True)
-    seen=set(); clips=[]; credits=[]; cues=[]; offset=0.
+    seen=set(); clips=[]; credits=[]; caption_words=[]; offset=0.
     from studio_runtime import StrictVisuals
     from production_checkpoint import digest
     # Use the existing source list only. Isolated duplicate ledger, report
@@ -123,7 +125,8 @@ def _recover_short(topic,language,target):
             raise RuntimeError("Reviewed script has no concrete scene subject")
         speech=synthesize(scene["narration"],work/f"voice-{i}",SimpleNamespace(language=language))
         duration=float(speech.duration)
-        cues.extend(real_word_captions(speech,offset))
+        real_word_captions(speech,offset)  # independently validate native word timing
+        caption_words.extend(Word(w.text,offset+float(w.start),offset+float(w.end)) for w in speech.words)
         offset+=duration
         clip=work/f"scene-{i}.mp4"
         chosen=None
@@ -190,14 +193,15 @@ def _recover_short(topic,language,target):
              "-crf","22","-threads","2","-c:a","aac","-b:a","160k","-ar","44100","-ac","2",str(clip)])
         clips.append(clip)
     captions=target/"captions.srt"
-    captions.write_text("".join(f"{i}\n{srt_time(a)} --> {srt_time(b)}\n{line}\n\n"
-                    for i,(a,b,line) in enumerate(cues,1)),encoding="utf8")
+    playlist,band_y,subtitle_text=recovery_captions(caption_words,offset,language,work)
+    captions.write_text(subtitle_text,encoding="utf8")
     manifest=work/"concat.txt"
     manifest.write_text("".join("file '"+str(p)+"'\n" for p in clips),encoding="utf8")
     out=target/"review-video.mp4"
-    sub=str(captions).replace("\\","\\\\").replace(":","\\:").replace("'","\\'")
-    run(base+["-f","concat","-safe","0","-i",str(manifest),"-vf",
-             "subtitles='"+sub+"':force_style='FontSize=17,Alignment=2,MarginV=42'",
+    run(base+["-f","concat","-safe","0","-i",str(manifest),
+             "-f","concat","-safe","0","-i",str(playlist.resolve()),
+             "-filter_complex",f"[0:v][1:v]overlay=x=0:y={band_y}:eof_action=pass:repeatlast=0[v]",
+             "-map","[v]","-map","0:a:0","-t",f"{offset:.3f}","-r","30",
              "-c:v","libx264","-preset","veryfast","-crf","22","-threads","2","-c:a","copy",
              "-movflags","+faststart",str(out)])
     try:

@@ -141,6 +141,8 @@ def main():
                     end_cta='', watermark='none', hook_overlay=False,  # Keep title area blank in every Short; preserve word captions.
                     upload=False, also_languages=[], localize_metadata=[], notify_webhook='',
                     workers=1, crf=18, preset='medium', target_seconds=24)  # Bootstrap only; topic-adaptive duration set after footage/evidence
+        from short_caption_style import lock_settings
+        s=lock_settings(s)
         stage = 'production'
         studio = Studio(s)
         if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1':
