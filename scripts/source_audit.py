@@ -16,7 +16,7 @@ QUERIES = {
     "pexels": ["ocean waves", "forest", "volcano"],
     "wikimedia-video": ["volcano eruption", "ocean waves", "forest"],
     "nasa-video": ["sun solar activity", "earth from space", "moon"],
-    "archive-video": ["volcano", "nature", "historic film"],
+    "archive-video": ["Yellowstone volcano", "volcano eruption", "ocean waves", "nature"],
     "europeana-video": ["historic film", "train", "city"],
     "nps-video": ["Yellowstone", "geyser", "waterfall", "bison", "wildlife", "national park"],
     "usgs-video": ["lava", "geyser", "landslide", "volcano eruption", "Kilauea"],
@@ -74,13 +74,18 @@ def audit(provider):
             except Exception as exc:
                 row["queries"].append({"query":query,"status":"error","reason":type(exc).__name__})
                 continue
+            query_attempts = 0
             for item in candidates:
-                if item.id in tested or len(row["downloads"]) >= 4:
+                total_limit = 8 if provider.name == "archive-video" else 4
+                if item.id in tested or len(row["downloads"]) >= total_limit or (provider.name == "archive-video" and query_attempts >= 2):
                     continue
                 tested.add(item.id)
+                query_attempts += 1
                 item_license = item.extra.get("license", {})
                 attempt = {"id":item.id,"license":item_license.get("id"),
                            "attribution_required":bool(item_license.get("attribution_required"))}
+                if provider.name == "archive-video":
+                    attempt["archive_variants"] = item.extra.get("archive_variant_evidence", [])
                 try:
                     if not LicenseValidator.validate(item_license) or attempt["attribution_required"]:
                         raise ValueError("license rejected by no-attribution policy")

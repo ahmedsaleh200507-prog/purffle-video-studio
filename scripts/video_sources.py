@@ -904,38 +904,114 @@ class ProviderRegistry:
         return result
 
     def _archive(self, query):
-        # Quote scene terms so a user/topic cannot inject Archive query operators.
-        terms = " ".join(re.findall(r"[A-Za-z0-9]+", query))
-        data = self.client.get("https://archive.org/advancedsearch.php", params={
-            "q": f'mediatype:movies AND ("{terms}") AND (licenseurl:"https://creativecommons.org/publicdomain/zero/1.0/" OR licenseurl:"http://creativecommons.org/publicdomain/zero/1.0/" OR licenseurl:"https://creativecommons.org/publicdomain/mark/1.0/" OR licenseurl:"http://creativecommons.org/publicdomain/mark/1.0/")',
-            "fl[]": ["identifier", "title", "licenseurl"], "rows": 8, "output": "json"})
-        result = []
-        for rank, doc in enumerate(data.get("response", {}).get("docs", [])):
-            identifier = doc.get("identifier")
-            if not identifier:
-                continue
-            meta = self.client.get("https://archive.org/metadata/" + quote(identifier, safe=""))
-            md = meta.get("metadata", {})
-            licenses = sequence(md.get("licenseurl"))
-            if not licenses or any(LicenseValidator.identify(u) not in {"CC0-1.0", "PDM-1.0"} for u in licenses):
-                continue
-            files = [f for f in meta.get("files", []) if video_url("https://archive.org/" + f.get("name", ""))
-                     and not re.search(r"thumb|preview|sample", f.get("name", ""), re.I)
-                     and int(f.get("size") or 0) <= 300 * 1024 * 1024]
-            if not files:
-                continue
-            # Prefer dimensions where known, originals then file size; ffprobe remains decisive.
-            file = max(files, key=lambda f: (min(int(f.get("width") or 0), int(f.get("height") or 0)),
-                       f.get("source") == "original", int(f.get("size") or 0)))
-            url = "https://archive.org/download/" + quote(identifier, safe="") + "/" + quote(file["name"], safe="/")
-            lic = self.license(LicenseValidator.identify(licenses[0]), licenses[0].replace("http://", "https://", 1),
-                               md.get("creator"), "https://archive.org/details/" + quote(identifier, safe=""))
-            item = self._item("archive-video", identifier, url, query, rank,
-                              clean([md.get("title"), md.get("description"), md.get("subject")]), lic,
-                              file.get("width"), file.get("height"))
-            if item:
-                result.append(item)
-        return result
+        """Prefer original native HD, keep unknown dimensions for real probing.
+
+        Search title/subject rather than arbitrary full text. No gameplay,
+        animation, preview renditions or known low-resolution video files.
+        Large originals remain eligible for bounded HTTP-range extraction.
+        """
+        tokens=list(dict.fromkeys(re.findall(r"[A-Za-z0-9]+",query.lower())))[:8]
+        if not tokens:
+            return []
+        terms=" AND ".join(f'(title:{t} OR subject:{t} OR description:{t})' for t in tokens)
+        licenses_filter=' OR '.join(f'licenseurl:"{scheme}://creativecommons.org/publicdomain/{kind}/1.0/"'
+                                    for scheme in ("https","http") for kind in ("zero","mark"))
+        exclusions=' AND NOT (collection:gamevideos OR collection:gameplay OR subject:gameplay OR title:longplay OR title:walkthrough OR subject:videogames)'
+        base=f'mediatype:movies AND ({terms}) AND ({licenses_filter})'+exclusions
+        def number(value):
+            try:
+                return max(0,int(float(value or 0)))
+            except (ValueError,TypeError,OverflowError):
+                return 0
+        def seconds(value):
+            try:
+                return max(0.,float(value or 0))
+            except (ValueError,TypeError,OverflowError):
+                try:
+                    parts=str(value).split(":")
+                    return sum(float(v)*60**i for i,v in enumerate(reversed(parts)))
+                except (ValueError,TypeError,OverflowError):
+                    return 0.
+        bad=re.compile(r'\b(?:gameplay|game play|video games?|videogames?|longplay|walkthrough|speedrun|machinima|emulator|cartoon|animation|animated|anime|cgi|simulation)\b',re.I)
+        results=[]
+        seen=set()
+        # Prefer Archive's indexed HD format; keep originals whose item-level
+        # index has no format declaration. Never trust format names as proof.
+        for variant in (base+' AND (format:"HD MPEG4" OR format:"1080p" OR format:"720p")',base):
+            data=self.client.get("https://archive.org/advancedsearch.php",params={
+                "q":variant,"fl[]":["identifier","title","subject","licenseurl"],
+                "rows":12,"output":"json","sort[]":["downloads desc","identifier asc"]})
+            for doc in data.get("response",{}).get("docs",[]):
+                if not isinstance(doc,dict):
+                    continue
+                identifier=doc.get("identifier")
+                if not isinstance(identifier,str) or not re.fullmatch(r"[A-Za-z0-9_.-]+",identifier) or identifier in seen:
+                    continue
+                seen.add(identifier)
+                if bad.search(clean([identifier.replace("_"," "),doc.get("title"),doc.get("subject")])):
+                    continue
+                try:
+                    meta=self.client.get("https://archive.org/metadata/"+quote(identifier,safe=""))
+                except ProviderError as exc:
+                    if exc.status in ("http_401","http_403","http_429","scene_budget_exhausted"):
+                        raise
+                    continue
+                md=meta.get("metadata",{})
+                if not isinstance(md,dict):
+                    continue
+                text=clean([md.get("title"),md.get("description"),md.get("subject")])
+                if bad.search(clean([identifier.replace("_"," "),text,md.get("collection")])):
+                    continue
+                licenses=sequence(md.get("licenseurl"))
+                if not licenses or any(LicenseValidator.identify(u) not in {"CC0-1.0","PDM-1.0"} for u in licenses):
+                    continue
+                files=[]
+                for file in meta.get("files",[]):
+                    if not isinstance(file,dict):
+                        continue
+                    name=file.get("name","")
+                    if not isinstance(name,str) or not name or name.startswith("/") or ".." in name.split("/"):
+                        continue
+                    if not video_url("https://archive.org/"+name) or re.search(r"thumb|preview|sample|trailer",name,re.I):
+                        continue
+                    if str(file.get("private","")).lower() in ("true","1","yes"):
+                        continue
+                    w,h=number(file.get("width")),number(file.get("height"))
+                    if (w and w<720) or (h and h<720):
+                        continue
+                    size=number(file.get("size"))
+                    fmt=clean(file.get("format")).lower()
+                    native=min(w,h) if w and h else 0
+                    hint=bool(re.search(r'\b(?:hd|720p|1080p|2160p|4k)\b',fmt+" "+name.lower()))
+                    original=file.get("source")=="original"
+                    # Unknown originals are preferable to unknown mobile
+                    # transcodes; no guessed pixel dimensions are recorded.
+                    rank=(int(native>=720),native,int(hint),int(original),
+                          int(name.lower().endswith((".mp4",".mov",".m4v"))),
+                          int(0<size<=175*1024*1024),min(size,10**9))
+                    url="https://archive.org/download/"+quote(identifier,safe="")+"/"+quote(name,safe="/")
+                    files.append((rank,url,w,h,size,seconds(file.get("length") or file.get("duration"))))
+                if not files:
+                    continue
+                files.sort(reverse=True,key=lambda x:x[0])
+                primary=files[0]
+                _,url,w,h,size,duration=primary
+                lic=self.license(LicenseValidator.identify(licenses[0]),licenses[0].replace("http://","https://",1),
+                                 md.get("creator"),"https://archive.org/details/"+quote(identifier,safe=""))
+                item=self._item("archive-video",identifier,url,query,len(results),text,lic,w,h,duration)
+                if item:
+                    item.extra["download_variants"]=[x[1] for x in files[1:4]]
+                    item.extra["archive_variant_evidence"]=[
+                        {"width":x[2],"height":x[3],"bytes":x[4],"duration":x[5],"known_hd":min(x[2],x[3])>=720}
+                        for x in files[:4]]
+                    item.extra["recorded_date"]=clean(md.get("date"))
+                    results.append((primary[0],item))
+            # Only stop when the first search produced enough actual HD
+            # metadata, not merely several unknown-size files.
+            if sum(rank[0] for rank,_ in results)>=4:
+                break
+        results.sort(key=lambda x:x[0],reverse=True)
+        return [item for _,item in results[:16]]
 
     def _europeana(self, query):
         data = self.client.get("https://api.europeana.eu/record/v2/search.json", params={

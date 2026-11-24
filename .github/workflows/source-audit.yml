@@ -26,6 +26,7 @@ on:
       - 'tests/test_portrait_priority.py'
       - 'tests/test_portrait_layout.py'
       - 'scripts/video_sources.py'
+      - 'tests/test_archive_hd_policy.py'
       - 'data/usgs_public_domain_video_catalog.json'
       - 'data/freenaturestock_video_catalog.json'
       - 'tests/test_range_segment.py'
@@ -80,6 +81,7 @@ jobs:
           python -m unittest discover -s tests -p test_geography_policy.py
           python -m unittest discover -s tests -p test_production_checkpoint.py
           python -m unittest discover -s tests -p test_short_recovery_policy.py
+          python -m unittest discover -s tests -p test_archive_hd_policy.py
           python -m compileall -q scripts
       - name: Test each provider independently
         run: python scripts/source_audit.py
