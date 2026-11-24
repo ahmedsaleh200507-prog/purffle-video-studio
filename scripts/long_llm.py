@@ -10,12 +10,29 @@ requiring an additional SDK. No provider tokens are included in diagnostics.
 from __future__ import annotations
 
 import os
+import re
+import time
 from types import SimpleNamespace
 from typing import Any
 
 GROQ_MODEL = "openai/gpt-oss-20b"
 GEMINI_MODEL = "gemini-3.1-flash-lite"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+
+
+def _minute_retry_delay(error):
+    """Recover a rolling per-minute limit without spending money or disabling
+    the provider for the entire documentary. Daily quota remains a hard limit."""
+    if getattr(error, "status_code", None) != 429:
+        return None
+    message = str(error).lower()
+    if "per day" in message or "daily" in message or "(tpd)" in message or "(rpd)" in message:
+        return None
+    if not any(term in message for term in ("per minute", "(tpm)", "(rpm)")):
+        return None
+    match = re.search(r"try again in\s+([0-9.]+)\s*s", message)
+    delay = float(match.group(1)) + 3 if match else 65
+    return min(70, max(5, delay))
 
 
 class LongLLMUnavailable(RuntimeError):
@@ -121,7 +138,16 @@ class _Completion:
             try:
                 if provider == "gemini":
                     return self._gemini(**kwargs)
-                return self._groq.chat.completions.create(**kwargs)
+                for attempt in range(5):
+                    try:
+                        return self._groq.chat.completions.create(**kwargs)
+                    except Exception as exc:
+                        delay = _minute_retry_delay(exc)
+                        if delay is None or attempt == 4:
+                            raise
+                        print(f"[LONG LLM] Groq minute quota; retry {attempt+1}/4 after {delay:.1f}s",
+                              flush=True)
+                        time.sleep(delay)
             except Exception as exc:
                 status = getattr(exc, "status_code", None)
                 is_quota = status == 429
