@@ -203,7 +203,8 @@ def srt_time(t):
 # stock. Try Pixabay first; Wikimedia and NASA require no API keys.
 LONG_STOCK_PROVIDERS = (
     "pixabay", "pexels", "wikimedia-video", "nasa-video",
-    "coverr-video", "archive-video",
+    "coverr-video", "archive-video", "europeana-video", "nps-video",
+    "usgs-video", "freenaturestock-video",
 )
 
 
@@ -293,12 +294,20 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     )
     val = QualityValidator(min_short_side=720)
     chosen, attempted = [], set()
-    attempts, max_attempts, max_per_query = 0, 60, 12
+    attempts, max_attempts, max_per_query, max_per_provider = 0, 60, 24, 3
     expected_subject = long_expected_subject(index, topic, chapter)
     for query in long_visual_queries(index, topic, chapter):
         query_attempts = 0
         for provider in LONG_STOCK_PROVIDERS:
-            for candidate in reg.search(provider, query)[:40]:
+            provider_attempts = 0
+            try:
+                candidates = reg.search(provider, query)[:40]
+            except Exception as exc:
+                print("[LONG PROVIDER UNAVAILABLE]", provider, type(exc).__name__, flush=True)
+                continue
+            for candidate in candidates:
+                if provider_attempts >= max_per_provider:
+                    break
                 key = (candidate.source, str(candidate.id))
                 if key in seen or key in attempted:
                     continue
@@ -316,6 +325,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                     break
                 attempted.add(key)
                 query_attempts += 1
+                provider_attempts += 1
                 attempts += 1
                 try:
                     reject_offtopic_science_source(topic, candidate.text)
@@ -339,6 +349,8 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                     credit = {
                         "source": candidate.source, "id": candidate.id,
                         "creator": lic["creator"], "license": lic["id"],
+                        "license_url": lic["url"],
+                        "attribution_required": bool(lic.get("attribution_required")),
                         "source_page": lic["source_page"], "query": query,
                         "metadata_text": str(candidate.text)[:400],
                         "subject": expected_subject, "chapter": index+1,

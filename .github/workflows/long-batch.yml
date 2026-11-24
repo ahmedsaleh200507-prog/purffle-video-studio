@@ -88,6 +88,13 @@ jobs:
       PURFFLE_LONG_LLM_PRIMARY: ${{ vars.PURFFLE_LONG_LLM_PRIMARY || 'gemini' }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
+      NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
+      COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
+      COVER2: ${{ secrets.COVER2 }}
+      # Keep long-form uploads free of assets requiring manual attribution.
+      # No license policy is bypassed merely because an API key exists.
+      PURFFLE_NO_ATTRIBUTION: '1'
       LLM_MODEL: openai/gpt-oss-20b
       HF_HOME: ${{ github.workspace }}/.cache/huggingface
       OMP_NUM_THREADS: '2'

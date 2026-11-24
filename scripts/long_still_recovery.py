@@ -29,9 +29,25 @@ def commons(query):
         for info in page.get("imageinfo",[]):
             m=info.get("extmetadata",{})
             def meta(k): return clean(m.get(k,{}).get("value"))
-            license_id=meta("LicenseShortName")
-            if not (license_id.startswith("CC BY ") or license_id.startswith("CC BY-SA ")
-                    or license_id in ("CC0","CC0 1.0","Public domain")):
+            from video_sources import LicenseValidator
+            label=meta("LicenseShortName")
+            license_url=meta("LicenseUrl")
+            license_id=LicenseValidator.identify(license_url)
+            if not license_id and not license_url:
+                if label.casefold() in ("cc0","cc0 1.0"):
+                    license_id="CC0-1.0"
+                    license_url="https://creativecommons.org/publicdomain/zero/1.0/"
+                elif label.casefold()=="public domain":
+                    license_id="PDM-1.0"
+                    license_url="https://creativecommons.org/publicdomain/mark/1.0/"
+            # No mandatory attribution, ShareAlike or non-commercial terms.
+            if license_id not in ("CC0-1.0","PDM-1.0"):
+                continue
+            if not LicenseValidator.validate({"id":license_id,"url":license_url,
+                    "source_page":info.get("descriptionurl","")}):
+                continue
+            if re.search(r"copyrighted|all rights reserved|non.commercial|permission required",
+                    meta("Restrictions")+" "+meta("UsageTerms"),re.I):
                 continue
             if info.get("mime") not in ("image/jpeg","image/png","image/webp"):
                 continue
@@ -42,7 +58,7 @@ def commons(query):
                 continue
             yield url, {"source":"wikimedia-photo","id":page["pageid"],
                 "creator":meta("Artist") or meta("Credit") or "See original file",
-                "license":license_id,"license_url":meta("LicenseUrl"),
+                "license":license_id,"license_url":license_url,"attribution_required":False,
                 "source_page":info.get("descriptionurl"),"query":query,
                 "metadata_text":page.get("title","")+" "+meta("ImageDescription"),
                 "visual_check":"licensed_still_search_match",
@@ -60,7 +76,7 @@ def pixabay(query):
             continue
         yield url, {"source":"pixabay-photo","id":hit["id"],
             "creator":hit.get("user",""),"license":"Pixabay Content License",
-            "license_url":"https://pixabay.com/service/license-summary/",
+            "license_url":"https://pixabay.com/service/license-summary/","attribution_required":False,
             "source_page":hit.get("pageURL"),"query":query,
             "metadata_text":hit.get("tags",""),
             "visual_check":"licensed_still_search_match",
