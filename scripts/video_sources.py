@@ -990,6 +990,7 @@ class ProviderRegistry:
                                 url,query,rank,metadata,lic,w,h,dim(res.get("duration")))
                 if item:
                     item.extra["download_variants"]=[v[2] for v in ordered[1:]]
+                    item.extra["recorded_date"]=clean(item_data.get("date") or item_data.get("created_published") or row.get("date"))
                     item.extra["dimensions_unverified_until_ffprobe"]=True
                     counts["accepted"]+=1
                     result.append(item)

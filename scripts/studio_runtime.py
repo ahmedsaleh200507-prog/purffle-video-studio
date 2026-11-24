@@ -358,7 +358,10 @@ class StrictVisuals:
         # generic Pixabay lava clip before the curated USGS ocean-entry
         # footage was ever considered. Prefer USGS ONLY for that shot;
         # generic volcano shots keep their existing provider order.
-        source_order = list(self.sources)
+        from era_policy import scene_era, source_allowed, footage_allowed
+        era = scene_era(data)
+        scene["era_policy"] = era
+        source_order = [source for source in self.sources if source_allowed(source, era)]
         from topic_footage import is_lava_ocean_topic
         exact_ocean_entry = (is_lava_ocean_topic(topic) and any(
             word in data["visual_search_query"].casefold()
@@ -419,6 +422,8 @@ class StrictVisuals:
                             self._technical_rejections[item.key] = reason
                             self._technical_rejections[url_key] = reason
                             raise ValueError(reason)
+                    if not footage_allowed(source, era, item.text, item.extra.get("recorded_date","")):
+                        raise ValueError("historical_era_mismatch: archival footage cannot illustrate this scene")
                     if not LicenseValidator.validate(item.extra.get("license")):
                         raise ValueError("Unverified or incompatible candidate license")
                     license_info = item.extra.get("license") or {}
@@ -715,6 +720,7 @@ class StrictVisuals:
                                   "source_url": item.url, "downloaded_file": str(path),
                                   "sha256": digest, "quality": quality, "match": match,
                                   "portrait_layout": layout,
+                                  "recorded_date": item.extra.get("recorded_date",""),
                                   "orientation_phase": orientation_phase,
                                   "source_orientation": ("portrait" if quality["height"]>quality["width"] else
                                                          "landscape" if quality["width"]>quality["height"] else "square"),

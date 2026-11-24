@@ -296,9 +296,13 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     chosen, attempted = [], set()
     attempts, max_attempts, max_per_query, max_per_provider = 0, 60, 24, 3
     expected_subject = long_expected_subject(index, topic, chapter)
+    from era_policy import scene_era, source_allowed, footage_allowed
+    era = scene_era(chapter)
     for query in long_visual_queries(index, topic, chapter):
         query_attempts = 0
         for provider in LONG_STOCK_PROVIDERS:
+            if not source_allowed(provider, era):
+                continue
             provider_attempts = 0
             try:
                 candidates = reg.search(provider, query)[:40]
@@ -310,6 +314,9 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                     break
                 key = (candidate.source, str(candidate.id))
                 if key in seen or key in attempted:
+                    continue
+                if not footage_allowed(provider, era, candidate.text, candidate.extra.get("recorded_date","")):
+                    print("[LONG ERA REJECT]",provider,candidate.id,flush=True)
                     continue
                 labels = candidate.text.lower()
                 if chapter and chapter.get("visual_subject"):
@@ -354,6 +361,8 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                         "attribution_required": bool(lic.get("attribution_required")),
                         "source_page": lic["source_page"], "query": query,
                         "metadata_text": str(candidate.text)[:400],
+                        "recorded_date": candidate.extra.get("recorded_date",""),
+                        "era_policy": era,
                         "subject": expected_subject, "chapter": index+1,
                         "visual_check": visual["verification"],
                         "visual_score": visual.get("visual_score"),
@@ -389,6 +398,8 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
         if len(usable) + len(recoveries) >= 3:
             break
         if old_credit.get("subject") != expected_subject:
+            continue
+        if not footage_allowed(old_credit["source"],era,old_credit.get("metadata_text",""),old_credit.get("recorded_date","")):
             continue
         key = (old_credit["source"], str(old_credit["id"]))
         if key in reused or any(

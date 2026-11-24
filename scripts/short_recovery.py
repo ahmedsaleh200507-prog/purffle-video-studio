@@ -14,6 +14,7 @@ def save_reviewed_script(screenplay,language,topic):
     for scene in screenplay.scenes:
         scenes.append({"narration":str(scene.narration),
                        "visual_subject":str(getattr(scene,"object","") or ""),
+                       "time":str(getattr(scene,"time","") or ""),
                        "visual_search_query":str(getattr(scene,"visual_search_query","") or "")})
     Path(dest).write_text(json.dumps({"topic":topic,"language":language,
                     "scenes":scenes,"reviewed":True},ensure_ascii=False),encoding="utf8")
@@ -38,6 +39,7 @@ def _recover_short(topic,language,target):
     from media_validation import QualityValidator,SceneMatcher,SceneSpec
     from portrait_layout import center_filter
     from video_sources import LicenseValidator
+    from era_policy import scene_era, footage_allowed
     from output_qa import validate_timeline
     target=Path(target).resolve()
     data=json.loads((target/"reviewed-script.json").read_text(encoding="utf8"))
@@ -65,6 +67,9 @@ def _recover_short(topic,language,target):
         chosen=None
         for row in previous.get("scenes",[]):
             if row.get("index")!=i or row.get("status")!="selected":
+                continue
+            if not footage_allowed(row.get("source",""),scene_era(scene),
+                                   row.get("plan",{}).get("visual_search_query",""),row.get("recorded_date","")):
                 continue
             lic=row.get("license",{})
             candidate=Path(row.get("downloaded_file") or "")
