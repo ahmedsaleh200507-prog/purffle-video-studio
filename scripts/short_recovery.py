@@ -6,18 +6,58 @@ import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
-def save_reviewed_script(screenplay,language,topic):
-    dest=os.environ.get("PURFFLE_REVIEWED_SCRIPT")
+def save_reviewed_script(screenplay,language,topic,destination=None):
+    dest=destination or os.environ.get("PURFFLE_REVIEWED_SCRIPT")
     if not dest:
         return
+    from production_checkpoint import write
     scenes=[]
     for scene in screenplay.scenes:
-        scenes.append({"narration":str(scene.narration),
-                       "visual_subject":str(getattr(scene,"object","") or ""),
-                       "time":str(getattr(scene,"time","") or ""),
-                       "visual_search_query":str(getattr(scene,"visual_search_query","") or "")})
-    Path(dest).write_text(json.dumps({"topic":topic,"language":language,
-                    "scenes":scenes,"reviewed":True},ensure_ascii=False),encoding="utf8")
+        plan={k:str(getattr(scene,k,"") or "") for k in
+              ("main_character","object","action","location","time","visual_search_query")}
+        scenes.append({**plan,"narration":str(scene.narration),"visual_subject":plan["object"]})
+    write(Path(dest),{"topic":topic,"language":language,"scenes":scenes,"reviewed":True})
+
+def recover_approved_dossier(topic,language,target):
+    """Zero text API calls for exact, previously source-reviewed subjects only."""
+    from fact_checked_topics import verified_documentary_kind
+    kind=verified_documentary_kind(topic)
+    if not kind:
+        raise RuntimeError("No source-reviewed offline script for this exact topic")
+    from science_sources import discover_evidence,screen_narration
+    from official_draft import approved_dossier_draft
+    from studio_runtime import install
+    install()
+    evidence=discover_evidence(topic,language)
+    if evidence.method!="curated_editor_reviewed":
+        raise RuntimeError("No official fixed offline dossier")
+    count=2 if kind in {"mirror_condensation","iceberg_breakup","whale_breaching",
+                          "lightning_thunder_delay","ocean_glow_bioluminescence",
+                          "northern_lights_glow"} else 3
+    draft=approved_dossier_draft(topic,language,evidence,scene_count=count)
+    if draft is None:
+        raise RuntimeError("Offline approved draft unavailable")
+    screenplay=draft[0]
+    from science_fact_guard import validate_unsourced_quantities
+    validate_unsourced_quantities(screenplay,topic)
+    screen_narration(screenplay,evidence,None,path=target/"offline-science-report.json")
+    save_reviewed_script(screenplay,language,topic,target/"reviewed-script.json")
+    print("[ZERO API RECOVERY] Exact official dossier, fixed reviewed narration",flush=True)
+
+def search_recovery_clip(visuals,scene,topic,index,need,work):
+    from visual_director import build_contract
+    data={k:str(scene.get(k) or "") for k in
+          ("main_character","object","action","location","time","visual_search_query")}
+    data["object"]=data["object"] or scene["visual_subject"]
+    data["action"]=data["action"] or "ambient"
+    contract=build_contract(SimpleNamespace(**data,narration=scene["narration"]),topic,index)
+    data["visual_search_query"]=contract["queries"][0]
+    data["_visual_contract"]=contract
+    item=visuals.for_scene(index-1,data["visual_search_query"],json.dumps(data),topic,need,work)
+    row=visuals.report["scenes"][-1]
+    if row.get("status")!="selected" or not row.get("match",{}).get("director_check",{}).get("verified"):
+        raise RuntimeError("Recovery clip lacks independent visual director proof")
+    return Path(item.path),row
 
 def run(args,timeout=240):
     subprocess.run(args,check=True,timeout=timeout,capture_output=True)
@@ -43,6 +83,8 @@ def _recover_short(topic,language,target):
     from geography_policy import scene_requirement,require_geography
     from output_qa import validate_timeline
     target=Path(target).resolve()
+    if not (target/"reviewed-script.json").is_file():
+        recover_approved_dossier(topic,language,target)
     data=json.loads((target/"reviewed-script.json").read_text(encoding="utf8"))
     if (data.get("reviewed") is not True or data.get("topic")!=topic
             or data.get("language")!=language or not 2<=len(data.get("scenes",[]))<=6):
@@ -56,6 +98,25 @@ def _recover_short(topic,language,target):
     work=target/"real-recovery"
     work.mkdir(exist_ok=True)
     seen=set(); clips=[]; credits=[]; cues=[]; offset=0.
+    from studio_runtime import StrictVisuals
+    from production_checkpoint import digest
+    # Use the existing source list only. Isolated duplicate ledger, report
+    # and downloader; the new fallback never overwrites original diagnostics.
+    env_keys=("FOOTAGE_USED_PATH","FOOTAGE_REPORT")
+    old_env={key:os.environ.get(key) for key in env_keys}
+    os.environ["FOOTAGE_USED_PATH"]=str(work/"used.json")
+    os.environ["FOOTAGE_REPORT"]=str(target/"recovery-footage-report.json")
+    try:
+        from media_validation import VideoDownloader
+        visuals=StrictVisuals(SimpleNamespace(offline=False,width=1080,height=1920,language=language,
+            visual_sources=os.environ.get("VISUAL_SOURCES","pixabay,wikimedia-video,nasa-video,archive-video,nps-video,usgs-video,freenaturestock-video").split(",")),
+            downloader=VideoDownloader(cache_dir=work/"downloads"),matcher=matcher)
+    finally:
+        # StrictVisuals captures the ledger path at construction. _save
+        # reads the report path dynamically, so set it only during recovery.
+        for key,value in old_env.items():
+            if value is None: os.environ.pop(key,None)
+            else: os.environ[key]=value
     base=["ffmpeg","-hide_banner","-nostdin","-y","-v","error","-filter_threads","1"]
     for i,scene in enumerate(data["scenes"],1):
         if not scene["visual_subject"] or not scene["visual_search_query"]:
@@ -84,6 +145,8 @@ def _recover_short(topic,language,target):
             candidate=Path(row.get("downloaded_file") or "")
             if not candidate.is_file() or not LicenseValidator.validate(lic) or lic.get("attribution_required"):
                 continue
+            if not row.get("sha256") or digest(candidate)!=row["sha256"]:
+                continue
             if row.get("plan",{}).get("object","").casefold()!=scene["visual_subject"].casefold():
                 continue
             if row.get("match",{}).get("portrait_integrity",{}).get("verified") is not True:
@@ -94,10 +157,25 @@ def _recover_short(topic,language,target):
                     action="ambient",visual_search_query=scene["visual_search_query"])
                 matcher.match(candidate,spec,metadata=row.get("plan",{}).get("visual_search_query",""),duration=duration)
                 chosen=candidate
-                credits.append({"source":row["source"],"id":row["id"],"license":lic,"media_type":"video","scene":i})
+                visuals.used_hashes.add(row["sha256"])
+                visuals.used.add(str(row["source"])+":"+str(row["id"]))
+                credits.append({"source":row["source"],"id":row["id"],"license":lic,
+                                "geography_evidence":row.get("geography_evidence",{}),"media_type":"video","scene":i})
                 break
             except Exception:
                 continue
+        if chosen is None:
+            old_report=os.environ.get("FOOTAGE_REPORT")
+            os.environ["FOOTAGE_REPORT"]=str(target/"recovery-footage-report.json")
+            try:
+                chosen,row=search_recovery_clip(visuals,scene,topic,i,duration+.05,work)
+                credits.append({"source":row["source"],"id":row["id"],"license":row["license"],
+                                "geography_evidence":row.get("geography_evidence",{}),"media_type":"video","scene":i})
+            except Exception as exc:
+                print(f"[RECOVERY STOCK UNAVAILABLE] scene={i} {type(exc).__name__}",flush=True)
+            finally:
+                if old_report is None: os.environ.pop("FOOTAGE_REPORT",None)
+                else: os.environ["FOOTAGE_REPORT"]=old_report
         if chosen:
             inputs=["-i",str(chosen)]
             vf=center_filter(1080,1920)+",fps=30,format=yuv420p"
@@ -123,7 +201,8 @@ def _recover_short(topic,language,target):
              "-c:v","libx264","-preset","veryfast","-crf","22","-threads","2","-c:a","copy",
              "-movflags","+faststart",str(out)])
     try:
-        qa=validate_timeline(out,captions,expected_size=(1080,1920),expected_duration=offset)
+        qa=validate_timeline(out,captions,expected_size=(1080,1920),expected_duration=offset,
+                             expected_text=" ".join(scene["narration"] for scene in data["scenes"]))
     except Exception:
         out.unlink(missing_ok=True)
         raise
