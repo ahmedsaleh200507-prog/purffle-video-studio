@@ -358,10 +358,10 @@ class StrictVisuals:
         # generic Pixabay lava clip before the curated USGS ocean-entry
         # footage was ever considered. Prefer USGS ONLY for that shot;
         # generic volcano shots keep their existing provider order.
-        from era_policy import scene_era, source_allowed, footage_allowed
+        from era_policy import scene_era, footage_allowed
         era = scene_era(data)
         scene["era_policy"] = era
-        source_order = [source for source in self.sources if source_allowed(source, era)]
+        source_order = list(self.sources)
         from topic_footage import is_lava_ocean_topic
         exact_ocean_entry = (is_lava_ocean_topic(topic) and any(
             word in data["visual_search_query"].casefold()

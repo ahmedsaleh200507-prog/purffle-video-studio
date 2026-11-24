@@ -12,7 +12,6 @@ on:
       - 'scripts/short_recovery.py'
       - 'scripts/long_still_recovery.py'
       - 'tests/test_verified_photo_policy.py'
-      - 'tests/test_loc_policy.py'
       - 'scripts/era_policy.py'
       - 'scripts/long_video.py'
       - 'tests/test_era_policy.py'
@@ -20,7 +19,6 @@ on:
       - 'tests/test_portrait_priority.py'
       - 'tests/test_portrait_layout.py'
       - 'scripts/video_sources.py'
-      - 'data/loc_public_domain_items.json'
       - 'data/usgs_public_domain_video_catalog.json'
       - 'data/freenaturestock_video_catalog.json'
       - 'tests/test_range_segment.py'
@@ -71,7 +69,6 @@ jobs:
           python -m unittest discover -s tests -p test_portrait_layout.py
           python -m unittest discover -s tests -p test_portrait_priority.py
           python -m unittest discover -s tests -p test_verified_photo_policy.py
-          python -m unittest discover -s tests -p test_loc_policy.py
           python -m unittest discover -s tests -p test_era_policy.py
       - name: Test each provider independently
         run: python scripts/source_audit.py

@@ -101,7 +101,7 @@ jobs:
       # working video indexes before tiny fixed catalogs or slower archives.
       # Remaining providers are still checked when the first ones have no
       # verified, relevant HD clip; license and CLIP checks stay unchanged.
-      VISUAL_SOURCES: pexels,pixabay,usgs-video,nps-video,wikimedia-video,nasa-video,archive-video,loc-video,coverr-video,europeana-video,freenaturestock-video,vecteezy-video
+      VISUAL_SOURCES: pexels,pixabay,usgs-video,nps-video,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video,vecteezy-video
       # V4 fixed Piper Joe/Thorsten; no alternate voice or private model setup.
       PURFFLE_NARRATOR_LOCK: '1'
       TTS_ENGINE: piper

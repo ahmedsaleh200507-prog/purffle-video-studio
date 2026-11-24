@@ -204,7 +204,7 @@ def srt_time(t):
 LONG_STOCK_PROVIDERS = (
     "pixabay", "pexels", "wikimedia-video", "nasa-video",
     "coverr-video", "archive-video", "europeana-video", "nps-video",
-    "usgs-video", "freenaturestock-video", "loc-video",
+    "usgs-video", "freenaturestock-video",
 )
 
 
@@ -296,13 +296,11 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     chosen, attempted = [], set()
     attempts, max_attempts, max_per_query, max_per_provider = 0, 60, 24, 3
     expected_subject = long_expected_subject(index, topic, chapter)
-    from era_policy import scene_era, source_allowed, footage_allowed
+    from era_policy import scene_era, footage_allowed
     era = scene_era(chapter)
     for query in long_visual_queries(index, topic, chapter):
         query_attempts = 0
         for provider in LONG_STOCK_PROVIDERS:
-            if not source_allowed(provider, era):
-                continue
             provider_attempts = 0
             try:
                 candidates = reg.search(provider, query)[:40]
