@@ -833,63 +833,169 @@ class ProviderRegistry:
         return sorted(result, key=lambda x: (x.height > x.width, min(x.width, x.height)), reverse=True)
 
     def _loc(self, query):
-        """Library of Congress official keyless JSON API; fail closed on rights."""
-        data=self.client.get("https://www.loc.gov/film-and-videos/",
-                             params={"q":query,"fo":"json","c":20})
-        result=[]
-        for rank,row in enumerate(data.get("results",[])[:6]):
-            page=str(row.get("id") or row.get("url") or "")
+        """Official LOC item API with a source-reviewed public-domain seed index.
+
+        Keep rights and actual HD/motion gates. API failures are not permission
+        to scrape, bypass an access restriction, or invent a download URL.
+        """
+        allowed_hosts={"www.loc.gov","loc.gov","tile.loc.gov","cdn.loc.gov",
+                       "hdl.loc.gov","memory.loc.gov","lcweb2.loc.gov"}
+        def normalize(value):
+            if not isinstance(value,str):
+                return ""
+            value=value.strip()
+            if value.startswith("//"):
+                value="https:"+value
+            p=urlparse(value)
+            if p.scheme=="http" and p.hostname in allowed_hosts:
+                value="https:"+value[5:]
+                p=urlparse(value)
+            if not secure_url(value) or p.hostname not in allowed_hosts or p.fragment or p.port not in (None,443):
+                return ""
+            return value
+        def item_page(value):
+            page=normalize(value)
             p=urlparse(page)
-            if p.scheme!="https" or p.hostname!="www.loc.gov" or not p.path.startswith("/item/") or p.query or p.fragment:
+            if p.hostname not in ("www.loc.gov","loc.gov") or p.query or not re.fullmatch(r"/item/[a-zA-Z0-9_-]+/?",p.path):
+                return ""
+            return "https://www.loc.gov"+p.path.rstrip("/")+"/"
+        def terms(value):
+            stop={"the","and","for","with","from","video","film","footage","historic","historical","history"}
+            return set(re.findall(r"[a-z0-9]{3,}",clean(value).lower()))-stop
+        # Item links are from LOC's expressly Public Domain Films set,
+        # not an inferred rights status for the whole National Screening Room.
+        seeds={}
+        try:
+            path=Path(__file__).resolve().parent.parent/"data"/"loc_public_domain_items.json"
+            catalog=json.loads(path.read_text(encoding="utf8"))
+            if catalog.get("rights_source")=="https://www.loc.gov/free-to-use/public-domain-films-from-the-national-film-registry/":
+                for seed in catalog.get("items",[]):
+                    page=item_page(seed.get("item_url"))
+                    if page:
+                        seeds[page]=seed
+        except (OSError,ValueError,TypeError,AttributeError):
+            pass
+        rows=[]
+        query_terms=terms(query)
+        for page,seed in seeds.items():
+            if query_terms & terms(seed.get("keywords","")+" "+seed.get("title","")):
+                rows.append({"id":page,"title":seed["title"],"curated_pd":True})
+        # Search official live metadata in addition to the seed index.
+        # LOC documents HTTP ids even though the service itself uses HTTPS.
+        search_error=None
+        try:
+            data=self.client.get("https://www.loc.gov/film-and-videos/",
+                                 params={"q":query[:100],"fo":"json","c":12})
+            rows.extend(data.get("results",[])[:8])
+        except ProviderError as exc:
+            if exc.status in ("http_401","http_403","http_429"):
+                raise
+            search_error=exc
+        result=[]
+        seen=set()
+        counts={"items":0,"rights_rejected":0,"restricted":0,"no_download":0,
+                "below_hd":0,"detail_errors":0,"accepted":0}
+        last_error=None
+        def dim(value):
+            try:
+                return max(0,int(value or 0))
+            except (ValueError,TypeError,OverflowError):
+                return 0
+        for rank,row in enumerate(rows[:10]):
+            if not isinstance(row,dict):
                 continue
+            page=item_page(row.get("id")) or item_page(row.get("url"))
+            if not page or page in seen:
+                continue
+            seen.add(page)
+            counts["items"]+=1
             try:
                 detail=self.client.get(page,params={"fo":"json"})
-            except ProviderError:
+            except ProviderError as exc:
+                counts["detail_errors"]+=1
+                last_error=exc
+                if exc.status in ("http_401","http_403","http_429"):
+                    raise
                 continue
             item_data=detail.get("item",{})
-            if not isinstance(item_data,dict) or detail.get("access_restricted") or item_data.get("access_restricted"):
+            if not isinstance(item_data,dict):
+                continue
+            if (detail.get("access_restricted") or item_data.get("access_restricted")
+                    or item_data.get("restriction") or item_data.get("access_advisory")):
+                counts["restricted"]+=1
                 continue
             advisory=clean([item_data.get("rights_advisory"),item_data.get("rights_information"),
-                            detail.get("rights_advisory"),row.get("rights_advisory")]).casefold()
-            # Explicit item-level declaration only; uncertain or qualified
-            # rights are not assumed to be permission for international reuse.
-            if not re.search(r"\b(?:is|are) in the public domain\b|^public domain\.?$",advisory.strip()) or re.search(r"not in the public domain|not public domain|may|permission|required|copyright protected|all rights reserved|except|unless|non.commercial|must credit|restrictions|united states only",advisory):
-                continue
-            if item_data.get("restriction") or item_data.get("access_advisory"):
+                            item_data.get("rights"),detail.get("rights_advisory"),
+                            row.get("rights_advisory")]).casefold()
+            # Explicit conflicts always disqualify a work. For uncurated
+            # material require an affirmative item-level PD declaration.
+            conflict=re.search(r"not in the public domain|not public domain|copyright protected|all rights reserved|non.commercial|must credit|credit line required|united states only|rights reserved|permission required for this|not permitted|restricted to",advisory)
+            explicit=re.search(r"\b(?:is|are) in the public domain\b|^public domain\.?$",advisory.strip())
+            uncertain=re.search(r"\bmay\b|permission|required|except|unless|restrictions",advisory)
+            seed=seeds.get(page)
+            if conflict or (not seed and (not explicit or uncertain)):
+                counts["rights_rejected"]+=1
                 continue
             metadata=" ".join([clean(item_data.get("title") or row.get("title")),
-                              clean(item_data.get("summary") or row.get("description")),
-                              clean(item_data.get("subjects") or row.get("subject"))])
+                              clean(item_data.get("summary") or item_data.get("description") or row.get("description")),
+                              clean(item_data.get("subjects") or row.get("subject")),
+                              clean(seed.get("keywords","") if seed else "")])
+            if not query_terms or not (query_terms & terms(metadata)):
+                continue
             for r_index,res in enumerate(detail.get("resources",[])[:5]):
-                if not isinstance(res,dict) or res.get("download_restricted") or res.get("rights_restricted"):
+                if not isinstance(res,dict):
                     continue
-                variants=[]
-                for group in res.get("files",[]):
+                if res.get("download_restricted") or res.get("rights_restricted") or res.get("canDownload") is False:
+                    counts["restricted"]+=1
+                    continue
+                variants={}
+                def add_file(file):
+                    if not isinstance(file,dict) or file.get("rights_restricted") or file.get("download_restricted") or file.get("canDownload") is False:
+                        return
+                    mime=clean(file.get("mimetype") or file.get("mime_type")).lower()
+                    if mime not in ("","video/mp4","video/quicktime","video/mov","application/mp4"):
+                        return
+                    w,h=dim(file.get("width")),dim(file.get("height"))
+                    if w and h and min(w,h)<720:
+                        counts["below_hd"]+=1
+                        return
+                    candidates=[file.get(k) for k in ("download","url","filename")]
+                    for derivative in sequence(file.get("derivatives")):
+                        if isinstance(derivative,dict) and not derivative.get("rights_restricted") and derivative.get("canDownload") is not False:
+                            add_file({"url":derivative.get("derivativeUrl"),"mimetype":derivative.get("mimetype"),
+                                      "width":derivative.get("width"),"height":derivative.get("height")})
+                    for value in candidates:
+                        url=normalize(value)
+                        if not url or not re.search(r"\.(?:mp4|mov)(?:$|\?)",url,re.I):
+                            continue
+                        variants[url]=(w,h,url)
+                for group in res.get("files",[]) or []:
                     for file in sequence(group):
-                        if not isinstance(file,dict) or file.get("rights_restricted") or file.get("canDownload") is False:
-                            continue
-                        url=str(file.get("url") or file.get("download") or "")
-                        u=urlparse(url)
-                        if not video_url(url) or u.hostname not in ("tile.loc.gov","www.loc.gov","hdl.loc.gov","memory.loc.gov","lcweb2.loc.gov"):
-                            continue
-                        if file.get("mimetype") not in ("video/mp4","video/quicktime"):
-                            continue
-                        w,h=int(file.get("width") or res.get("width") or 0),int(file.get("height") or res.get("height") or 0)
-                        if w and h and min(w,h)<720:
-                            continue
-                        variants.append((w,h,url))
+                        add_file(file)
+                # Only explicit nonrestricted downloadable resource links,
+                # never convert a player/HLS URL into a guessed file.
+                if res.get("download_restricted") is False:
+                    add_file({"url":res.get("video"),"width":res.get("width"),"height":res.get("height")})
                 if not variants:
+                    counts["no_download"]+=1
                     continue
-                variants.sort(key=lambda v:(min(v[0],v[1]),v[0]*v[1]),reverse=True)
-                w,h,url=variants[0]
+                ordered=sorted(variants.values(),key=lambda v:(min(v[0],v[1]),v[0]*v[1]),reverse=True)[:4]
+                w,h,url=ordered[0]
                 lic=self.license("PDM-1.0","https://creativecommons.org/publicdomain/mark/1.0/",
                                  "Library of Congress",page)
-                lic["rights_basis"]=advisory[:400]
-                item=self._item("loc-video",p.path.rstrip("/").split("/")[-1]+"-"+str(r_index),
-                                url,query,rank,metadata,lic,w,h,res.get("duration") or 0)
+                lic["rights_basis"]=("LOC expressly lists this item as Public Domain Films" if seed else advisory[:400])
+                if seed:
+                    lic["rights_source"]="https://www.loc.gov/free-to-use/public-domain-films-from-the-national-film-registry/"
+                item=self._item("loc-video",page.rstrip("/").split("/")[-1]+"-"+str(r_index),
+                                url,query,rank,metadata,lic,w,h,dim(res.get("duration")))
                 if item:
-                    item.extra["download_variants"]=[v[2] for v in variants[1:4]]
+                    item.extra["download_variants"]=[v[2] for v in ordered[1:]]
+                    item.extra["dimensions_unverified_until_ffprobe"]=True
+                    counts["accepted"]+=1
                     result.append(item)
+        self.event("loc-video","loc_filter_counts",query,len(result),json.dumps(counts,sort_keys=True))
+        if not result and (search_error or last_error) and not counts["rights_rejected"] and not counts["no_download"]:
+            raise last_error or search_error
         return result
 
     def _wikimedia(self, query):

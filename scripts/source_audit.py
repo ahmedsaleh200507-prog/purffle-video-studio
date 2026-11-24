@@ -17,7 +17,7 @@ QUERIES = {
     "wikimedia-video": ["volcano eruption", "ocean waves", "forest"],
     "nasa-video": ["sun solar activity", "earth from space", "moon"],
     "archive-video": ["volcano", "nature", "historic film"],
-    "loc-video": ["train railroad", "factory machinery", "city street"],
+    "loc-video": ["factory machinery", "san francisco earthquake", "automobile manufacturing", "train railroad"],
     "europeana-video": ["historic film", "train", "city"],
     "nps-video": ["Yellowstone", "geyser", "waterfall", "bison", "wildlife", "national park"],
     "usgs-video": ["lava", "geyser", "landslide", "volcano eruption", "Kilauea"],
