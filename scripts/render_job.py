@@ -122,8 +122,14 @@ def main():
         fallbacks = ['groq'] if gemini_ready and groq_ready else []
         if local_ready and main_llm!='purffle-local':
             fallbacks.append('purffle-local')
-        print(f"[SHORTS LLM] primary={main_llm} "
-              f"fallback={'groq' if fallbacks else 'none'}",flush=True)
+        from cloud_model_router import enabled as router_enabled, MODELS
+        if router_enabled():
+            main_llm='purffle-router'
+            selected_model=MODELS[0][1]
+            fallbacks=[]
+            print("[SHORTS LLM] Shared six-cloud/two-local model router",flush=True)
+        else:
+            print(f"[SHORTS LLM] primary={main_llm} fallback={fallbacks}",flush=True)
         s = replace(Settings.from_env(), language=os.environ['LANGUAGE'],
                     llm_provider=main_llm, llm_model=selected_model,
                     llm_fallbacks=fallbacks,

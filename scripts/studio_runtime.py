@@ -1109,6 +1109,8 @@ def install():
     import purffle_shorts.llm as upstream_llm
     from local_llm import install_short_provider
     install_short_provider(upstream_llm)
+    from cloud_model_router import install_short_provider as install_cloud_router
+    install_cloud_router(upstream_llm)
     # The pinned upstream still defaults to the older Gemini 2.5 Flash
     # family. Select a documented free-tier text model ONLY for Gemini,
     # leaving existing Groq model, narrator and Shorts scene rules intact.

@@ -87,6 +87,7 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       PURFFLE_LOCAL_LLM: '1'
       PURFFLE_LOCAL_QUALITY: '1'
+      PURFFLE_CLOUD_MODEL_ROUTER: '1'
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
       COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
@@ -207,7 +208,7 @@ jobs:
           ffprobe -hide_banner -version | head -n 1
           python -m pip install --upgrade pip
           pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
-          pip install -r requirements-dev.txt
+          pip install -r requirements-dev.txt 'jsonschema>=4.20,<5'
       - name: Restore local model cache
         if: steps.selected.outputs.render == 'true'
         id: model-cache

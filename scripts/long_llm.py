@@ -189,6 +189,9 @@ def get_long_client(*, groq=None, post=None, environ=None):
     providers fail closed on malformed content after the existing validators.
     """
     env = os.environ if environ is None else environ
+    from cloud_model_router import enabled as router_enabled, client as router_client
+    if router_enabled(env):
+        return router_client(env,post)
     primary = env.get("PURFFLE_LONG_LLM_PRIMARY", "gemini").strip().lower()
     if primary not in ("groq", "gemini"):
         raise ValueError("PURFFLE_LONG_LLM_PRIMARY must be groq or gemini")
