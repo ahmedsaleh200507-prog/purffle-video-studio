@@ -31,6 +31,11 @@ _INPUT_GUARDS = ["-protocol_whitelist", "file,pipe", "-format_whitelist", _CONTA
 
 
 def portrait_crop_limit() -> float:
+    # Explicit user-selected centered fullscreen fallback: a 720p source
+    # may need 1920/720 enlargement. Strict callers keep the original bound.
+    import os
+    if os.environ.get("PURFFLE_SHORTS_CENTER_CROP") == "1":
+        return 8/3
     """Single shared bound for selecting, rendering and accepting footage.
 
     A genuine 1080p landscape clip needs about 1.1852x to fill 720x1280
@@ -41,6 +46,8 @@ def portrait_crop_limit() -> float:
     if not math.isfinite(value):
         raise ValueError("PURFFLE_MAX_PORTRAIT_UPSCALE must be finite")
     return min(1.20, max(1.0, value))
+
+
 
 
 def portrait_crop_allowed(scale: float) -> bool:

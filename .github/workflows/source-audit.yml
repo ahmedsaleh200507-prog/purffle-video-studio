@@ -31,7 +31,8 @@ jobs:
       VECTEEZY_API_KEY: ${{ secrets.VECTEEZY_API_KEY }}
       PURFFLE_NO_ATTRIBUTION: '1'
       PURFFLE_API_INTERVAL_SECONDS: '1.6'
-      RESOLUTION: '720x1280'
+      RESOLUTION: '1080x1920'
+      PURFFLE_SHORTS_CENTER_CROP: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

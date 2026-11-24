@@ -107,7 +107,7 @@ jobs:
       TTS_ENGINE: piper
       EDGE_TTS_TIMEOUT_SECONDS: '120'
       RESOLUTION: 1080x1920
-      PURFFLE_SHORTS_CONTEXT_LAYOUT: '1'
+      PURFFLE_SHORTS_CENTER_CROP: '1'
       FPS: '30'
       PRESET: medium
       TRANSITION: none
