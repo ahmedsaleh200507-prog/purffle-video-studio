@@ -298,7 +298,9 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     expected_subject = long_expected_subject(index, topic, chapter)
     from era_policy import scene_era, footage_allowed
     era = scene_era(chapter)
-    for query in long_visual_queries(index, topic, chapter):
+    from geography_policy import scene_requirement,scoped_queries,require_geography
+    required_regions=scene_requirement(chapter,topic)
+    for query in scoped_queries(long_visual_queries(index, topic, chapter),required_regions):
         query_attempts = 0
         for provider in LONG_STOCK_PROVIDERS:
             provider_attempts = 0
@@ -333,6 +335,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                 provider_attempts += 1
                 attempts += 1
                 try:
+                    geo=require_geography(required_regions,candidate.text)
                     reject_offtopic_science_source(topic, candidate.text)
                     path, q = download_hd_variant(candidate, dl, val,
                         segment_seconds=max(15.,chapter_seconds/3+1),
@@ -361,6 +364,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                         "metadata_text": str(candidate.text)[:400],
                         "recorded_date": candidate.extra.get("recorded_date",""),
                         "era_policy": era,
+                        "geography_evidence":geo,
                         "subject": expected_subject, "chapter": index+1,
                         "visual_check": visual["verification"],
                         "visual_score": visual.get("visual_score"),
@@ -398,6 +402,10 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
         if old_credit.get("subject") != expected_subject:
             continue
         if not footage_allowed(old_credit["source"],era,old_credit.get("metadata_text",""),old_credit.get("recorded_date","")):
+            continue
+        try:
+            require_geography(required_regions,old_credit.get("metadata_text",""))
+        except ValueError:
             continue
         key = (old_credit["source"], str(old_credit["id"]))
         if key in reused or any(
@@ -606,7 +614,7 @@ def main():
                 print("[LONG CHAPTER RECOVERY]", i+1, type(exc).__name__, flush=True)
                 stage=f"recover_chapter_{i+1}"
                 scene, recovery_credits=render_recovery(
-                    i+1,wav,seconds,text[i],work,still_ids,run)
+                    i+1,wav,seconds,{**text[i],"topic":a.topic},work,still_ids,run)
                 scenes.append(scene)
                 credits.extend(recovery_credits)
                 recovery_chapters.append(i+1)

@@ -371,7 +371,10 @@ class StrictVisuals:
             source_order.insert(0, "usgs-video")
         from footage_search import discover, discover_portrait_first
         from scene_relevance import search_queries
-        queries = search_queries(data, director_contract)
+        from geography_policy import scene_requirement, scoped_queries, require_geography
+        required_regions = scene_requirement(raw_plan,topic)
+        queries = scoped_queries(search_queries(data,director_contract),required_regions)
+        scene["required_regions"] = required_regions
         scene["search_queries"] = queries
         # A fair first round prevents the first provider exhausting all aliases
         # and downloads before the next provider gets any opportunity.
@@ -427,6 +430,7 @@ class StrictVisuals:
                     if not LicenseValidator.validate(item.extra.get("license")):
                         raise ValueError("Unverified or incompatible candidate license")
                     license_info = item.extra.get("license") or {}
+                    item.extra["geography_evidence"] = require_geography(required_regions,item.text)
                     # Source IDs and source-page slugs can reveal an unrelated
                     # planet even when the provider's short metadata says
                     # 'volcano magma'. The #69 archive clip is one such case.
@@ -721,6 +725,7 @@ class StrictVisuals:
                                   "sha256": digest, "quality": quality, "match": match,
                                   "portrait_layout": layout,
                                   "recorded_date": item.extra.get("recorded_date",""),
+                                  "geography_evidence": item.extra.get("geography_evidence",{}),
                                   "orientation_phase": orientation_phase,
                                   "source_orientation": ("portrait" if quality["height"]>quality["width"] else
                                                          "landscape" if quality["width"]>quality["height"] else "square"),

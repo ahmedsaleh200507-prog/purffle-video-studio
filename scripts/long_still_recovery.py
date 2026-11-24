@@ -155,6 +155,11 @@ def stills(chapter,index,work,seen,*,size=(1920,1080),limit=4,require_verified=F
     directory.mkdir(parents=True,exist_ok=True)
     queries=list(dict.fromkeys(q for q in (chapter.get("visual_search_query"),
         chapter.get("visual_subject")) if q))
+    from geography_policy import scene_requirement,scoped_queries,require_geography
+    from era_policy import scene_era,footage_allowed
+    required_regions=scene_requirement(chapter,chapter.get("topic",""))
+    queries=scoped_queries(queries,required_regions)
+    era=scene_era(chapter)
     selected=[]
     require_verified=require_verified or os.environ.get("PURFFLE_VERIFIED_PHOTO_ONLY")=="1"
     if require_verified and matcher is None:
@@ -173,6 +178,9 @@ def stills(chapter,index,work,seen,*,size=(1920,1080),limit=4,require_verified=F
                         continue
                     path=directory/f"photo-{len(selected)}.jpg"
                     try:
+                        credit["geography_evidence"]=require_geography(required_regions,credit.get("metadata_text",""))
+                        if not footage_allowed(credit["source"],era,credit.get("metadata_text","")):
+                            raise ValueError("historical_era_mismatch")
                         download_photo(url,path,size=size)
                         if require_verified:
                             credit.update(verify_photo(path,subject,query,matcher))

@@ -40,6 +40,7 @@ def _recover_short(topic,language,target):
     from portrait_layout import center_filter
     from video_sources import LicenseValidator
     from era_policy import scene_era, footage_allowed
+    from geography_policy import scene_requirement,require_geography
     from output_qa import validate_timeline
     target=Path(target).resolve()
     data=json.loads((target/"reviewed-script.json").read_text(encoding="utf8"))
@@ -71,6 +72,14 @@ def _recover_short(topic,language,target):
             if not footage_allowed(row.get("source",""),scene_era(scene),
                                    row.get("plan",{}).get("visual_search_query",""),row.get("recorded_date","")):
                 continue
+            try:
+                # Actual source proof, never the search query itself.
+                geo=row.get("geography_evidence",{})
+                required=scene_requirement(scene,topic)
+                if required and (not geo.get("accepted") or not set(required)<=set(geo.get("provider_claims",[]))):
+                    continue
+            except (TypeError,ValueError):
+                continue
             lic=row.get("license",{})
             candidate=Path(row.get("downloaded_file") or "")
             if not candidate.is_file() or not LicenseValidator.validate(lic) or lic.get("attribution_required"):
@@ -93,7 +102,7 @@ def _recover_short(topic,language,target):
             inputs=["-i",str(chosen)]
             vf=center_filter(1080,1920)+",fps=30,format=yuv420p"
         else:
-            photos=stills(scene,i,work,seen,size=(1080,1920),limit=1,require_verified=True,matcher=matcher)
+            photos=stills({**scene,"topic":topic},i,work,seen,size=(1080,1920),limit=1,require_verified=True,matcher=matcher)
             path,credit=photos[0]
             credits.append({**credit,"scene":i})
             inputs=["-loop","1","-framerate","30","-i",str(path)]
