@@ -507,7 +507,13 @@ class StrictVisuals:
                     break
                 path, digest = None, None
                 try:
-                    path = self.downloader.download(item.url)
+                    if item.extra.get("download_variants"):
+                        from media_validation import download_hd_variant
+                        path, _ = download_hd_variant(item, self.downloader, self.quality, need=need,
+                            check=lambda q: portrait_crop_allowed(_native_portrait_scale(
+                                q, getattr(self.s,"width",720), getattr(self.s,"height",1280))))
+                    else:
+                        path = self.downloader.download(item.url)
                     if source == "coverr-video":
                         # Count a real asset download using Coverr's official
                         # PATCH endpoint, as required on the free API tier.

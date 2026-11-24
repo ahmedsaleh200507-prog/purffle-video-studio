@@ -285,7 +285,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     only after local CLIP re-verifies frames from that exact later segment.
     Reuse is explicitly recorded in credits. No static filler or blind reuse.
     """
-    from media_validation import VideoDownloader, QualityValidator, reject_offtopic_science_source
+    from media_validation import VideoDownloader, QualityValidator, reject_offtopic_science_source, download_hd_variant
     from video_sources import ProviderRegistry
     reg = registry if registry is not None else ProviderRegistry()
     dl = VideoDownloader(
@@ -329,8 +329,8 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                 attempts += 1
                 try:
                     reject_offtopic_science_source(topic, candidate.text)
-                    path = dl.download(candidate.url)
-                    q = val.validate(path)
+                    path, q = download_hd_variant(candidate, dl, val,
+                        check=lambda x: int(x["width"]) >= 1280 and int(x["height"]) >= 720)
                     duration = float(q["duration"])
                     if (int(q["width"]) < 1280 or int(q["height"]) < 720
                             or duration * 1.5 < chapter_seconds / 4):

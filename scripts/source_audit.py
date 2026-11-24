@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 from video_sources import ProviderRegistry, JsonClient, PROVIDERS, LicenseValidator, STATIC_CATALOGS
-from media_validation import VideoDownloader, QualityValidator, portrait_crop_allowed
+from media_validation import VideoDownloader, QualityValidator, portrait_crop_allowed, download_hd_variant
 
 QUERIES = {
     "pixabay": ["ocean waves", "forest", "volcano"],
@@ -83,9 +83,8 @@ def audit(provider):
                 try:
                     if not LicenseValidator.validate(item_license) or attempt["attribution_required"]:
                         raise ValueError("license rejected by no-attribution policy")
-                    path = dl.download(item.url)
+                    path, quality = download_hd_variant(item, dl, validator)
                     attempt["downloaded"] = True
-                    quality = validator.validate(path)
                     w,h = quality["width"],quality["height"]
                     scale = max(720/min(w,h*9/16),1280/h)
                     attempt.update(status="hd_motion_ok",width=w,height=h,

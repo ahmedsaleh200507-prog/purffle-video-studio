@@ -707,3 +707,26 @@ class SceneMatcher:
                 "required_visual_margin": round(required_margin, 4),
                 "matching_moments": matching_moments,
                 "verification": "local_clip_screening", "limitations": "Similarity screening cannot prove exact actions, identity or denomination."}
+
+
+def download_hd_variant(item, downloader, validator, *, need=0, check=None):
+    """Try official alternate encodings of one licensed asset, with the same
+    downloader safeguards and measured quality gate. No remote range slicing."""
+    variants = (getattr(item, "extra", {}) or {}).get("download_variants") or []
+    urls = list(dict.fromkeys([item.url, *variants]))[:4]
+    last = None
+    for url in urls:
+        try:
+            path = downloader.download(url)
+            quality = validator.validate(path, need=need) if need else validator.validate(path)
+            if check is not None and not check(quality):
+                raise ValidationError("Source variant does not meet output framing requirements")
+            return path, quality
+        except Exception as exc:
+            last = exc
+            if len(urls) > 1:
+                print("[SOURCE VARIANT REJECT]", getattr(item,"source","unknown"),
+                      type(exc).__name__, flush=True)
+    if last is not None:
+        raise last
+    raise ValidationError("No downloadable source variants")

@@ -540,25 +540,29 @@ class ProviderRegistry:
         Real pixels, crop, motion and scene match are checked downstream.
         """
         data = self.client.get("https://developer.nps.gov/api/v1/multimedia/videos",
-            params={"q": query[:100], "limit": 16, "start": 0},
+            params={"q": query[:100], "limit": 50, "start": 0},
             headers={"X-Api-Key": os.environ["NPS_API_KEY"]})
         records = data.get("data")
         if not isinstance(records, list):
             raise ProviderError("invalid_schema", "NPS video data list missing")
         result = []
-        for rank, row in enumerate(records[:16]):
+        rejects = {"credit":0,"not_raw":0,"id":0,"page":0,"no_hd_mp4":0}
+        for rank, row in enumerate(records[:50]):
             if not isinstance(row, dict):
                 continue
             if not self._nps_public_domain_credit(row.get("credit"), row):
+                rejects["credit"] += 1
                 continue
             # Prefer unscored raw footage to documentaries with third-party
             # footage, music and talent rights mixed into the final edit.
             if row.get("isBRoll") is not True and row.get("isVideoOnly") is not True:
+                rejects["not_raw"] += 1
                 continue
             identity = str(row.get("id") or "").strip()
             if not re.fullmatch(
-                    r"[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}",
+                    r"[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){2}-(?:[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}|[0-9A-Fa-f]{16})",
                     identity):
+                rejects["id"] += 1
                 continue
             page = str(row.get("permalinkUrl") or "").strip()
             try:
@@ -571,9 +575,11 @@ class ProviderRegistry:
             except (ValueError, TypeError):
                 page_ok = False
             if not page_ok:
+                rejects["page"] += 1
                 continue
             versions = row.get("versions")
             if not isinstance(versions, list):
+                rejects["no_hd_mp4"] += 1
                 continue
             candidates = []
             for variant in versions:
@@ -594,10 +600,18 @@ class ProviderRegistry:
                         or str(variant.get("fileType") or "").lower() != "video/mp4"
                         or min(width, height) < 720):
                     continue
-                candidates.append((width * height, width, height, url))
+                try:
+                    size_kb = int(variant.get("fileSizeKb") or 0)
+                except (ValueError, TypeError):
+                    size_kb = 0
+                candidates.append((width * height, width, height, url, size_kb))
             if not candidates:
+                rejects["no_hd_mp4"] += 1
                 continue
-            _, width, height, url = max(candidates)
+            # Known HD versions within the normal downloader budget first.
+            candidates.sort(key=lambda x: (x[4] > 170*1024,
+                not bool(x[4]), -x[0]))
+            _, width, height, url, _ = candidates[0]
             lic = self.license(
                 "PDM-1.0",
                 "https://creativecommons.org/publicdomain/mark/1.0/",
@@ -615,7 +629,9 @@ class ProviderRegistry:
                               lic, width, height,
                               duration)
             if item:
+                item.extra["download_variants"] = [x[3] for x in candidates[:3]]
                 result.append(item)
+        print("[NPS FILTER COUNTS]", json.dumps({"raw":len(records),"eligible":len(result),**rejects}), flush=True)
         return result
 
     def _usgs(self, query):
@@ -869,16 +885,19 @@ class ProviderRegistry:
                           and not re.search(r"~(?:small|mobile|preview)", u, re.I)]
             if not candidates:
                 continue
-            # NASA manifest naming: orig > large > medium. Never invent width or height.
+            # Prefer compressed renditions; original is a last resort.
+            # Actual resolution is validated after downloading, not inferred.
             def quality(u):
-                return 3 if "~orig" in u.lower() else 2 if "~large" in u.lower() else 1 if "~medium" in u.lower() else 0
-            url = max(candidates, key=quality)
+                return 0 if "~medium" in u.lower() else 1 if "~large" in u.lower() else 3 if "~orig" in u.lower() else 2
+            candidates = sorted(set(candidates), key=lambda u: (quality(u), u))
+            url = candidates[0]
             page = "https://images.nasa.gov/details/" + quote(str(identifier), safe="")
             creator = meta.get("secondary_creator") or ("NASA " + clean(meta.get("center")))
             lic = self.license("NASA-MEDIA", NASA_POLICY, creator, page)
             item = self._item("nasa-video", identifier, url, query, rank,
                               clean([meta.get("title"), meta.get("keywords"), meta.get("description")]), lic)
             if item:
+                item.extra["download_variants"] = candidates[:4]
                 result.append(item)
         return result
 
