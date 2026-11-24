@@ -22,11 +22,18 @@ def plan_portrait(width,height,W,H):
             "effective_source_width":round(min(width,height*W/H)),
             "effective_source_height":round(min(height,width*H/W))}
 
+def focus_filter(W,H,focus=.5):
+    focus=float(focus)
+    if not math.isfinite(focus) or not 0<=focus<=1:
+        raise ValueError("Invalid crop focus")
+    return (f"scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"crop={W}:{H}:x='max(0,min(iw-ow,iw*{focus:.5f}-ow/2))':y='(ih-oh)/2',setsar=1")
+
 def center_filter(W,H):
     return (f"scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,"
             f"crop={W}:{H}:x='(iw-ow)/2':y='(ih-oh)/2',setsar=1")
 
-def render_center_sample(path,plan,seconds,fps=30):
+def render_center_sample(path,plan,seconds,fps=30,focus=.5):
     W,H=plan["output_width"],plan["output_height"]
     if not math.isfinite(seconds) or not .6<=seconds<=90:
         raise ValidationError("Invalid sample duration")
@@ -34,7 +41,7 @@ def render_center_sample(path,plan,seconds,fps=30):
     target=path.with_name(path.stem+".center-sample.mp4")
     r=subprocess.run(["ffmpeg","-hide_banner","-nostdin","-y","-v","error",
         "-threads","2","-filter_threads","1","-i",str(path),"-t",str(seconds),
-        "-an","-vf",f"{center_filter(W,H)},fps={int(fps)},format=yuv420p",
+        "-an","-vf",f"{focus_filter(W,H,focus)},fps={int(fps)},format=yuv420p",
         "-c:v","libx264","-preset","veryfast","-crf","20","-threads","2",str(target)],
         capture_output=True,timeout=100)
     if r.returncode or not target.exists() or target.stat().st_size<1024:
@@ -42,7 +49,7 @@ def render_center_sample(path,plan,seconds,fps=30):
     return target
 
 
-def validate_center_sample(path, source_quality, W, H, validator, *, seconds=5., require_motion=True):
+def validate_center_sample(path, source_quality, W, H, validator, *, seconds=5., require_motion=True, focus=.5):
     """Verify the actual centered crop; calm is not proof of movement.
 
     Caller must supply independently motion-validated original footage.
@@ -55,7 +62,7 @@ def validate_center_sample(path, source_quality, W, H, validator, *, seconds=5.,
         raise ValidationError("Source variant does not meet output framing requirements")
     sample=None
     try:
-        sample=render_center_sample(path,plan,min(float(seconds),float(source_quality["duration"])))
+        sample=render_center_sample(path,plan,min(float(seconds),float(source_quality["duration"])),focus=focus)
         q=validator.validate(sample,allow_calm_crop=not require_motion)
         if (q["width"],q["height"])!=(W,H):
             raise ValidationError("Incorrect centered output dimensions")

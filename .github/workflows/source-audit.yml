@@ -16,6 +16,8 @@ on:
       - 'scripts/media_validation.py'
       - 'scripts/portrait_layout.py'
       - 'scripts/studio_runtime.py'
+      - 'scripts/object_framing.py'
+      - 'tests/test_object_framing.py'
       - 'scripts/short_caption_style.py'
       - 'tests/test_short_caption_style.py'
       - 'scripts/crop_subject_policy.py'
@@ -104,6 +106,7 @@ jobs:
           python -m unittest discover -s tests -p test_long_sentence_plan.py
           python -m unittest discover -s tests -p test_crop_subject_policy.py
           python -m unittest discover -s tests -p test_short_caption_style.py
+          python -m unittest discover -s tests -p test_object_framing.py
           python -m compileall -q scripts
       - name: Test each provider independently
         run: python scripts/source_audit.py

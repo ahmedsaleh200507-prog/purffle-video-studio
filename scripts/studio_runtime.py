@@ -541,7 +541,8 @@ class StrictVisuals:
                         # interval; a moving subject outside the crop is not
                         # evidence of a moving opening. Later calm B-roll can
                         # be used only after independent source motion proof.
-                        if center_enabled() and isinstance(self.matcher, SceneMatcher) and q["width"]>=q["height"]:
+                        from object_framing import enabled as smart_crop_enabled
+                        if center_enabled() and not smart_crop_enabled() and isinstance(self.matcher, SceneMatcher) and q["width"]>=q["height"]:
                             center_quality.clear()
                             center_quality.update(validate_center_sample(path,q,required_width,required_height,
                                 self.quality,seconds=min(5.,float(need)),require_motion=(idx==0)))
@@ -597,6 +598,21 @@ class StrictVisuals:
                     match = self.matcher.match(path, spec, metadata=item.text, duration=need)
                     if center_enabled():
                         match["crop_focus_x"] = .5
+                    from object_framing import enabled as smart_crop_enabled,propose
+                    if smart_crop_enabled() and isinstance(self.matcher,SceneMatcher):
+                        subject=" ".join(x for x in (spec.main_character,spec.object) if x)
+                        framing=propose(path,float(need),subject,quality["width"],quality["height"],
+                                        required_width,required_height,float(match.get("crop_focus_x",.5)))
+                        match["object_framing"]=framing
+                        if framing["state"]=="proposed":
+                            match["crop_focus_x"]=framing["focus_x"]
+                            layout={**layout,"mode":"object_guided_crop"}
+                        # Verify movement and native resolution in the exact
+                        # chosen crop, not the old centered preview.
+                        if quality["width"]>=quality["height"]:
+                            center_quality=validate_center_sample(path,quality,required_width,required_height,
+                                self.quality,seconds=min(5.,float(need)),require_motion=(idx==0),
+                                focus=float(match["crop_focus_x"]))
                     quality["portrait_layout"] = layout
                     if center_quality:
                         quality["center_crop_motion_mode"]=center_quality["motion_mode"]
@@ -872,7 +888,7 @@ def strict_prepare_segment(item, seconds, idx, settings, work):
     if not portrait_crop_allowed(measured_scale):
         raise RuntimeError(
             "insufficient_native_resolution: portrait crop exceeds the shared bounded upscale limit")
-    focus = .5 if center_enabled() else float(item.extra.get("match", {}).get("crop_focus_x", 0.5))
+    focus = float(item.extra.get("match", {}).get("crop_focus_x", 0.5))
     if not math.isfinite(focus):
         raise RuntimeError("Invalid crop focus")
     focus = max(0, min(1, focus))
@@ -887,8 +903,9 @@ def strict_prepare_segment(item, seconds, idx, settings, work):
     # Keep the subject's horizontal focus; vertically centre when a wide crop is required.
     cover = (f"scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,"
              f"crop={W}:{H}:x='max(0,min(iw-ow,iw*{focus:.5f}-ow/2))':y='(ih-oh)/2',setsar=1")
-    if center_enabled():
-        cover = center_filter(W,H)
+    # The exact accepted focus must survive rendering, including recovery.
+    from portrait_layout import focus_filter
+    cover=focus_filter(W,H,focus)
     out = Path(work) / f"seg{idx:02d}.mp4"
     ffmpeg.run(["-threads", "2", "-filter_threads", "1", "-ss", "0", "-i", str(item.path),
                 "-t", f"{seconds:.3f}", "-an", "-vf", f"{cover},fps={F}{_grade(settings)}",

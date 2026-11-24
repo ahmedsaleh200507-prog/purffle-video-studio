@@ -81,7 +81,7 @@ def _recover_short(topic,language,target):
     from short_caption_style import recovery_captions
     from long_still_recovery import stills
     from media_validation import QualityValidator,SceneMatcher,SceneSpec
-    from portrait_layout import center_filter
+    from portrait_layout import focus_filter
     from video_sources import LicenseValidator
     from era_policy import scene_era, footage_allowed
     from geography_policy import scene_requirement,require_geography
@@ -132,6 +132,7 @@ def _recover_short(topic,language,target):
         offset+=duration
         clip=work/f"scene-{i}.mp4"
         chosen=None
+        chosen_focus=.5
         for row in previous.get("scenes",[]):
             if row.get("index")!=i or row.get("status")!="selected":
                 continue
@@ -170,9 +171,10 @@ def _recover_short(topic,language,target):
                 if not metadata_allows(contract,source_metadata+" "+str(lic.get("source_page",""))):
                     continue
                 match=matcher.match(candidate,spec,metadata=source_metadata,duration=duration)
-                frames=_first_frames(candidate,focus=.5,seconds=(.15,duration*.45,max(.2,duration*.85)))
+                chosen_focus=float(row.get("match",{}).get("crop_focus_x",.5))
+                frames=_first_frames(candidate,focus=chosen_focus,seconds=(.15,duration*.45,max(.2,duration*.85)))
                 verify_crop_subject(frames,spec,matcher)
-                verify_visible_event_or_illustrative_subject(candidate,duration,.5,contract,match,scorer=matcher._similarities,opening=i==1)
+                verify_visible_event_or_illustrative_subject(candidate,duration,chosen_focus,contract,match,scorer=matcher._similarities,opening=i==1)
                 chosen=candidate
                 visuals.used_hashes.add(row["sha256"])
                 visuals.used.add(str(row["source"])+":"+str(row["id"]))
@@ -186,6 +188,7 @@ def _recover_short(topic,language,target):
             os.environ["FOOTAGE_REPORT"]=str(target/"recovery-footage-report.json")
             try:
                 chosen,row=search_recovery_clip(visuals,scene,topic,i,duration+.05,work)
+                chosen_focus=float(row.get("match",{}).get("crop_focus_x",.5))
                 credits.append({"source":row["source"],"id":row["id"],"license":row["license"],
                                 "geography_evidence":row.get("geography_evidence",{}),"media_type":"video","scene":i})
             except Exception as exc:
@@ -196,7 +199,8 @@ def _recover_short(topic,language,target):
         if chosen:
             credits[-1]["screen_seconds"]=duration
             inputs=["-i",str(chosen)]
-            vf=center_filter(1080,1920)+",fps=30,format=yuv420p"
+            credits[-1]["crop_focus_x"]=chosen_focus
+            vf=focus_filter(1080,1920,chosen_focus)+",fps=30,format=yuv420p"
         else:
             # Try two shorter, independently verified moving clips before
             # using a still. Preserve all narration and actual audio timing.
@@ -210,7 +214,8 @@ def _recover_short(topic,language,target):
                         try:
                             path,row=search_recovery_clip(visuals,scene,topic,i,n/30+.05,work)
                             pieces.append((path,{"source":row["source"],"id":row["id"],"license":row["license"],
-                                "geography_evidence":row.get("geography_evidence",{}),"media_type":"video","scene":i},n))
+                                "geography_evidence":row.get("geography_evidence",{}),"media_type":"video","scene":i,
+                                "crop_focus_x":float(row.get("match",{}).get("crop_focus_x",.5))},n))
                         except Exception as exc:
                             print("[SHORT VIDEO SEGMENT UNAVAILABLE]",i,j,type(exc).__name__,flush=True)
                             pieces.append((None,None,n))
@@ -233,7 +238,7 @@ def _recover_short(topic,language,target):
                     filter_text="setsar=1,format=yuv420p"
                 else:
                     input_args=["-i",str(path)]
-                    filter_text=center_filter(1080,1920)+",fps=30,format=yuv420p"
+                    filter_text=focus_filter(1080,1920,credit.get("crop_focus_x",.5))+",fps=30,format=yuv420p"
                 run(base+input_args+["-vf",filter_text,"-frames:v",str(n),"-an","-r","30",
                     "-c:v","libx264","-preset","veryfast","-crf","22","-threads","2",str(part)])
                 credits.append({**credit,"scene":i,"screen_seconds":n/30})
