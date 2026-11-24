@@ -28,6 +28,12 @@ class LocalLLMTests(unittest.TestCase):
             result=local_completion(messages=[],response_format={"type":"json_schema","json_schema":{"schema":schema}})
             self.assertEqual(result.choices[0].message.content,'{"ok":true}')
             self.assertEqual(q.call_args.kwargs["schema"],schema)
+    def test_default_is_quality(self):
+        from local_llm import complete_adaptive
+        with patch.dict("os.environ",{"PURFFLE_LOCAL_QUALITY":"1"}), patch("local_llm._INSTANCE",None), patch("local_llm.instance") as q:
+            q.return_value.complete.return_value='{"ok":true}'
+            self.assertEqual(complete_adaptive([]),'{"ok":true}')
+            q.assert_called_once_with("quality")
     def test_quality_selection_and_schema(self):
         from local_llm import complete_adaptive
         with patch.dict("os.environ",{"PURFFLE_LOCAL_QUALITY":"1"}), patch("local_llm._INSTANCE",None), patch("local_llm.instance") as q:

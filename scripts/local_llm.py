@@ -180,7 +180,7 @@ def instance(tier="fast"):
             _INSTANCE=LocalQwen(tier)
         return _INSTANCE
 
-def complete_adaptive(messages,*,schema=None,max_tokens=3000,temperature=.2,prefer="fast"):
+def complete_adaptive(messages,*,schema=None,max_tokens=3000,temperature=.2,prefer="quality"):
     """One loaded model at a time. Switch only for infrastructure or invalid JSON.
     Substantive negative scientific reviews are returned as-is, never voted away.
     """
@@ -217,14 +217,14 @@ def install_short_provider(upstream):
     if not enabled() or "purffle-local" in upstream.PRESETS:
         return
     original=upstream.build_provider
-    upstream.PRESETS["purffle-local"]=upstream.Preset("purffle-local","Qwen CPU",
-        "http://127.0.0.1",(),MODEL,local=True,schema_mode=True)
+    upstream.PRESETS["purffle-local"]=upstream.Preset("purffle-local","Qwen CPU adaptive",
+        "http://127.0.0.1",(),QUALITY_MODEL,local=True,schema_mode=True)
     class Provider(upstream.Provider):
         name="purffle-local"
-        model=MODEL
+        model=QUALITY_MODEL
         def complete(self,system,user,*,schema=None,temperature=.2,max_tokens=4000):
             return complete_adaptive([{"role":"system","content":system},{"role":"user","content":user}],
-                schema=schema,max_tokens=max_tokens,temperature=temperature)
+                schema=schema,max_tokens=max_tokens,temperature=temperature,prefer="quality")
     def build(name,settings,model=""):
         return Provider() if name=="purffle-local" else original(name,settings,model)
     upstream.build_provider=build
@@ -234,7 +234,7 @@ if __name__=="__main__":
     tier=os.getenv("PURFFLE_TEST_MODEL","fast")
     schema={"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":False}
     for lang,prompt,expected in (("en","Reply in English with only the answer to 2+2 in words.","four"),
-                                 ("de","Antworte auf Deutsch: Zwei plus zwei, als Wort.","vier")):
+                                 ("de","Antworte ausschließlich auf Deutsch. Wie viel ist zwei plus zwei? Schreibe die Zahl als deutsches Wort, keine Ziffer.","vier")):
         result=json.loads(instance(tier).complete([{"role":"system","content":"Return JSON with answer."},
                     {"role":"user","content":prompt}],schema=schema,max_tokens=64))
         if expected not in result["answer"].casefold():
