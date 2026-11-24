@@ -109,6 +109,9 @@ jobs:
       RESOLUTION: 1080x1920
       PURFFLE_SHORTS_CENTER_CROP: '1'
       PURFFLE_SHORTS_PORTRAIT_FIRST: '1'
+      PURFFLE_AUTO_720_FALLBACK: '0'
+      PURFFLE_REAL_ONLY_RECOVERY: '1'
+      PURFFLE_VERIFIED_PHOTO_ONLY: '1'
       FPS: '30'
       PRESET: medium
       TRANSITION: none
@@ -241,7 +244,7 @@ jobs:
         env:
           PURFFLE_STRICT: '1'
         run: python scripts/batch.py
-      - name: Guarantee completed MP4 after LLM, stock OR setup errors
+      - name: Recover verified real media after production errors
         if: always() && steps.selected.outputs.render == 'true'
         env:
           SLOT_TOPIC: ${{ inputs[matrix.input] }}
@@ -256,7 +259,7 @@ jobs:
           try:
               report=json.loads(p.read_text())
               mp4=Path(report['mp4'])
-              assert report['status']=='ok' and mp4.is_file() and mp4.stat().st_size>1000
+              assert report['status'] in ('ok','review') and mp4.is_file() and mp4.stat().st_size>1000
               print('[NORMAL PRODUCTION] valid MP4 preserved')
           except (OSError,ValueError,KeyError,AssertionError,TypeError):
               raise SystemExit(1)

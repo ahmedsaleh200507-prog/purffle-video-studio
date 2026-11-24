@@ -302,7 +302,10 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500, *,
                 raise ValueError('Automatic resolution fallback is limited to native 720p')
             env['RESOLUTION'] = resolution_override
         result['resolution'] = env.get('RESOLUTION', '720x1280')
+        reviewed_script=target/'reviewed-script.json'
+        reviewed_script.unlink(missing_ok=True)
         env.update(PURFFLE_STRICT='1', LANGUAGE=lang, VIDEO_TOPIC=topic,
+                   PURFFLE_REVIEWED_SCRIPT=str(reviewed_script.resolve()),
                    FOOTAGE_REPORT=str((target / 'footage-report.json').resolve()),
                    MEDIA_FIRST_REPORT=str((target / 'media-first-plan.json').resolve()),
                    MEDIA_FIRST_WORK_DIR=str((target / 'media-first-work').resolve()),
@@ -373,16 +376,20 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500, *,
         try:
             from pathlib import Path
             lang, offline_topic = parse_topic(raw)
-            offline = make_offline_video(
-                topic=offline_topic, language=lang, mode='short',
-                output=target/'fallback-video.mp4', root=target)
+            if os.environ.get('PURFFLE_REAL_ONLY_RECOVERY')=='1':
+                from short_recovery import recover_short
+                offline=recover_short(offline_topic,lang,target)
+            else:
+                offline = make_offline_video(
+                    topic=offline_topic, language=lang, mode='short',
+                    output=target/'fallback-video.mp4', root=target)
             result.update(offline)
             result.update(language=lang, topic=offline_topic,
                           source_error=safe_error[:500],
-                          stage='offline_complete',
+                          stage='mixed_media_review' if offline.get('status')=='review' else 'offline_complete',
                           fallback_reason='normal_pipeline_unavailable')
-            print(f"[REAL FALLBACK SHORT] video={index} "
-                  f"path={result['mp4']} mode=offline_2d_fallback",
+            print(f"[FALLBACK SHORT] video={index} "
+                  f"path={result['mp4']} mode={result.get('quality_mode')}",
                   flush=True)
         except Exception as fallback_exc:
             # Technical failures (no FFmpeg, disk full) remain true errors.

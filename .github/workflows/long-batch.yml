@@ -95,6 +95,7 @@ jobs:
       # Keep long-form uploads free of assets requiring manual attribution.
       # No license policy is bypassed merely because an API key exists.
       PURFFLE_NO_ATTRIBUTION: '1'
+      PURFFLE_VERIFIED_PHOTO_ONLY: '1'
       LLM_MODEL: openai/gpt-oss-20b
       HF_HOME: ${{ github.workspace }}/.cache/huggingface
       OMP_NUM_THREADS: '2'

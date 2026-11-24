@@ -47,7 +47,7 @@ def aggregate(root: Path = ROOT) -> list[dict]:
             result.update(status="failed", mp4=None,
                           failure_category="unexpected",
                           error="Worker report input does not match this requested topic")
-        if result.get("status") == "ok":
+        if result.get("status") in ("ok","review"):
             video = Path(result.get("mp4") or "")
             # Cross-runner paths saved by workers are absolute and point at a
             # DIFFERENT virtual machine. Locate the artifact's actual video.

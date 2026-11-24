@@ -306,6 +306,8 @@ def main():
                         str(script_error)[:200])
                     stage = 'grounded_script'
 
+            from short_recovery import save_reviewed_script
+            save_reviewed_script(screenplay, s.language, os.environ['VIDEO_TOPIC'])
             stage = 'visual_director_preflight'
             # Script comes first, so the required real-video count is exactly
             # the number of actual factual sentences. No empty/duplicated
@@ -413,6 +415,7 @@ def main():
                     screen_narration(
                         alternative, evidence, studio.llm,
                         path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
+                    save_reviewed_script(alternative, s.language, os.environ['VIDEO_TOPIC'])
                     stage = 'visual_director_preflight'
                     palette = prepare_verified_palette(
                         os.environ['VIDEO_TOPIC'], s, storyboard=alternative,

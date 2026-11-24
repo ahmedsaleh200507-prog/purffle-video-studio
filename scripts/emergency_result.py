@@ -27,19 +27,29 @@ def shorts(index, raw):
     out.mkdir(parents=True,exist_ok=True)
     report_path=out/"report.json"
     old=_read(report_path)
-    if old.get("status")=="ok" and old.get("mp4"):
+    if old.get("status") in ("ok","review") and old.get("mp4"):
         existing=Path(old["mp4"])
         if existing.is_file() and existing.stat().st_size>1024:
             print("[EMERGENCY] Existing normal or fallback Shorts MP4 preserved")
             return old
-    result=make_video(topic=topic,language=language,mode="short",
-                      output=out/"fallback-video.mp4",root=out)
+    import os
+    if os.environ.get("PURFFLE_REAL_ONLY_RECOVERY")=="1":
+        from short_recovery import recover_short
+        try:
+            result=recover_short(topic,language,out)
+        except Exception as exc:
+            old.update(status="failed",mp4=None,recovery_error=type(exc).__name__+": "+str(exc)[:250])
+            write_json(report_path,old)
+            raise
+    else:
+        result=make_video(topic=topic,language=language,mode="short",
+                          output=out/"fallback-video.mp4",root=out)
     for p in out.rglob("*.mp4"):
-        if p.resolve()!=(out/"fallback-video.mp4").resolve():
+        if p.resolve()!=Path(result["mp4"]).resolve():
             p.unlink(missing_ok=True)
     result.update({
         "index":index,"topic":topic,"original_input":raw,
-        "language":language,"stage":"complete_offline_fallback",
+        "language":language,"stage":"mixed_media_review" if result.get("status")=="review" else "complete_offline_fallback",
         "earlier_pipeline_error":str(old.get("error",""))[:350],
         "render_origin":"standalone_offline_ci_emergency",
     })

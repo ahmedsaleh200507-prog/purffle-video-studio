@@ -82,7 +82,7 @@ def pixabay(query):
             "visual_check":"licensed_still_search_match",
             "visual_role":"illustrative_photo","media_type":"photo"}
 
-def download_photo(url, dest):
+def download_photo(url, dest, size=(1920,1080)):
     from PIL import Image, ImageOps
     req=urllib.request.Request(url,headers={"User-Agent":UA})
     with urllib.request.urlopen(req,timeout=20) as response:
@@ -96,7 +96,7 @@ def download_photo(url, dest):
         from PIL import ImageStat
         if max(ImageStat.Stat(im.resize((64,64))).stddev)<8:
             raise ValueError("nearly blank photo")
-        im=ImageOps.fit(im,(1920,1080),method=Image.Resampling.LANCZOS)
+        im=ImageOps.fit(im,size,method=Image.Resampling.LANCZOS)
         im.save(dest,quality=92)
     return dest
 
@@ -135,32 +135,58 @@ def illustrations(chapter, index, directory):
                     "media_type":"illustration","visual_role":"last_resort",
                     "visual_check":"not_real_footage"}
 
-def stills(chapter,index,work,seen):
+def verify_photo(path,subject,query,matcher):
+    from PIL import Image
+    with Image.open(path) as im:
+        frame=im.convert("RGB")
+    captions=[f"A real photograph showing {query}.",f"A real photograph showing {subject}.",
+              "An unrelated landscape or empty background.", "A drawing or illustration.",
+              "A text slide or screenshot.", "An unrelated indoor scene."]
+    values=matcher._similarities([frame],captions)[0]
+    positive=max(values[:2])
+    margin=positive-max(values[2:])
+    if positive<.23 or values[1]<.20 or margin<.008:
+        raise ValueError("Photo subject not verified in actual cropped image")
+    return {"visual_check":"local_clip_photo_screening","visual_score":round(positive,4),
+            "visual_margin":round(margin,4),"visual_role":"illustrative_photo"}
+
+def stills(chapter,index,work,seen,*,size=(1920,1080),limit=4,require_verified=False,matcher=None):
     directory=work/f"stills-{index:02d}"
     directory.mkdir(parents=True,exist_ok=True)
     queries=list(dict.fromkeys(q for q in (chapter.get("visual_search_query"),
         chapter.get("visual_subject")) if q))
     selected=[]
+    require_verified=require_verified or os.environ.get("PURFFLE_VERIFIED_PHOTO_ONLY")=="1"
+    if require_verified and matcher is None:
+        from media_validation import SceneMatcher
+        matcher=SceneMatcher(threshold=.23)
     subject=chapter.get("visual_subject","").casefold()
     terms=[x for x in re.findall(r"\w+",subject) if len(x)>=3]
     for query in queries:
         for provider in (commons,pixabay):
             try:
                 for url,credit in provider(query):
-                    if len(selected)>=4: return selected
+                    if len(selected)>=limit: return selected
                     key=(credit["source"],str(credit["id"]))
                     if key in seen: continue
                     if terms and not any(t in credit.get("metadata_text","").casefold() for t in terms):
                         continue
                     path=directory/f"photo-{len(selected)}.jpg"
-                    try: download_photo(url,path)
-                    except Exception: continue
+                    try:
+                        download_photo(url,path,size=size)
+                        if require_verified:
+                            credit.update(verify_photo(path,subject,query,matcher))
+                    except Exception:
+                        path.unlink(missing_ok=True)
+                        continue
                     seen.add(key)
                     credit.update(chapter=index,subject=subject)
                     selected.append((path,credit))
             except Exception as exc:
                 print("[STILL SOURCE UNAVAILABLE]",provider.__name__,type(exc).__name__,flush=True)
     if selected: return selected
+    if require_verified:
+        raise RuntimeError("No licensed subject-verified photo; refuse unrelated or generated filler")
     return list(illustrations(chapter,index,directory))
 
 def render_recovery(index,audio,duration,chapter,work,seen,run):
