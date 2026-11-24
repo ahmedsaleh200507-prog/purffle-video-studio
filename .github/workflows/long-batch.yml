@@ -176,6 +176,15 @@ jobs:
             .cache/piper
           key: purffle-v4-long-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/media_validation.py') }}
 
+      - name: Restore this run's verified production checkpoint
+        if: steps.selected.outputs.render == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: long_video_output/checkpoints
+          key: purffle-resume-v1-${{ github.sha }}-${{ github.run_id }}-${{ matrix.slot }}-${{ github.run_attempt }}
+          restore-keys: |
+            purffle-resume-v1-${{ github.sha }}-${{ github.run_id }}-${{ matrix.slot }}-
+
       - name: Render only this long documentary; never publish automatically
         if: steps.selected.outputs.render == 'true'
         continue-on-error: true
@@ -183,6 +192,37 @@ jobs:
           LONG_TOPIC: ${{ steps.selected.outputs.topic }}
           LONG_LANGUAGE: ${{ steps.selected.outputs.language }}
         run: timeout 12600 python scripts/long_video.py --topic "$LONG_TOPIC" --language "$LONG_LANGUAGE"
+
+      - name: Retry unfinished chapters from checkpoint once
+        if: always() && steps.selected.outputs.render == 'true'
+        continue-on-error: true
+        env:
+          LONG_TOPIC: ${{ steps.selected.outputs.topic }}
+          LONG_LANGUAGE: ${{ steps.selected.outputs.language }}
+        run: |
+          if python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('long_video_output/result')
+          try:
+              report=json.loads((root/'report.json').read_text())
+              qa=json.loads((root/'output-qa.json').read_text())
+              assert report.get('status') in ('ok','review') and qa.get('state')=='passed'
+              assert (root/'long-video.mp4').is_file()
+          except (OSError,ValueError,KeyError,AssertionError,TypeError):
+              raise SystemExit(1)
+          PY
+          then exit 0; fi
+          echo "[RESUME] One bounded retry; reuse only validated checkpoints"
+          timeout 3300 python scripts/long_video.py --topic "$LONG_TOPIC" --language "$LONG_LANGUAGE"
+
+      - name: Save verified checkpoints for rerun of this job
+        if: always() && steps.selected.outputs.render == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: long_video_output/checkpoints
+          key: purffle-resume-v1-${{ github.sha }}-${{ github.run_id }}-${{ matrix.slot }}-${{ github.run_attempt }}
 
       - name: Preserve completed real-footage chapters after failures (no fake 10-minute slideshow)
         if: always() && steps.selected.outputs.render == 'true'
@@ -268,6 +308,7 @@ jobs:
             long_video_output/result/script.json
             long_video_output/result/credits.json
             long_video_output/result/output-qa.json
+            long_video_output/result/completed-chapters.json
           if-no-files-found: warn
           retention-days: 7
           compression-level: 0

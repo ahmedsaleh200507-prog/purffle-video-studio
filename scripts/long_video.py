@@ -597,7 +597,7 @@ def main():
     work.mkdir(parents=True,exist_ok=True)
     report={"mode":"long_video","status":"failed","mp4":None,"topic":a.topic,
             "language":a.language,"target_duration":600,"resolution":"1920x1080"}
-    from production_checkpoint import Checkpoint,digest
+    from production_checkpoint import Checkpoint,digest,write
     revision=os.getenv("GITHUB_SHA") or run(["git","rev-parse","HEAD"],10).strip()
     checkpoint=Checkpoint(OUT/"checkpoints",a.topic,a.language,revision)
     os.environ["PURFFLE_SCRIPT_CHECKPOINT"]=str(checkpoint.root)
@@ -637,6 +637,12 @@ def main():
         still_ids, recovery_chapters = set(), []
         failed_chapters=[]
         resumed_chapters=[]
+        completed_manifest=[]
+        manifest=output/"completed-chapters.json"
+        write(manifest,completed_manifest)
+        def record_completed(index,path):
+            completed_manifest.append({"index":index,"path":str(path.resolve()),"sha256":digest(path)})
+            write(manifest,completed_manifest)
         for i,(wav,seconds) in enumerate(audio):
             chapter_identity=[text[i],digest(wav),a.language]
             key=f"chapter-{i+1:02d}"
@@ -662,6 +668,7 @@ def main():
                 if info["recovery"]:
                     recovery_chapters.append(i+1)
                 resumed_chapters.append(i+1)
+                record_completed(i+1,saved_path)
                 print(f"[CHAPTER RESUME] {i+1}/14",flush=True)
                 continue
             was_recovery=False
@@ -693,6 +700,7 @@ def main():
                     {"credits":chapter_credits,"recovery":was_recovery})
                 scenes.append(saved_path)
                 credits.extend(chapter_credits)
+                record_completed(i+1,saved_path)
                 if was_recovery:
                     recovery_chapters.append(i+1)
             except Exception as check_error:
@@ -713,8 +721,6 @@ def main():
         duration,width,height,audible=probe(final)
         if not (540<=duration<=660 and width==1920 and height==1080 and audible):
             raise RuntimeError("Final video failed measured duration/1080p/audio validation")
-        report.update(status="review",mp4="long-video.mp4",duration=duration,
-                      recovery_chapters=recovery_chapters)
         stage="full_timeline_qa"
         from output_qa import validate_timeline
         full_qa=validate_timeline(final,output/"captions.srt",
@@ -745,7 +751,9 @@ def main():
                           c.get("visual_role") == "illustrative_subject_only" for c in credits),
                       note=("Contains licensed photos or marked original illustrations; review before publishing." if recovery_chapters else "All clips pass metadata + local CLIP screening. Illustrative B-roll is not exact footage of narrated events."))
     except Exception as e:
-        report.update(stage=stage,error=(type(e).__name__+": "+str(e))[:800])
+        report.update(status="failed",mp4=None,stage=stage,error=(type(e).__name__+": "+str(e))[:800])
+        # A technically invalid final must not be exported as a review movie.
+        (output/"long-video.mp4").unlink(missing_ok=True)
         # A fixed 602-second file with seven repeated sentences is NOT
         # a valid documentary. Do not silently turn errors into fake success.
         # The workflow will preserve any independently screened real footage

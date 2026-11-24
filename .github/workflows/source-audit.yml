@@ -14,6 +14,10 @@ on:
       - 'tests/test_verified_photo_policy.py'
       - 'scripts/era_policy.py'
       - 'scripts/geography_policy.py'
+      - 'scripts/production_checkpoint.py'
+      - 'scripts/long_generic.py'
+      - 'scripts/long_script.py'
+      - 'tests/test_production_checkpoint.py'
       - 'tests/test_geography_policy.py'
       - 'scripts/long_video.py'
       - 'tests/test_era_policy.py'
@@ -73,6 +77,8 @@ jobs:
           python -m unittest discover -s tests -p test_verified_photo_policy.py
           python -m unittest discover -s tests -p test_era_policy.py
           python -m unittest discover -s tests -p test_geography_policy.py
+          python -m unittest discover -s tests -p test_production_checkpoint.py
+          python -m compileall -q scripts
       - name: Test each provider independently
         run: python scripts/source_audit.py
       - name: Upload source audit

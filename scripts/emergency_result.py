@@ -75,7 +75,9 @@ def long(raw, language):
     report = _read(report_path)
     qa = _read(out / "documentary-quality.json")
     finished = out / "long-video.mp4"
-    if report.get("mp4") == "long-video.mp4" and finished.is_file() and finished.stat().st_size > 1000:
+    if (report.get("status") in ("ok","review") and report.get("mp4") == "long-video.mp4"
+            and finished.is_file() and finished.stat().st_size > 1000
+            and _read(out/"output-qa.json").get("state")=="passed"):
         print("[LONG MP4 PRESERVED] quality status:", report.get("status"), flush=True)
         return report
     if (report.get("status") == "ok"
@@ -83,7 +85,18 @@ def long(raw, language):
             and finished.is_file()):
         print("[LONG VERIFIED] genuine 10-minute documentary preserved")
         return report
-    chapters = sorted(work.glob("chapter-*.mp4"))
+    from production_checkpoint import digest
+    checkpoint_root=Path("long_video_output/checkpoints").resolve()
+    chapters=[]
+    try:
+        rows=json.loads((out/"completed-chapters.json").read_text(encoding="utf8"))
+        for row in sorted(rows,key=lambda x:x["index"]):
+            candidate=Path(row["path"]).resolve()
+            if (candidate.is_relative_to(checkpoint_root) and candidate.is_file()
+                    and digest(candidate)==row["sha256"]):
+                chapters.append(candidate)
+    except (OSError,ValueError,KeyError,TypeError):
+        chapters=[]
     partial = out / "PARTIAL_REAL_CHAPTERS.mp4"
     if chapters:
         import tempfile
