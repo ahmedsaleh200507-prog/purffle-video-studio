@@ -204,7 +204,7 @@ def srt_time(t):
 LONG_STOCK_PROVIDERS = (
     "pixabay", "pexels", "wikimedia-video", "nasa-video",
     "coverr-video", "archive-video", "europeana-video", "nps-video",
-    "usgs-video", "freenaturestock-video",
+    "usgs-video", "freenaturestock-video", "loc-video",
 )
 
 

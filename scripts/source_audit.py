@@ -17,10 +17,11 @@ QUERIES = {
     "wikimedia-video": ["volcano eruption", "ocean waves", "forest"],
     "nasa-video": ["sun solar activity", "earth from space", "moon"],
     "archive-video": ["volcano", "nature", "historic film"],
+    "loc-video": ["train railroad", "factory machinery", "city street"],
     "europeana-video": ["historic film", "train", "city"],
     "nps-video": ["Yellowstone", "geyser", "waterfall", "bison", "wildlife", "national park"],
-    "usgs-video": ["lava", "volcano eruption", "Kilauea"],
-    "freenaturestock-video": ["ocean waves", "forest", "clouds"],
+    "usgs-video": ["lava", "geyser", "landslide", "volcano eruption", "Kilauea"],
+    "freenaturestock-video": ["ocean waves", "waterfall", "river", "forest", "clouds"],
     "coverr-video": ["ocean waves", "forest"],
 }
 

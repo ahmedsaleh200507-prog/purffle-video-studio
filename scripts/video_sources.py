@@ -259,6 +259,7 @@ PROVIDERS = [
     VideoProvider("pexels", "PEXELS_API_KEY"),
     VideoProvider("wikimedia-video"), VideoProvider("nasa-video"),
     VideoProvider("archive-video"), VideoProvider("europeana-video", "EUROPEANA_API_KEY"),
+    VideoProvider("loc-video"),
     VideoProvider("nps-video", "NPS_API_KEY"),
     # Source-reviewed official USGS public-domain MP4 URLs: no scraping, no key.
     VideoProvider("usgs-video"),
@@ -830,6 +831,66 @@ class ProviderRegistry:
             if item:
                 result.append(item)
         return sorted(result, key=lambda x: (x.height > x.width, min(x.width, x.height)), reverse=True)
+
+    def _loc(self, query):
+        """Library of Congress official keyless JSON API; fail closed on rights."""
+        data=self.client.get("https://www.loc.gov/film-and-videos/",
+                             params={"q":query,"fo":"json","c":20})
+        result=[]
+        for rank,row in enumerate(data.get("results",[])[:6]):
+            page=str(row.get("id") or row.get("url") or "")
+            p=urlparse(page)
+            if p.scheme!="https" or p.hostname!="www.loc.gov" or not p.path.startswith("/item/") or p.query or p.fragment:
+                continue
+            try:
+                detail=self.client.get(page,params={"fo":"json"})
+            except ProviderError:
+                continue
+            item_data=detail.get("item",{})
+            if not isinstance(item_data,dict) or detail.get("access_restricted") or item_data.get("access_restricted"):
+                continue
+            advisory=clean([item_data.get("rights_advisory"),item_data.get("rights_information"),
+                            detail.get("rights_advisory"),row.get("rights_advisory")]).casefold()
+            # Explicit item-level declaration only; uncertain or qualified
+            # rights are not assumed to be permission for international reuse.
+            if not re.search(r"\b(?:is|are) in the public domain\b|^public domain\.?$",advisory.strip()) or re.search(r"not in the public domain|not public domain|may|permission|required|copyright protected|all rights reserved|except|unless|non.commercial|must credit|restrictions|united states only",advisory):
+                continue
+            if item_data.get("restriction") or item_data.get("access_advisory"):
+                continue
+            metadata=" ".join([clean(item_data.get("title") or row.get("title")),
+                              clean(item_data.get("summary") or row.get("description")),
+                              clean(item_data.get("subjects") or row.get("subject"))])
+            for r_index,res in enumerate(detail.get("resources",[])[:5]):
+                if not isinstance(res,dict) or res.get("download_restricted") or res.get("rights_restricted"):
+                    continue
+                variants=[]
+                for group in res.get("files",[]):
+                    for file in sequence(group):
+                        if not isinstance(file,dict) or file.get("rights_restricted") or file.get("canDownload") is False:
+                            continue
+                        url=str(file.get("url") or file.get("download") or "")
+                        u=urlparse(url)
+                        if not video_url(url) or u.hostname not in ("tile.loc.gov","www.loc.gov","hdl.loc.gov","memory.loc.gov","lcweb2.loc.gov"):
+                            continue
+                        if file.get("mimetype") not in ("video/mp4","video/quicktime"):
+                            continue
+                        w,h=int(file.get("width") or res.get("width") or 0),int(file.get("height") or res.get("height") or 0)
+                        if w and h and min(w,h)<720:
+                            continue
+                        variants.append((w,h,url))
+                if not variants:
+                    continue
+                variants.sort(key=lambda v:(min(v[0],v[1]),v[0]*v[1]),reverse=True)
+                w,h,url=variants[0]
+                lic=self.license("PDM-1.0","https://creativecommons.org/publicdomain/mark/1.0/",
+                                 "Library of Congress",page)
+                lic["rights_basis"]=advisory[:400]
+                item=self._item("loc-video",p.path.rstrip("/").split("/")[-1]+"-"+str(r_index),
+                                url,query,rank,metadata,lic,w,h,res.get("duration") or 0)
+                if item:
+                    item.extra["download_variants"]=[v[2] for v in variants[1:4]]
+                    result.append(item)
+        return result
 
     def _wikimedia(self, query):
         data = self.client.get(API, params={"action": "query", "generator": "search",
