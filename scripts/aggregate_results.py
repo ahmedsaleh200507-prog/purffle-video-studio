@@ -80,9 +80,10 @@ def aggregate(root: Path = ROOT) -> list[dict]:
 
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     ok = sum(r.get("status") == "ok" for r in results)
+    review = sum(r.get("status") == "review" for r in results)
     if summary:
         with open(summary, "a", encoding="utf-8") as file:
-            file.write(f"## Purffle — {ok}/{len(results)} videos ready\n\n")
+            file.write(f"## Purffle — {ok} verified, {review} review MP4s, {len(results)-ok-review} failed\n\n")
             for row in results:
                 index, status = row["index"], row.get("status", "failed")
                 file.write(f"- Video {index:02d}: **{status}**")

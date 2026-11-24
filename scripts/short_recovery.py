@@ -22,6 +22,16 @@ def run(args,timeout=240):
     subprocess.run(args,check=True,timeout=timeout,capture_output=True)
 
 def recover_short(topic,language,target):
+    target=Path(target).resolve()
+    try:
+        return _recover_short(topic,language,target)
+    except Exception:
+        (target/"review-video.mp4").unlink(missing_ok=True)
+        raise
+    finally:
+        shutil.rmtree(target/"real-recovery",ignore_errors=True)
+
+def _recover_short(topic,language,target):
     from local_voice import synthesize,provenance
     from long_video import real_word_captions,srt_time
     from long_still_recovery import stills

@@ -292,7 +292,7 @@ jobs:
           key: purffle-v2-api-${{ runner.os }}-${{ github.run_id }}-${{ matrix.slot }}
       - name: Remove transient render work
         if: always() && steps.selected.outputs.render == 'true'
-        run: find finished -type d -name work -prune -exec rm -rf {} + 2>/dev/null || true
+        run: find finished -type d \( -name work -o -name real-recovery \) -prune -exec rm -rf {} + 2>/dev/null || true
       - name: Upload the selected video and diagnostic files
         if: always() && steps.selected.outputs.render == 'true'
         uses: actions/upload-artifact@v4
@@ -364,7 +364,8 @@ jobs:
           if not results:
               raise SystemExit('No video topics were supplied')
           ok = sum(row.get('status') == 'ok' for row in results)
-          print(f'[BATCH FINAL] successful={ok} requested={len(results)}')
+          review = sum(row.get('status') == 'review' for row in results)
+          print(f'[BATCH FINAL] verified={ok} review={review} failed={len(results)-ok-review} requested={len(results)}')
           if ok != len(results):
               raise SystemExit('Some videos failed; download the ZIP to see which ones')
           PY
