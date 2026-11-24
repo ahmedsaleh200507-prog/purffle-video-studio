@@ -165,7 +165,7 @@ def real_word_captions(speech, chapter_start):
     return captions
 
 
-def narrate(data,work,language="en",checkpoint=None):
+def narrate(data,work,language="en",checkpoint=None,scene_groups=None):
     if language not in ("en","de"):
         raise RuntimeError("Only English or German long documentaries are supported")
     from local_voice import synthesize as piper_synthesize
@@ -186,8 +186,12 @@ def narrate(data,work,language="en",checkpoint=None):
                     saved=None
             except (OSError,ValueError,KeyError,wave.Error,EOFError):
                 saved=None
+        if saved and scene_groups is not None and not info.get("groups"):
+            saved=None
         if saved:
             captions=info["captions"]
+            if scene_groups is not None:
+                scene_groups[i]=info["groups"]
             print(f"[VOICE RESUME] chapter={i+1}",flush=True)
         else:
             speech=piper_synthesize(text,work/f"voice-{i+1}",SimpleNamespace(language=language))
@@ -199,8 +203,16 @@ def narrate(data,work,language="en",checkpoint=None):
             duration=float(speech.duration)
             captions=real_word_captions(speech,0.)
             path=Path(speech.audio)
+            groups=None
+            if scene_groups is not None:
+                from long_sentence_plan import timed_groups
+                try:
+                    groups=timed_groups(text,speech.words,duration)
+                except ValueError as exc:
+                    print("[TIMED ALIGNMENT UNAVAILABLE]",i+1,str(exc),flush=True)
+                scene_groups[i]=groups
             if checkpoint:
-                path=checkpoint.store_file(key,identity,path,{"duration":duration,"captions":captions})
+                path=checkpoint.store_file(key,identity,path,{"duration":duration,"captions":captions,"groups":groups})
         audios.append((path,duration))
         lines.extend((offset+a,offset+b,line) for a,b,line in captions)
         offset+=duration
@@ -294,7 +306,7 @@ def long_visual_verifier(path, metadata, need, *, matcher=None,
 
 
 def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
-               bank=None, reused=None, chapter=None):
+               bank=None, reused=None, chapter=None, single_shot=False):
     """Pick real licensed HD footage: new sources first, verified unused spans last.
 
     A prior 10-minute Fire and Ice run failed at chapter 13 despite 12 fully
@@ -317,12 +329,13 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     )
     val = QualityValidator(min_short_side=720)
     chosen, attempted = [], set()
-    attempts, max_attempts, max_per_query, max_per_provider = 0, 60, 24, 3
+    attempts, max_attempts, max_per_query, max_per_provider = (0, 14, 8, 2) if single_shot else (0, 60, 24, 3)
     expected_subject = long_expected_subject(index, topic, chapter)
     from era_policy import scene_era, footage_allowed
     era = scene_era(chapter)
     from geography_policy import scene_requirement,scoped_queries,require_geography
-    required_regions=scene_requirement(chapter,topic)
+    required_regions=(chapter["required_regions"] if single_shot and chapter and "required_regions" in chapter
+                      else scene_requirement(chapter,topic))
     for query in scoped_queries(long_visual_queries(index, topic, chapter),required_regions):
         query_attempts = 0
         for provider in LONG_STOCK_PROVIDERS:
@@ -361,13 +374,14 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                     geo=require_geography(required_regions,candidate.text)
                     reject_offtopic_science_source(topic, candidate.text)
                     path, q = download_hd_variant(candidate, dl, val,
-                        segment_seconds=max(15.,chapter_seconds/3+1),
+                        need=chapter_seconds+.05 if single_shot else 0,
+                        segment_seconds=max(15.,chapter_seconds+1 if single_shot else chapter_seconds/3+1),
                         check=lambda x: int(x["width"]) >= 1280 and int(x["height"]) >= 720)
                     duration = float(q["duration"])
                     if (int(q["width"]) < 1280 or int(q["height"]) < 720
                             or duration * 1.5 < chapter_seconds / 4):
                         continue
-                    visual_span = min(duration, chapter_seconds / 3)
+                    visual_span = min(duration, chapter_seconds if single_shot else chapter_seconds / 3)
                     if chapter and chapter.get("visual_search_query"):
                         visual = long_visual_verifier(
                             path,candidate.text,visual_span,
@@ -377,6 +391,12 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                         visual = long_visual_verifier(
                             path,candidate.text,visual_span,
                             expected_subject=expected_subject)
+                    crop_check=None
+                    if single_shot:
+                        from long_sentence_plan import crop_proof
+                        from media_validation import SceneMatcher
+                        crop_check=crop_proof(path,visual_span,expected_subject,
+                            chapter["visual_search_query"],SceneMatcher(threshold=.22))
                     lic = candidate.extra["license"]
                     credit = {
                         "source": candidate.source, "id": candidate.id,
@@ -395,8 +415,14 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                         "download_evidence": candidate.extra.get("download_evidence", {"mode":"full_download"}),
                         "reused": False, "source_offset_seconds": 0.0,
                     }
+                    if single_shot:
+                        credit.update(landscape_crop_proof=crop_check,shot_seconds=chapter_seconds,media_type="video",
+                            narration_group=chapter["index"],spoken_text=chapter["narration"],
+                            start_frame=chapter["start_frame"],end_frame=chapter["end_frame"])
                     seen.add(key)
                     chosen.append((path, duration, credit))
+                    if single_shot:
+                        return chosen
                     if len(chosen) >= 4:
                         return chosen
                 except Exception as ex:
@@ -407,6 +433,8 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                 break
         if attempts >= max_attempts:
             break
+    if single_shot:
+        raise RuntimeError("No verified real video for timed group")
     # 3 clips each need enough unique motion for their chapter share.
     usable = [c for c in chosen
               if c[1] * 1.5 >= chapter_seconds / 3]
@@ -524,6 +552,15 @@ def render_scene(i,audio,duration,stock,work):
     files=[]
     wanted=duration/len(stock)
     for j,(path,srcdur,credit) in enumerate(stock):
+        wanted=float(credit.get("shot_seconds",duration/len(stock)))
+        dest=shotdir/f"shot-{j:02d}.mp4"
+        if credit.get("media_type")=="photo":
+            run(["ffmpeg","-hide_banner","-nostdin","-y","-loglevel","error",
+                "-loop","1","-framerate","30","-i",str(path),"-frames:v",str(round(wanted*30)),
+                "-an","-vf","scale=1920:1080,setsar=1,format=yuv420p","-threads","2",
+                "-c:v","libx264","-preset","veryfast","-crf","25",str(dest)],600)
+            files.append(dest)
+            continue
         offset=float(credit.get("source_offset_seconds", 0))
         available=srcdur-offset
         if available <= 0:
@@ -626,13 +663,16 @@ def main():
         save(output/"script.json",{"language":a.language,"chapters":text})
         save(output/"script-quality.json",preliminary_qa)
         stage="fixed_piper_voice"
-        audio,subs,voice_seconds=narrate(text,work,a.language,checkpoint=checkpoint)
+        scene_groups={} if os.getenv("PURFFLE_TIMED_LONG_SCENES","0")=="1" else None
+        audio,subs,voice_seconds=narrate(text,work,a.language,checkpoint=checkpoint,scene_groups=scene_groups)
         with (output/"captions.srt").open("w",encoding="utf8") as f:
             for j,(start,end,line) in enumerate(subs,1):
                 f.write(f"{j}\n{srt_time(start)} --> {srt_time(end)}\n{line}\n\n")
         stage="real_stock"
         used,scenes,credits=set(),[],[]
-        from long_still_recovery import render_recovery
+        from long_still_recovery import render_recovery,stills
+        planner_client=None
+        visual_plan_report=[]
         stock_bank, reused_source_ids = [], set()
         still_ids, recovery_chapters = set(), []
         failed_chapters=[]
@@ -672,17 +712,59 @@ def main():
                 print(f"[CHAPTER RESUME] {i+1}/14",flush=True)
                 continue
             was_recovery=False
+            timed_plan=None
+            if scene_groups is not None:
+                try:
+                    from long_sentence_plan import plan_chapter
+                    if not scene_groups.get(i):
+                        raise RuntimeError("Missing aligned groups")
+                    plan_identity=[text[i],scene_groups[i],a.topic]
+                    timed_plan=checkpoint.get(f"visual-plan-{i+1:02d}",plan_identity)
+                    if timed_plan is None:
+                        if planner_client is None:
+                            from long_llm import get_long_client
+                            planner_client=get_long_client()
+                        timed_plan=plan_chapter(planner_client,scene_groups[i],text[i],a.topic)
+                        checkpoint.put(f"visual-plan-{i+1:02d}",plan_identity,timed_plan)
+                    visual_plan_report.append({"chapter":i+1,"groups":timed_plan,"state":"planned"})
+                except Exception as plan_error:
+                    print("[TIMED PLAN UNAVAILABLE]",i+1,type(plan_error).__name__,flush=True)
+                    timed_plan=None
+                    was_recovery=True
+                    visual_plan_report.append({"chapter":i+1,"state":"chapter_level_review_only"})
+                save(output/"timed-visual-plan.json",visual_plan_report)
             try:
-                clips=find_stock(i,seconds,used,work,registry=registry,topic=a.topic,
-                                 bank=stock_bank,reused=reused_source_ids,chapter=text[i])
+                if timed_plan:
+                    clips=[]
+                    for shot in timed_plan:
+                        try:
+                            clip=find_stock(i,shot["seconds"],used,work,registry=registry,
+                                            topic=a.topic,chapter=shot,single_shot=True)[0]
+                        except Exception as shot_error:
+                            print("[TIMED SHOT PHOTO RECOVERY]",i+1,shot["index"],type(shot_error).__name__,flush=True)
+                            photos=stills({**shot,"topic":a.topic},i*10+shot["index"],work,still_ids,
+                                         size=(1920,1080),limit=1,require_verified=True)
+                            path,credit=photos[0]
+                            credit.update(chapter=i+1,shot_seconds=shot["seconds"],narration_group=shot["index"],
+                                spoken_text=shot["narration"],start_frame=shot["start_frame"],end_frame=shot["end_frame"])
+                            clip=(path,shot["seconds"],credit)
+                            was_recovery=True
+                        clips.append(clip)
+                    visual_plan_report[-1]["state"]="timed_review" if was_recovery else "timed_real_video"
+                    save(output/"timed-visual-plan.json",visual_plan_report)
+                else:
+                    clips=find_stock(i,seconds,used,work,registry=registry,topic=a.topic,
+                                     bank=stock_bank,reused=reused_source_ids,chapter=text[i])
                 stage=f"render_chapter_{i+1}"
                 scene=render_scene(i+1,wav,seconds,clips,work)
-                stock_bank.extend(c for c in clips if not c[2].get("reused"))
+                stock_bank.extend(c for c in clips if not c[2].get("reused") and c[2].get("media_type")!="photo")
                 chapter_credits=[c[2] for c in clips]
             except Exception as exc:
                 print("[LONG CHAPTER RECOVERY]", i+1, type(exc).__name__, flush=True)
                 stage=f"recover_chapter_{i+1}"
                 try:
+                    if timed_plan:
+                        raise RuntimeError("Timed scene missing; retry from checkpoint")
                     scene,chapter_credits=render_recovery(
                         i+1,wav,seconds,{**text[i],"topic":a.topic},work,still_ids,run)
                     was_recovery=True

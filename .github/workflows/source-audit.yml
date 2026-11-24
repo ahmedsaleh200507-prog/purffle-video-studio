@@ -26,6 +26,8 @@ on:
       - 'tests/test_short_recovery_policy.py'
       - 'tests/test_geography_policy.py'
       - 'scripts/long_video.py'
+      - 'scripts/long_sentence_plan.py'
+      - 'tests/test_long_sentence_plan.py'
       - 'tests/test_era_policy.py'
       - 'scripts/footage_search.py'
       - 'tests/test_portrait_priority.py'
@@ -89,6 +91,7 @@ jobs:
           python -m unittest discover -s tests -p test_archive_hd_policy.py
           python -m unittest discover -s tests -p test_batch_path_scope.py
           python -m unittest discover -s tests -p test_local_llm.py
+          python -m unittest discover -s tests -p test_long_sentence_plan.py
           python -m compileall -q scripts
       - name: Test each provider independently
         run: python scripts/source_audit.py

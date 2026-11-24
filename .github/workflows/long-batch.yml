@@ -87,6 +87,7 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       PURFFLE_LOCAL_LLM: '1'
       PURFFLE_LOCAL_QUALITY: '1'
+      PURFFLE_TIMED_LONG_SCENES: '1'
       PURFFLE_LONG_LLM_PRIMARY: ${{ vars.PURFFLE_LONG_LLM_PRIMARY || 'gemini' }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -347,6 +348,7 @@ jobs:
             long_video_output/result/credits.json
             long_video_output/result/output-qa.json
             long_video_output/result/completed-chapters.json
+            long_video_output/result/timed-visual-plan.json
           if-no-files-found: warn
           retention-days: 7
           compression-level: 0
