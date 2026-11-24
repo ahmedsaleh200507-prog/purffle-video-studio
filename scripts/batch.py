@@ -374,7 +374,6 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500, *,
         # card or a misleading stock/video verification result.
         from offline_video import make_video as make_offline_video
         try:
-            from pathlib import Path
             lang, offline_topic = parse_topic(raw)
             if os.environ.get('PURFFLE_REAL_ONLY_RECOVERY')=='1':
                 from short_recovery import recover_short

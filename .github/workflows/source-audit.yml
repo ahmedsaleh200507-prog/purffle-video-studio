@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/source_audit.py'
+      - 'scripts/batch.py'
+      - 'tests/test_batch_path_scope.py'
       - 'scripts/range_segment.py'
       - 'scripts/media_validation.py'
       - 'scripts/portrait_layout.py'
@@ -82,6 +84,7 @@ jobs:
           python -m unittest discover -s tests -p test_production_checkpoint.py
           python -m unittest discover -s tests -p test_short_recovery_policy.py
           python -m unittest discover -s tests -p test_archive_hd_policy.py
+          python -m unittest discover -s tests -p test_batch_path_scope.py
           python -m compileall -q scripts
       - name: Test each provider independently
         run: python scripts/source_audit.py
