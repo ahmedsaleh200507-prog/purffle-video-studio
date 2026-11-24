@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - 'scripts/source_audit.py'
+      - 'scripts/range_segment.py'
+      - 'scripts/media_validation.py'
+      - 'scripts/video_sources.py'
+      - 'tests/test_range_segment.py'
       - '.github/workflows/source-audit.yml'
 permissions:
   contents: read
@@ -42,6 +46,10 @@ jobs:
           fi
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
+      - name: Check partial download implementation
+        run: |
+          python -m compileall -q scripts
+          python -m unittest discover -s tests -p test_range_segment.py
       - name: Test each provider independently
         run: python scripts/source_audit.py
       - name: Upload source audit

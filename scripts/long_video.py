@@ -330,6 +330,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                 try:
                     reject_offtopic_science_source(topic, candidate.text)
                     path, q = download_hd_variant(candidate, dl, val,
+                        segment_seconds=max(15.,chapter_seconds/3+1),
                         check=lambda x: int(x["width"]) >= 1280 and int(x["height"]) >= 720)
                     duration = float(q["duration"])
                     if (int(q["width"]) < 1280 or int(q["height"]) < 720
@@ -357,6 +358,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                         "visual_check": visual["verification"],
                         "visual_score": visual.get("visual_score"),
                         "visual_role": visual.get("visual_role", "direct_chapter_match"),
+                        "download_evidence": candidate.extra.get("download_evidence", {"mode":"full_download"}),
                         "reused": False, "source_offset_seconds": 0.0,
                     }
                     seen.add(key)

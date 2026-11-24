@@ -709,24 +709,64 @@ class SceneMatcher:
                 "verification": "local_clip_screening", "limitations": "Similarity screening cannot prove exact actions, identity or denomination."}
 
 
-def download_hd_variant(item, downloader, validator, *, need=0, check=None):
-    """Try official alternate encodings of one licensed asset, with the same
-    downloader safeguards and measured quality gate. No remote range slicing."""
-    variants = (getattr(item, "extra", {}) or {}).get("download_variants") or []
+def download_hd_variant(item, downloader, validator, *, need=0, check=None,
+                        segment_seconds=0):
+    """Normal licensed download, official HD variants, and bounded partial
+    extraction when the remote server supports verified byte ranges."""
+    extra = getattr(item, "extra", {}) or {}
+    variants = extra.get("download_variants") or []
     urls = list(dict.fromkeys([item.url, *variants]))[:4]
     last = None
-    for url in urls:
+    range_candidates = []
+    segment_seconds = min(90., max(float(segment_seconds or 0), float(need or 0)+.3))
+    # Keep ordinary stock fast. Known long assets may be sliced before their
+    # full download; unknown-size assets fall back after the normal byte cap.
+    known_duration = float(getattr(item, "duration", 0) or 0)
+    prefer_range = (segment_seconds >= 1 and known_duration > max(120, 4*segment_seconds)
+                    and getattr(item, "source", "") != "coverr-video")
+    def accept(path, evidence):
+        quality = validator.validate(path, need=need) if need else validator.validate(path)
+        if evidence["mode"] == "http_range":
+            requested = evidence["requested_seconds"]
+            if float(quality["duration"]) < max(float(need or 0),requested-.6):
+                raise ValidationError("Partial clip shorter than requested interval")
+        if check is not None and not check(quality):
+            raise ValidationError("Source variant does not meet output framing requirements")
+        if hasattr(item,"extra"):
+            item.extra["download_evidence"] = evidence
+        return path,quality
+    def partial(url):
+        from range_segment import extract_segment
+        path,evidence=extract_segment(url,downloader,segment_seconds)
         try:
-            path = downloader.download(url)
-            quality = validator.validate(path, need=need) if need else validator.validate(path)
-            if check is not None and not check(quality):
-                raise ValidationError("Source variant does not meet output framing requirements")
-            return path, quality
+            return accept(path,evidence)
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+    for url in urls:
+        if prefer_range:
+            try:
+                return partial(url)
+            except Exception as exc:
+                last=exc
+        try:
+            return accept(downloader.download(url),{"mode":"full_download"})
         except Exception as exc:
-            last = exc
-            if len(urls) > 1:
-                print("[SOURCE VARIANT REJECT]", getattr(item,"source","unknown"),
-                      type(exc).__name__, flush=True)
+            last=exc
+            reason=str(exc).lower()
+            if (not prefer_range and segment_seconds>=1
+                and getattr(item,"source","")!="coverr-video"
+                and any(x in reason for x in ("exceeds byte budget","time budget exceeded","transport failure"))):
+                range_candidates.append(url)
+            if len(urls)>1:
+                print("[SOURCE VARIANT REJECT]",getattr(item,"source","unknown"),type(exc).__name__,flush=True)
+    for url in range_candidates[:2]:
+        try:
+            return partial(url)
+        except Exception as exc:
+            print("[PARTIAL SOURCE REJECT]",getattr(item,"source","unknown"),
+                  type(exc).__name__,str(exc)[:120],flush=True)
+            last=exc
     if last is not None:
         raise last
     raise ValidationError("No downloadable source variants")

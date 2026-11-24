@@ -83,8 +83,9 @@ def audit(provider):
                 try:
                     if not LicenseValidator.validate(item_license) or attempt["attribution_required"]:
                         raise ValueError("license rejected by no-attribution policy")
-                    path, quality = download_hd_variant(item, dl, validator)
+                    path, quality = download_hd_variant(item, dl, validator, segment_seconds=15)
                     attempt["downloaded"] = True
+                    attempt["download_evidence"] = item.extra.get("download_evidence", {})
                     w,h = quality["width"],quality["height"]
                     scale = max(720/min(w,h*9/16),1280/h)
                     attempt.update(status="hd_motion_ok",width=w,height=h,
