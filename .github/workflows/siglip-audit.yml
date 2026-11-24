@@ -1,0 +1,32 @@
+name: '06 - Test Visual AI SigLIP2'
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/siglip_review.py'
+      - 'scripts/siglip_audit.py'
+      - '.github/workflows/siglip-audit.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: ${{ github.workspace }}/scripts
+      HF_HOME: ${{ github.workspace }}/.cache/huggingface
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install 'transformers==4.57.1' 'Pillow>=10.1,<14' 'sentencepiece>=0.2,<1'
+      - run: python scripts/siglip_audit.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: siglip-audit
+          path: siglip-audit/
+          if-no-files-found: warn

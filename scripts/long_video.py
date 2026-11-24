@@ -746,7 +746,30 @@ def main():
                             clip=find_stock(i,shot["seconds"],used,work,registry=registry,
                                             topic=a.topic,chapter=shot,single_shot=True)[0]
                         except Exception as shot_error:
-                            print("[TIMED SHOT PHOTO RECOVERY]",i+1,shot["index"],type(shot_error).__name__,flush=True)
+                            print("[TIMED SHOT VIDEO RETRY]",i+1,shot["index"],type(shot_error).__name__,flush=True)
+                            # A full-length stock clip can be unavailable even
+                            # when two independently screened shorter clips exist.
+                            # Only use the split if both cover the measured group.
+                            split=[]
+                            first_frames=(shot["end_frame"]-shot["start_frame"])//2
+                            if first_frames>=60:
+                                split_start=shot["start_frame"]
+                                for part_end in (split_start+first_frames,shot["end_frame"]):
+                                    part={**shot,"start_frame":split_start,"end_frame":part_end,
+                                          "seconds":(part_end-split_start)/30}
+                                    try:
+                                        item=find_stock(i,part["seconds"],used,work,registry=registry,
+                                                        topic=a.topic,chapter=part,single_shot=True)[0]
+                                        split.append(item)
+                                    except Exception:
+                                        break
+                                    split_start=part_end
+                            if len(split)==2:
+                                clips.extend(split)
+                                continue
+                            for item in split:
+                                used.discard((item[2]["source"],str(item[2]["id"])))
+                            print("[TIMED SHOT PHOTO RECOVERY]",i+1,shot["index"],flush=True)
                             photos=stills({**shot,"topic":a.topic},i*10+shot["index"],work,still_ids,
                                          size=(1920,1080),limit=1,require_verified=True)
                             path,credit=photos[0]

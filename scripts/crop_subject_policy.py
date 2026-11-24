@@ -19,6 +19,8 @@ def verify_crop_subject(frames,spec,matcher):
     good=[r[0]>=threshold and r[1]>=threshold-.015 and r[0]-max(r[2:])>=.004 for r in rows]
     if sum(good)<2:
         raise ValueError("Actual output crop lacks the requested subject in two of three frames")
-    return {"verified":True,"method":"clip_actual_crop_subject","matching_frames":sum(good),
+    from siglip_review import observe
+    second=observe(frames,subject,spec.visual_search_query)
+    return {"verified":True,"siglip_shadow_review":second,"method":"clip_actual_crop_subject","matching_frames":sum(good),
             "sample_count":len(rows),"subject_scores":[round(r[0],4) for r in rows],
             "threshold":threshold,"limitations":"Sampled visual similarity, not identity or geolocation proof"}

@@ -148,7 +148,9 @@ def verify_photo(path,subject,query,matcher):
     margin=positive-max(values[2:])
     if values[0]<.23 or values[1]<.20 or margin<.008:
         raise ValueError("Photo subject not verified in actual cropped image")
+    from siglip_review import observe
     return {"visual_check":"local_clip_photo_screening","visual_score":round(positive,4),
+            "siglip_shadow_review":observe([frame],subject,query),
             "visual_margin":round(margin,4),"visual_role":"illustrative_photo"}
 
 def stills(chapter,index,work,seen,*,size=(1920,1080),limit=4,require_verified=False,matcher=None):
