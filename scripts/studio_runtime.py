@@ -366,14 +366,21 @@ class StrictVisuals:
         if exact_ocean_entry and "usgs-video" in source_order:
             source_order.remove("usgs-video")
             source_order.insert(0, "usgs-video")
-        from footage_search import discover
+        from footage_search import discover, discover_portrait_first
         from scene_relevance import search_queries
         queries = search_queries(data, director_contract)
         scene["search_queries"] = queries
         # A fair first round prevents the first provider exhausting all aliases
         # and downloads before the next provider gets any opportunity.
-        for source, candidates in discover(self.registry, source_order, queries, attempt_deadline):
-            print(f"[SOURCE CHECK] {source}: {len(candidates)} candidates scene={idx+1}", flush=True)
+        portrait_first = os.environ.get("PURFFLE_SHORTS_PORTRAIT_FIRST","0")=="1"
+        deferred=[]
+        if portrait_first:
+            batches=discover_portrait_first(self.registry,source_order,queries,attempt_deadline,deferred)
+        else:
+            batches=((src,items,"any",attempt_deadline) for src,items in
+                     discover(self.registry,source_order,queries,attempt_deadline))
+        for source, candidates, orientation_phase, phase_deadline in batches:
+            print(f"[SOURCE CHECK] {source}: {len(candidates)} candidates scene={idx+1} phase={orientation_phase}", flush=True)
             ranked = []
             for item in candidates:
                 rejection_key = (spec.object, spec.action,
@@ -508,8 +515,9 @@ class StrictVisuals:
             for score, item, url_key in ranked[:max_candidates]:
                 rejection_key = (spec.object, spec.action,
                                  json.dumps(director_contract, sort_keys=True), item.key)
-                if time.monotonic() >= attempt_deadline:
-                    scene["rejections"].append({"source": source, "reason": "scene_budget_exhausted"})
+                if time.monotonic() >= phase_deadline:
+                    scene["rejections"].append({"source": source, "reason": "orientation_phase_budget_exhausted",
+                                                "phase":orientation_phase})
                     break
                 path, digest = None, None
                 try:
@@ -525,6 +533,12 @@ class StrictVisuals:
                         # Count a real asset download using Coverr's official
                         # PATCH endpoint, as required on the free API tier.
                         self.registry.track_download(item)
+                    if orientation_phase in ("portrait","unknown_orientation") and source_quality["height"]<=source_quality["width"]:
+                        # Actual file dimensions (including rotation) override
+                        # provider guesses. Do not count a deferred landscape as
+                        # a rejection or delete its cached original.
+                        deferred.append((source,item))
+                        continue
                     digest = self.downloader.digest(path)
                     if digest in self.used_hashes:
                         raise ValueError("duplicate content hash")
@@ -687,6 +701,9 @@ class StrictVisuals:
                                   "source_url": item.url, "downloaded_file": str(path),
                                   "sha256": digest, "quality": quality, "match": match,
                                   "portrait_layout": layout,
+                                  "orientation_phase": orientation_phase,
+                                  "source_orientation": ("portrait" if quality["height"]>quality["width"] else
+                                                         "landscape" if quality["width"]>quality["height"] else "square"),
                                   "download_evidence":item.extra.get("download_evidence",{}),
                                   "license": license_info,
                                   "crop": {"focus_x": match.get("crop_focus_x", .5),
