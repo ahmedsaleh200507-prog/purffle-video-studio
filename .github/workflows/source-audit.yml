@@ -7,6 +7,9 @@ on:
       - 'scripts/source_audit.py'
       - 'scripts/range_segment.py'
       - 'scripts/media_validation.py'
+      - 'scripts/portrait_layout.py'
+      - 'scripts/studio_runtime.py'
+      - 'tests/test_portrait_layout.py'
       - 'scripts/video_sources.py'
       - 'tests/test_range_segment.py'
       - 'tests/test_localized_motion.py'
@@ -52,6 +55,7 @@ jobs:
           python -m compileall -q scripts
           python -m unittest discover -s tests -p test_range_segment.py
           python -m unittest discover -s tests -p test_localized_motion.py
+          python -m unittest discover -s tests -p test_portrait_layout.py
       - name: Test each provider independently
         run: python scripts/source_audit.py
       - name: Upload source audit

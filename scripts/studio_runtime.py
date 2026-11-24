@@ -19,6 +19,7 @@ import time
 from urllib.parse import urlsplit
 
 from media_validation import portrait_crop_allowed
+from portrait_layout import plan_portrait, context_enabled, render_context
 
 UPSTREAM_COMMIT = "514fd2547227b98d951dfc1489fc8c7ce72f1b68"
 UPSTREAM_HASHES = {
@@ -401,7 +402,9 @@ class StrictVisuals:
                             {"width": item.width, "height": item.height},
                             getattr(self.s, "width", 720),
                             getattr(self.s, "height", 1280))
-                        if not portrait_crop_allowed(predicted_scale):
+                        if (not portrait_crop_allowed(predicted_scale)
+                                and not context_enabled()
+                                and not item.extra.get("download_variants")):
                             reason = (
                                 "insufficient_native_resolution: provider reports "
                                 f"{item.width}x{item.height} which cannot fill "
@@ -494,7 +497,11 @@ class StrictVisuals:
                 required_height = getattr(self.s, "height", 1280)
                 ratio = required_width / required_height
                 crop_width = min(item.width, item.height * ratio)
-                return 0 if crop_width >= required_width and item.height >= required_height else 2
+                scale = _native_portrait_scale({"width":item.width,"height":item.height},
+                                              required_width,required_height)
+                if scale <= 1:
+                    return 0 if item.height >= item.width else 1
+                return 2 if portrait_crop_allowed(scale) else 3
 
             ranked.sort(key=lambda row: (crop_rank(row[1]), -row[0], row[1].rank,
                                           -int(row[1].height > row[1].width),
@@ -505,13 +512,17 @@ class StrictVisuals:
                 if time.monotonic() >= attempt_deadline:
                     scene["rejections"].append({"source": source, "reason": "scene_budget_exhausted"})
                     break
-                path, digest = None, None
+                path, digest, composed_path = None, None, None
                 try:
                     from media_validation import download_hd_variant
-                    path, _ = download_hd_variant(item, self.downloader, self.quality, need=need,
+                    required_width = getattr(self.s,"width",720)
+                    required_height = getattr(self.s,"height",1280)
+                    def layout_for(q):
+                        return plan_portrait(q["width"],q["height"],required_width,required_height,
+                                             allow_context=context_enabled())
+                    path, source_quality = download_hd_variant(item, self.downloader, self.quality, need=need,
                         segment_seconds=max(1.,float(need)+.5),
-                        check=lambda q: portrait_crop_allowed(_native_portrait_scale(
-                            q, getattr(self.s,"width",720), getattr(self.s,"height",1280))))
+                        check=lambda q: layout_for(q) is not None)
                     if source == "coverr-video":
                         # Count a real asset download using Coverr's official
                         # PATCH endpoint, as required on the free API tier.
@@ -524,7 +535,11 @@ class StrictVisuals:
                     # arbitrary +0.100s margin wrongly discarded it.
                     # Requiring the ACTUAL scene duration still forbids
                     # looping, frozen tail frames or insufficient footage.
-                    quality = self.quality.validate(path, need=need)
+                    quality = source_quality
+                    layout = layout_for(quality)
+                    if layout is None:
+                        raise ValueError("No valid portrait layout for measured source")
+                    original_quality = dict(quality)
                     # Source HD is not enough: portrait cropping of 1920x1080
                     # leaves only ~608x1080 native pixels for a 720x1280 output.
                     # Reject upscaling rather than reporting false native 720p.
@@ -536,7 +551,7 @@ class StrictVisuals:
                     # reported enlargement when cropping real 1080p landscape:
                     # 1920x1080 -> 720x1280 needs about 1.185x, common in Shorts.
                     # Never accept low-res video or unlimited fake HD scaling.
-                    if not portrait_crop_allowed(native_scale):
+                    if not portrait_crop_allowed(native_scale) and layout["mode"] != "full_frame_context":
                         # Measured resolution cannot improve for another spoken
                         # scene. Do not delete then redownload the same huge file.
                         reason = (f'insufficient_native_resolution: measured {quality["width"]}x'
@@ -548,7 +563,30 @@ class StrictVisuals:
                             f"{quality.get('width')}x{quality.get('height')} source "
                             f"to {required_width}x{required_height}"
                         )
+                    # First verify the original footage; a backdrop must not
+                    # turn an unrelated shot into an approved one.
                     match = self.matcher.match(path, spec, metadata=item.text, duration=need)
+                    if layout["mode"] == "full_frame_context":
+                        composed_path = render_context(path,layout,
+                            min(float(quality["duration"]),float(need)+.35),
+                            getattr(self.s,"fps",30))
+                        composed_quality=self.quality.validate(composed_path,need=need)
+                        # Every existing subsequent crop/subject/opening gate
+                        # now sees the actual composed 9:16 image.
+                        composed_match=self.matcher.match(composed_path,spec,metadata=item.text,duration=need)
+                        composed_match["crop_focus_x"]=.5
+                        composed_match["original_source_match"]=match
+                        match=composed_match
+                        path=composed_path
+                        quality={**composed_quality,"source_full_hd":original_quality.get("source_full_hd",False),
+                                 "source_4k":original_quality.get("source_4k",False),
+                                 "original_source_quality":original_quality,
+                                 "portrait_layout":layout}
+                        native_scale=1.
+                        print("[PORTRAIT CONTEXT]",layout,flush=True)
+                    else:
+                        quality["portrait_layout"]=layout
+                    item.extra["portrait_layout"]=layout
                     # #106: an octopus stock clip passed whole-frame motion
                     # and CLIP but half of the final 9:16 render was black.
                     # Sample the actual portrait crop before accepting it.
@@ -670,11 +708,13 @@ class StrictVisuals:
                                   "director_contract": director_contract,
                                   "source_url": item.url, "downloaded_file": str(path),
                                   "sha256": digest, "quality": quality, "match": match,
+                                  "portrait_layout": layout,
+                                  "download_evidence":item.extra.get("download_evidence",{}),
                                   "license": license_info,
                                   "crop": {"focus_x": match.get("crop_focus_x", .5),
-                                           "effective_source_width": round(min(item.width, item.height * 9 / 16)),
-                                           "effective_source_height": round(min(item.height, item.width * 16 / 9)),
-                                           "upscaled_after_crop": native_scale > 1.0001,
+                                           "effective_source_width": (layout["source_width"] if layout["mode"]=="full_frame_context" else round(min(item.width, item.height * 9 / 16))),
+                                           "effective_source_height": (layout["source_height"] if layout["mode"]=="full_frame_context" else round(min(item.height, item.width * 16 / 9))),
+                                           "upscaled_after_crop": (layout.get("foreground_scale",native_scale)>1.0001),
                                            "crop_scale": round(native_scale, 4)}})
                     self._save()
                     print(f"[SELECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} "
@@ -693,6 +733,8 @@ class StrictVisuals:
                             Path(path).with_suffix(".json").unlink(missing_ok=True)
                         except OSError:
                             pass  # aggregate cache budget still fails safely when full
+                    if composed_path is not None:
+                        Path(composed_path).unlink(missing_ok=True)
                     reason = _redact(f"{type(exc).__name__}: {exc}")[:450]
                     scene["rejections"].append({"source": source, "id": item.id,
                                                 "reason": reason, "stage": "download_quality_or_visual"})
@@ -815,10 +857,16 @@ def strict_prepare_segment(item, seconds, idx, settings, work):
     focus = max(0, min(1, focus))
     crop_width = min(item.width, item.height * W / H)
     crop_height = min(item.height, item.width * H / W)
+    layout=item.extra.get("portrait_layout",{})
+    if layout.get("mode")=="full_frame_context":
+        if (item.width,item.height)!=(W,H) or not portrait_crop_allowed(layout["foreground_scale"]):
+            raise RuntimeError("Invalid verified context layout")
+        crop_width,crop_height=layout["source_width"],layout["source_height"]
     item.extra["crop"] = {"focus_x": focus, "effective_source_width": round(crop_width),
                           "effective_source_height": round(crop_height),
-                          "upscaled_after_crop": measured_scale > 1.0001,
-                          "crop_scale": round(measured_scale, 4)}
+                          "upscaled_after_crop": layout.get("foreground_scale",measured_scale)>1.0001,
+                          "crop_scale": round(measured_scale, 4),
+                          "layout_mode":layout.get("mode","subject_crop")}
     # Keep the subject's horizontal focus; vertically centre when a wide crop is required.
     cover = (f"scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,"
              f"crop={W}:{H}:x='max(0,min(iw-ow,iw*{focus:.5f}-ow/2))':y='(ih-oh)/2',setsar=1")

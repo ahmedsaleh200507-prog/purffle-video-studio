@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 from video_sources import ProviderRegistry, JsonClient, PROVIDERS, LicenseValidator, STATIC_CATALOGS
 from media_validation import VideoDownloader, QualityValidator, portrait_crop_allowed, download_hd_variant
+from portrait_layout import plan_portrait, render_context
 
 QUERIES = {
     "pixabay": ["ocean waves", "forest", "volcano"],
@@ -88,13 +89,25 @@ def audit(provider):
                     attempt["download_evidence"] = item.extra.get("download_evidence", {})
                     attempt["partial_attempts"] = item.extra.get("partial_attempts", [])
                     w,h = quality["width"],quality["height"]
-                    scale = max(720/min(w,h*9/16),1280/h)
+                    scale = max(1080/min(w,h*9/16),1920/h)
+                    layout=plan_portrait(w,h,1080,1920)
+                    context_ok=False
+                    context_reason=None
+                    if layout and layout["mode"]=="full_frame_context":
+                        try:
+                            context_path=render_context(path,layout,min(5.,float(quality["duration"])))
+                            composed=validator.validate(context_path)
+                            context_ok=(composed["width"],composed["height"])==(1080,1920)
+                        except Exception as exc:
+                            context_reason=safe_error(exc)
                     attempt.update(status="hd_motion_ok",width=w,height=h,
                                    seconds=round(quality["duration"],2),fps=quality["fps"],
                                    motion_mode=quality.get("motion_mode","standard"),
                                    localized_motion=quality.get("localized_motion"),
                                    long_hd_ok=w>=1280 and h>=720,
-                                   shorts_crop_ok=portrait_crop_allowed(scale))
+                                   shorts_crop_ok=portrait_crop_allowed(scale),
+                                   shorts_context_ok=context_ok,shorts_context_reason=context_reason,
+                                   shorts_layout=layout,shorts_1080_output_ok=portrait_crop_allowed(scale) or context_ok)
                     row["downloads"].append(attempt)
                     row.update(status="verified_hd_download",reason="Licensed moving HD sample downloaded and decoded")
                     return row
