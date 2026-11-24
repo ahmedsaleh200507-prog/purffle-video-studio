@@ -553,6 +553,8 @@ def render_scene(i,audio,duration,stock,work):
     wanted=duration/len(stock)
     for j,(path,srcdur,credit) in enumerate(stock):
         wanted=float(credit.get("shot_seconds",duration/len(stock)))
+        credit["screen_seconds"]=wanted
+        credit.setdefault("media_type","video")
         dest=shotdir/f"shot-{j:02d}.mp4"
         if credit.get("media_type")=="photo":
             run(["ffmpeg","-hide_banner","-nostdin","-y","-loglevel","error",
@@ -819,6 +821,10 @@ def main():
             expected_text=' '.join(c['narration'] for c in text))
         save(output/"output-qa.json",full_qa)
         save(output/"credits.json",credits)
+        from video_first_policy import media_mix
+        mix=media_mix(credits)
+        save(output/"media-mix.json",mix)
+        report["media_mix"]=mix
         from long_quality_gate import verify_finished
         publishing_qa=({**preliminary_qa,
             "publication_quality":"review_mixed_media",

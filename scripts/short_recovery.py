@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import shutil
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -53,6 +54,7 @@ def search_recovery_clip(visuals,scene,topic,index,need,work):
     contract=build_contract(SimpleNamespace(**data,narration=scene["narration"]),topic,index)
     data["visual_search_query"]=contract["queries"][0]
     data["_visual_contract"]=contract
+    visuals._shot_deadline=time.monotonic()+90
     item=visuals.for_scene(index-1,data["visual_search_query"],json.dumps(data),topic,need,work)
     row=visuals.report["scenes"][-1]
     if row.get("status")!="selected" or not row.get("match",{}).get("director_check",{}).get("verified"):
@@ -133,8 +135,9 @@ def _recover_short(topic,language,target):
         for row in previous.get("scenes",[]):
             if row.get("index")!=i or row.get("status")!="selected":
                 continue
-            if not footage_allowed(row.get("source",""),scene_era(scene),
-                                   row.get("plan",{}).get("visual_search_query",""),row.get("recorded_date","")):
+            source_metadata=row.get("metadata_text","")
+            if not source_metadata or not footage_allowed(row.get("source",""),scene_era(scene),
+                                   source_metadata,row.get("recorded_date","")):
                 continue
             try:
                 # Actual source proof, never the search query itself.
@@ -158,7 +161,18 @@ def _recover_short(topic,language,target):
                 quality.validate(candidate,need=duration)
                 spec=SceneSpec(main_character="",object=scene["visual_subject"],
                     action="ambient",visual_search_query=scene["visual_search_query"])
-                matcher.match(candidate,spec,metadata=row.get("plan",{}).get("visual_search_query",""),duration=duration)
+                from video_first_policy import check_topic_metadata
+                from opening_impact import _first_frames
+                from crop_subject_policy import verify_crop_subject
+                from visual_director import build_contract,metadata_allows,verify_visible_event_or_illustrative_subject
+                check_topic_metadata(topic,source_metadata+" "+str(lic.get("source_page","")))
+                contract=build_contract(SimpleNamespace(**scene),topic,i)
+                if not metadata_allows(contract,source_metadata+" "+str(lic.get("source_page",""))):
+                    continue
+                match=matcher.match(candidate,spec,metadata=source_metadata,duration=duration)
+                frames=_first_frames(candidate,focus=.5,seconds=(.15,duration*.45,max(.2,duration*.85)))
+                verify_crop_subject(frames,spec,matcher)
+                verify_visible_event_or_illustrative_subject(candidate,duration,.5,contract,match,scorer=matcher._similarities,opening=i==1)
                 chosen=candidate
                 visuals.used_hashes.add(row["sha256"])
                 visuals.used.add(str(row["source"])+":"+str(row["id"]))
@@ -180,13 +194,53 @@ def _recover_short(topic,language,target):
                 if old_report is None: os.environ.pop("FOOTAGE_REPORT",None)
                 else: os.environ["FOOTAGE_REPORT"]=old_report
         if chosen:
+            credits[-1]["screen_seconds"]=duration
             inputs=["-i",str(chosen)]
             vf=center_filter(1080,1920)+",fps=30,format=yuv420p"
         else:
-            photos=stills({**scene,"topic":topic},i,work,seen,size=(1080,1920),limit=1,require_verified=True,matcher=matcher)
-            path,credit=photos[0]
-            credits.append({**credit,"scene":i})
-            inputs=["-loop","1","-framerate","30","-i",str(path)]
+            # Try two shorter, independently verified moving clips before
+            # using a still. Preserve all narration and actual audio timing.
+            pieces=[]
+            piece_frames=round(duration*30)
+            lengths=[piece_frames//2,piece_frames-piece_frames//2] if duration>=4 else [piece_frames]
+            if len(lengths)==2:
+                os.environ["FOOTAGE_REPORT"]=str(target/"recovery-footage-report.json")
+                try:
+                    for j,n in enumerate(lengths):
+                        try:
+                            path,row=search_recovery_clip(visuals,scene,topic,i,n/30+.05,work)
+                            pieces.append((path,{"source":row["source"],"id":row["id"],"license":row["license"],
+                                "geography_evidence":row.get("geography_evidence",{}),"media_type":"video","scene":i},n))
+                        except Exception as exc:
+                            print("[SHORT VIDEO SEGMENT UNAVAILABLE]",i,j,type(exc).__name__,flush=True)
+                            pieces.append((None,None,n))
+                finally:
+                    if old_report is None: os.environ.pop("FOOTAGE_REPORT",None)
+                    else: os.environ["FOOTAGE_REPORT"]=old_report
+            else:
+                pieces=[(None,None,piece_frames)]
+            # If neither short clip works, one still is sufficient for this
+            # last-resort scene. Do not require two photos unnecessarily.
+            if all(p is None for p,c,n in pieces):
+                pieces=[(None,None,piece_frames)]
+            manifests=[]
+            for j,(path,credit,n) in enumerate(pieces):
+                part=work/f"scene-{i}-piece-{j}.mp4"
+                if path is None:
+                    photos=stills({**scene,"topic":topic},i*10+j,work,seen,size=(1080,1920),limit=1,require_verified=True,matcher=matcher)
+                    path,credit=photos[0]
+                    input_args=["-loop","1","-framerate","30","-i",str(path)]
+                    filter_text="setsar=1,format=yuv420p"
+                else:
+                    input_args=["-i",str(path)]
+                    filter_text=center_filter(1080,1920)+",fps=30,format=yuv420p"
+                run(base+input_args+["-vf",filter_text,"-frames:v",str(n),"-an","-r","30",
+                    "-c:v","libx264","-preset","veryfast","-crf","22","-threads","2",str(part)])
+                credits.append({**credit,"scene":i,"screen_seconds":n/30})
+                manifests.append(part)
+            joined=work/f"scene-{i}-pieces.txt"
+            joined.write_text("".join("file '"+str(p)+"'\n" for p in manifests),encoding="utf8")
+            inputs=["-f","concat","-safe","0","-i",str(joined)]
             vf="setsar=1,format=yuv420p"
         run(base+inputs+["-i",str(speech.audio),"-t",f"{duration:.3f}","-map","0:v:0",
              "-map","1:a:0","-vf",vf,"-r","30","-c:v","libx264","-preset","veryfast",
@@ -210,11 +264,16 @@ def _recover_short(topic,language,target):
     except Exception:
         out.unlink(missing_ok=True)
         raise
+    from video_first_policy import media_mix
+    mix=media_mix(credits)
+    (target/"media-mix.json").write_text(json.dumps(mix,indent=2),encoding="utf8")
+    print("[VIDEO FIRST]",mix,flush=True)
     (target/"credits.json").write_text(json.dumps(credits,indent=2,ensure_ascii=False),encoding="utf8")
     (target/"output-qa.json").write_text(json.dumps(qa,indent=2),encoding="utf8")
     shutil.rmtree(work,ignore_errors=True)
     return {"status":"review","mp4":str(out),"resolution":"1080x1920","duration":qa["duration"],
-            "quality_mode":"verified_mixed_media_review","narrator_mode":"piper:"+provenance(language)["model"],
+            "quality_mode":"verified_mixed_media_review" if mix["target_met"] else "photo_heavy_or_low_video_share_review",
+            "media_mix":mix,"narrator_mode":"piper:"+provenance(language)["model"],
             "photo_uses":sum(c.get("media_type")=="photo" for c in credits),
             "video_uses":sum(c.get("media_type")=="video" for c in credits),
             "error":"Mixed-media fallback; review before publication"}

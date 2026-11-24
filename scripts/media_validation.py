@@ -484,14 +484,16 @@ def scene_specific_hard_negatives(spec):
     subject = str(spec.object).casefold()
     query = str(spec.visual_search_query).casefold()
     no_actor = not str(spec.main_character).strip()
+    from video_first_policy import contrast_prompts
+    targeted=contrast_prompts(subject,query)
     if not no_actor:
-        return []
+        return targeted
     nature = {"sky", "sun", "sunlight", "cloud", "clouds", "atmosphere",
               "rain", "snow", "river", "ocean", "sea", "wave", "water",
               "forest", "mountain", "lightning", "volcano", "iceberg"}
     terms = _terms(subject)
     if not terms & set().union(*(_terms(w) for w in nature)):
-        return []
+        return targeted
     negative = [
         "A close-up photograph of a person's face outside.",
         "A person walking outdoors with nature in the background.",
@@ -504,7 +506,7 @@ def scene_specific_hard_negatives(spec):
     if "sunlight" in subject and "cloud" in query:
         negative.append(
             "A silhouette of a person walking at sunset with no visible sunlight rays.")
-    return negative
+    return negative+targeted
 
 
 class SceneMatcher:

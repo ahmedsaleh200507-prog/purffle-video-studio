@@ -725,6 +725,7 @@ class StrictVisuals:
                                   "director_contract": director_contract,
                                   "source_url": item.url, "downloaded_file": str(path),
                                   "sha256": digest, "quality": quality, "match": match,
+                                  "metadata_text": str(item.text)[:4000],
                                   "portrait_layout": layout,
                                   "recorded_date": item.extra.get("recorded_date",""),
                                   "geography_evidence": item.extra.get("geography_evidence",{}),

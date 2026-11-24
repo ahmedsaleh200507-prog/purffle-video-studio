@@ -139,13 +139,14 @@ def verify_photo(path,subject,query,matcher):
     from PIL import Image
     with Image.open(path) as im:
         frame=im.convert("RGB")
+    from video_first_policy import contrast_prompts
     captions=[f"A real photograph showing {query}.",f"A real photograph showing {subject}.",
               "An unrelated landscape or empty background.", "A drawing or illustration.",
-              "A text slide or screenshot.", "An unrelated indoor scene."]
+              "A text slide or screenshot.", "An unrelated indoor scene.",*contrast_prompts(subject,query)]
     values=matcher._similarities([frame],captions)[0]
-    positive=max(values[:2])
+    positive=min(values[:2])
     margin=positive-max(values[2:])
-    if positive<.23 or values[1]<.20 or margin<.008:
+    if values[0]<.23 or values[1]<.20 or margin<.008:
         raise ValueError("Photo subject not verified in actual cropped image")
     return {"visual_check":"local_clip_photo_screening","visual_score":round(positive,4),
             "visual_margin":round(margin,4),"visual_role":"illustrative_photo"}
@@ -179,12 +180,14 @@ def stills(chapter,index,work,seen,*,size=(1920,1080),limit=4,require_verified=F
                         continue
                     path=directory/f"photo-{len(selected)}.jpg"
                     try:
+                        from video_first_policy import check_topic_metadata
+                        check_topic_metadata(chapter.get("topic",""),credit.get("metadata_text","")+" "+str(credit.get("source_page","")))
                         credit["geography_evidence"]=require_geography(required_regions,credit.get("metadata_text",""))
                         if not footage_allowed(credit["source"],era,credit.get("metadata_text","")):
                             raise ValueError("historical_era_mismatch")
                         download_photo(url,path,size=size)
                         if require_verified:
-                            credit.update(verify_photo(path,subject,query,matcher))
+                            credit.update(verify_photo(path,subject,chapter.get("visual_search_query") or query,matcher))
                     except Exception:
                         path.unlink(missing_ok=True)
                         continue
@@ -215,6 +218,7 @@ def render_recovery(index,audio,duration,chapter,work,seen,run):
              "-i",str(path),"-vf",vf,"-frames:v",str(n),"-an","-threads","2",
              "-c:v","libx264","-preset","veryfast","-crf","25",str(dest)],600)
         credit["chapter"]=index
+        credit["screen_seconds"]=n/30
         files.append(dest)
     manifest=directory/"concat.txt"
     manifest.write_text("".join("file '"+str(p.resolve())+"'\n" for p in files))

@@ -21,6 +21,8 @@ on:
       - 'scripts/crop_subject_policy.py'
       - 'tests/test_crop_subject_policy.py'
       - 'scripts/short_recovery.py'
+      - 'scripts/video_first_policy.py'
+      - 'tests/test_video_first_policy.py'
       - 'scripts/long_still_recovery.py'
       - 'tests/test_verified_photo_policy.py'
       - 'scripts/era_policy.py'
@@ -94,6 +96,7 @@ jobs:
           python -m unittest discover -s tests -p test_geography_policy.py
           python -m unittest discover -s tests -p test_production_checkpoint.py
           python -m unittest discover -s tests -p test_short_recovery_policy.py
+          python -m unittest discover -s tests -p test_video_first_policy.py
           python -m unittest discover -s tests -p test_archive_hd_policy.py
           python -m unittest discover -s tests -p test_batch_path_scope.py
           python -m unittest discover -s tests -p test_local_llm.py
