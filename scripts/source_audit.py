@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 from video_sources import ProviderRegistry, JsonClient, PROVIDERS, LicenseValidator, STATIC_CATALOGS
 from media_validation import VideoDownloader, QualityValidator, portrait_crop_allowed, download_hd_variant
-from portrait_layout import plan_portrait, render_center_sample
+from portrait_layout import plan_portrait, validate_center_sample
 
 QUERIES = {
     "pixabay": ["ocean waves", "forest", "volcano"],
@@ -93,11 +93,13 @@ def audit(provider):
                     layout=plan_portrait(w,h,1080,1920)
                     center_ok=False
                     center_reason=None
+                    center_motion=None
                     if layout:
                         try:
-                            sample=render_center_sample(path,layout,min(5.,float(quality["duration"])))
-                            composed=validator.validate(sample)
-                            center_ok=(composed["width"],composed["height"])==(1080,1920)
+                            composed=validate_center_sample(path,quality,1080,1920,validator,
+                                                          seconds=5.,require_motion=False)
+                            center_ok=True
+                            center_motion=composed["motion_mode"]
                         except Exception as exc:
                             center_reason=safe_error(exc)
                     attempt.update(status="hd_motion_ok",width=w,height=h,
@@ -106,6 +108,8 @@ def audit(provider):
                                    localized_motion=quality.get("localized_motion"),
                                    long_hd_ok=w>=1280 and h>=720,
                                    shorts_crop_ok=center_ok,shorts_center_reason=center_reason,
+                                   shorts_center_motion_mode=center_motion,
+                                   shorts_moving_crop_ok=center_ok and center_motion in ("standard","localized_slow_motion"),
                                    shorts_layout=layout,shorts_1080_output_ok=center_ok)
                     row["downloads"].append(attempt)
                     row.update(status="verified_hd_download",reason="Licensed moving HD sample downloaded and decoded")
@@ -134,7 +138,7 @@ def main():
     for row in rows:
         lines.append("| "+row["provider"]+" | "+row["status"]+" | "+row.get("reason","").replace("|","/")+" |")
         print("[AUDIT]",row["provider"],row["status"],row.get("reason",""),flush=True)
-    lines += ["","Tests use bounded sample queries. A pass does not establish relevance for every topic, copyright ownership, or YouTube monetization.",
+    lines += ["","A calm center crop can pass technical framing only after original-source motion verification; shorts_moving_crop_ok distinguishes actual crop motion. Opening shots still require motion.","Tests use bounded sample queries. A pass does not establish relevance for every topic, copyright ownership, or YouTube monetization.",
               "See report.json for queries, download failures and HD dimensions."]
     summary="\n".join(lines)+"\n"
     (out/"summary.md").write_text(summary,encoding="utf-8")

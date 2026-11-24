@@ -19,7 +19,7 @@ import time
 from urllib.parse import urlsplit
 
 from media_validation import portrait_crop_allowed
-from portrait_layout import plan_portrait, center_enabled, center_filter
+from portrait_layout import plan_portrait, center_enabled, center_filter, validate_center_sample
 
 UPSTREAM_COMMIT = "514fd2547227b98d951dfc1489fc8c7ce72f1b68"
 UPSTREAM_HASHES = {
@@ -526,9 +526,20 @@ class StrictVisuals:
                     required_height = getattr(self.s,"height",1280)
                     def layout_for(q):
                         return plan_portrait(q["width"],q["height"],required_width,required_height)
+                    center_quality = {}
+                    def check_center(path,q):
+                        # Check the actual center before accepting a partial
+                        # interval; a moving subject outside the crop is not
+                        # evidence of a moving opening. Later calm B-roll can
+                        # be used only after independent source motion proof.
+                        if center_enabled() and isinstance(self.matcher, SceneMatcher) and q["width"]>=q["height"]:
+                            center_quality.clear()
+                            center_quality.update(validate_center_sample(path,q,required_width,required_height,
+                                self.quality,seconds=min(5.,float(need)),require_motion=(idx==0)))
                     path, source_quality = download_hd_variant(item, self.downloader, self.quality, need=need,
                         segment_seconds=max(1.,float(need)+.5),
-                        check=lambda q: layout_for(q) is not None)
+                        check=lambda q: layout_for(q) is not None,
+                        segment_check=check_center)
                     if source == "coverr-video":
                         # Count a real asset download using Coverr's official
                         # PATCH endpoint, as required on the free API tier.
@@ -578,6 +589,9 @@ class StrictVisuals:
                     if center_enabled():
                         match["crop_focus_x"] = .5
                     quality["portrait_layout"] = layout
+                    if center_quality:
+                        quality["center_crop_motion_mode"]=center_quality["motion_mode"]
+                        quality["center_crop_motion_score"]=center_quality["motion_score"]
                     item.extra["portrait_layout"] = layout
                     # #106: an octopus stock clip passed whole-frame motion
                     # and CLIP but half of the final 9:16 render was black.

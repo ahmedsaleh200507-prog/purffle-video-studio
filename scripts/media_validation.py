@@ -333,7 +333,7 @@ class QualityValidator:
         self.min_fps = min_fps
         self.max_duration = max_duration
 
-    def validate(self, path: Path, need=0) -> dict:
+    def validate(self, path: Path, need=0, *, allow_calm_crop=False) -> dict:
         from PIL import ImageChops, ImageFilter, ImageStat
         data = json.loads(_run(["ffprobe", "-v", "error", *_INPUT_GUARDS, "-show_streams", "-show_format", "-of", "json", str(path)]))
         streams = [s for s in data.get("streams", []) if s.get("codec_type") == "video"
@@ -387,11 +387,18 @@ class QualityValidator:
             local_motion = localized_motion_evidence(
                 [_frame(path, at, 192) for at in times])
             if not local_motion["passed"]:
-                raise ValidationError("Static or insufficiently moving footage rejected; "
-                    "local motion tiles="+str(local_motion["active_tiles_per_pair"])
-                    +", repeated="+str(local_motion["repeated_tiles"]))
-            motion_mode = "localized_slow_motion"
-            print("[SLOW MOTION VERIFIED]",local_motion,flush=True)
+                if not allow_calm_crop:
+                    raise ValidationError("Static or insufficiently moving footage rejected; "
+                        "local motion tiles="+str(local_motion["active_tiles_per_pair"])
+                        +", repeated="+str(local_motion["repeated_tiles"]))
+                # Only the derived center crop of an independently verified
+                # moving source may use this exception. Blank, damaged and
+                # low-detail frames still fail the preceding technical gates.
+                motion_mode = "calm_verified_source_crop"
+                print("[CALM CROP; NO MOTION CLAIM]",local_motion,flush=True)
+            else:
+                motion_mode = "localized_slow_motion"
+                print("[SLOW MOTION VERIFIED]",local_motion,flush=True)
         # This scale is reported explicitly: a 1920x1080 landscape source can
         # meet source-HD policy while still requiring enlargement after 9:16 crop.
         target_width, target_height = (int(v) for v in os.environ.get("RESOLUTION", "720x1280").lower().split("x"))
@@ -767,7 +774,7 @@ class SceneMatcher:
 
 
 def download_hd_variant(item, downloader, validator, *, need=0, check=None,
-                        segment_seconds=0):
+                        segment_seconds=0, segment_check=None):
     """Normal licensed download, official HD variants, and bounded partial
     extraction when the remote server supports verified byte ranges."""
     extra = getattr(item, "extra", {}) or {}
@@ -793,6 +800,8 @@ def download_hd_variant(item, downloader, validator, *, need=0, check=None,
                 raise ValidationError("Partial clip shorter than requested interval")
         if check is not None and not check(quality):
             raise ValidationError("Source variant does not meet output framing requirements")
+        if segment_check is not None:
+            segment_check(path, quality)
         if hasattr(item,"extra"):
             item.extra["download_evidence"] = evidence
         return path,quality
@@ -800,13 +809,12 @@ def download_hd_variant(item, downloader, validator, *, need=0, check=None,
         from range_segment import extract_segment
         # A long recording may begin with a slate, black frames or a static
         # title. Try later actual footage rather than relaxing HD/motion gates.
-        # Scope extra seeks to NPS large files; at most three intervals total
-        # for each rendition and never seek past a known duration.
-        offsets = [0.]
-        if getattr(item, "source", "") == "nps-video":
-            offsets += [max(20.,segment_seconds+5),max(60.,2*segment_seconds+10)]
-            if known_duration > 0:
-                offsets = [x for x in offsets if x+segment_seconds <= known_duration+.1] or [0.]
+        # All range-capable sources can contain useful later footage.
+        # Keep the per-rendition limit at three intervals and the existing
+        # per-interval byte/time caps. A server refusing ranges stops retries.
+        offsets = [0.,max(20.,segment_seconds+5),max(60.,2*segment_seconds+10)]
+        if known_duration > 0:
+            offsets = [x for x in offsets if x+segment_seconds <= known_duration+.1] or [0.]
         failure = None
         for offset in offsets:
             try:

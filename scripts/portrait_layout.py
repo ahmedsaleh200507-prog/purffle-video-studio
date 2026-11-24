@@ -40,3 +40,26 @@ def render_center_sample(path,plan,seconds,fps=30):
     if r.returncode or not target.exists() or target.stat().st_size<1024:
         raise ValidationError("Centered portrait sample failed")
     return target
+
+
+def validate_center_sample(path, source_quality, W, H, validator, *, seconds=5., require_motion=True):
+    """Verify the actual centered crop; calm is not proof of movement.
+
+    Caller must supply independently motion-validated original footage.
+    The exception never applies to an unverified original or a blank crop.
+    """
+    if source_quality.get("motion_mode") not in ("standard","localized_slow_motion"):
+        raise ValidationError("Center crop requires independently moving original")
+    plan=plan_portrait(source_quality["width"],source_quality["height"],W,H)
+    if plan is None:
+        raise ValidationError("Source variant does not meet output framing requirements")
+    sample=None
+    try:
+        sample=render_center_sample(path,plan,min(float(seconds),float(source_quality["duration"])))
+        q=validator.validate(sample,allow_calm_crop=not require_motion)
+        if (q["width"],q["height"])!=(W,H):
+            raise ValidationError("Incorrect centered output dimensions")
+        return q
+    finally:
+        if sample is not None:
+            sample.unlink(missing_ok=True)
