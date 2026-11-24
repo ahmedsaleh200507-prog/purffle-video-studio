@@ -17,7 +17,7 @@ QUERIES = {
     "nasa-video": ["sun solar activity", "earth from space", "moon"],
     "archive-video": ["volcano", "nature", "historic film"],
     "europeana-video": ["historic film", "train", "city"],
-    "nps-video": ["Yellowstone", "wildlife", "national park"],
+    "nps-video": ["Yellowstone", "geyser", "waterfall", "bison", "wildlife", "national park"],
     "usgs-video": ["lava", "volcano eruption", "Kilauea"],
     "freenaturestock-video": ["ocean waves", "forest", "clouds"],
     "coverr-video": ["ocean waves", "forest"],
@@ -91,6 +91,8 @@ def audit(provider):
                     scale = max(720/min(w,h*9/16),1280/h)
                     attempt.update(status="hd_motion_ok",width=w,height=h,
                                    seconds=round(quality["duration"],2),fps=quality["fps"],
+                                   motion_mode=quality.get("motion_mode","standard"),
+                                   localized_motion=quality.get("localized_motion"),
                                    long_hd_ok=w>=1280 and h>=720,
                                    shorts_crop_ok=portrait_crop_allowed(scale))
                     row["downloads"].append(attempt)

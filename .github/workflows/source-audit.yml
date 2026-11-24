@@ -9,6 +9,7 @@ on:
       - 'scripts/media_validation.py'
       - 'scripts/video_sources.py'
       - 'tests/test_range_segment.py'
+      - 'tests/test_localized_motion.py'
       - '.github/workflows/source-audit.yml'
 permissions:
   contents: read
@@ -50,6 +51,7 @@ jobs:
         run: |
           python -m compileall -q scripts
           python -m unittest discover -s tests -p test_range_segment.py
+          python -m unittest discover -s tests -p test_localized_motion.py
       - name: Test each provider independently
         run: python scripts/source_audit.py
       - name: Upload source audit

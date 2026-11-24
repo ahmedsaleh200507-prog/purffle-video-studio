@@ -282,6 +282,44 @@ def _frame(path: Path, at: float, size=224, *, preserve_aspect=False):
     return Image.frombytes("RGB", (size, size), raw)
 
 
+def localized_motion_evidence(frames):
+    """Second-stage motion check for quiet nature footage.
+
+    Detect persistent spatial changes at higher resolution while rejecting
+    uniform brightness fluctuations, frozen pictures and one-off cuts.
+    This is a screening signal, not proof of documentary authenticity.
+    """
+    from PIL import Image, ImageChops, ImageFilter, ImageStat
+    if len(frames) != 8:
+        raise ValueError("Expected four adjacent frame pairs")
+    samples = [f.convert("L").resize((192,192)).filter(
+        ImageFilter.GaussianBlur(.8)) for f in frames]
+    counts, changed_regions, strengths = [], [], []
+    for i in (0,2,4,6):
+        # Signed change, centered around the frame-wide median, removes
+        # uniform exposure variation; blur suppresses compression noise.
+        signed = ImageChops.subtract(samples[i+1],samples[i],scale=2,offset=128)
+        center = int(ImageStat.Stat(signed).median[0])
+        residual = ImageChops.difference(signed,Image.new("L",signed.size,center))
+        active = set()
+        for y in range(0,192,24):
+            for x in range(0,192,24):
+                tile=residual.crop((x,y,x+24,y+24))
+                hist=tile.histogram()
+                # 4 signed units correspond to about 8 luma levels.
+                if sum(hist[4:]) >= 30 and ImageStat.Stat(tile).mean[0] >= .7:
+                    active.add((x//24,y//24))
+        counts.append(len(active))
+        changed_regions.append(active)
+        strengths.append(ImageStat.Stat(residual).mean[0])
+    passing=sum(x>=2 for x in counts)
+    repeated=sum(sum(tile in group for group in changed_regions)>=3
+                 for tile in set().union(*changed_regions))
+    return {"passed":passing>=3 and repeated>=1,
+            "active_tiles_per_pair":counts,"repeated_tiles":repeated,
+            "mean_residual":round(statistics.median(strengths),4)}
+
+
 class QualityValidator:
     def __init__(self, min_short_side=720, *, min_fps=15, max_duration=1800):
         self.min_short_side = min_short_side
@@ -334,8 +372,19 @@ class QualityValidator:
                    for i in (0, 2, 4, 6)]
         if statistics.median(brightness) < 5 or max(detail) < 5 or statistics.median(edges) < 1.0:
             raise ValidationError("Black, blank or insufficient-detail video rejected")
+        motion_mode = "standard"
+        local_motion = None
         if statistics.median(changes) < .65 or sum(c >= .65 for c in changes) < 3:
-            raise ValidationError("Static or insufficiently moving footage rejected")
+            # Keep existing acceptance criteria intact. Only failed
+            # candidates receive the more expensive higher-resolution check.
+            local_motion = localized_motion_evidence(
+                [_frame(path, at, 192) for at in times])
+            if not local_motion["passed"]:
+                raise ValidationError("Static or insufficiently moving footage rejected; "
+                    "local motion tiles="+str(local_motion["active_tiles_per_pair"])
+                    +", repeated="+str(local_motion["repeated_tiles"]))
+            motion_mode = "localized_slow_motion"
+            print("[SLOW MOTION VERIFIED]",local_motion,flush=True)
         # This scale is reported explicitly: a 1920x1080 landscape source can
         # meet source-HD policy while still requiring enlargement after 9:16 crop.
         target_width, target_height = (int(v) for v in os.environ.get("RESOLUTION", "720x1280").lower().split("x"))
@@ -346,6 +395,7 @@ class QualityValidator:
                 "source_4k": min(width, height) >= 2160,
                 "portrait_crop_width": round(portrait_crop_width),
                 "portrait_crop_scale": round(max(target_width / portrait_crop_width, target_height / height), 4),
+                "motion_mode": motion_mode, "localized_motion": local_motion,
                 "motion_score": round(statistics.median(changes), 4),
                 "detail_score": round(statistics.median(edges), 4), "sample_times": times}
 
