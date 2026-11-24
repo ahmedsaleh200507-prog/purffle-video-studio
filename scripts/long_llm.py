@@ -151,12 +151,16 @@ class _Completion:
             except Exception as exc:
                 status = getattr(exc, "status_code", None)
                 is_quota = status == 429
-                transient = status in (502, 503, 504)
+                transient = (status in (408, 500, 502, 503, 504)
+                             or isinstance(exc, (LongLLMUnavailable, OSError, TimeoutError))
+                             or type(exc).__name__ in ("APIConnectionError", "APITimeoutError",
+                                                       "ReadTimeout", "ConnectTimeout", "ConnectionError"))
                 invalid_groq_json = (
                     provider == "groq" and _groq_retryable(exc))
-                if is_quota:
+                if is_quota or status in (401, 403, 404):
                     self._quota_exhausted.add(provider)
-                if not (is_quota or transient or invalid_groq_json):
+                unavailable = status in (401, 403, 404)
+                if not (is_quota or transient or invalid_groq_json or unavailable):
                     raise
                 if index == len(available) - 1:
                     raise
