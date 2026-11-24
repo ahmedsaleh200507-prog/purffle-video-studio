@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'scripts/source_audit.py'
+      - 'scripts/local_llm.py'
+      - 'scripts/long_llm.py'
+      - 'tests/test_local_llm.py'
       - 'scripts/batch.py'
       - 'tests/test_batch_path_scope.py'
       - 'scripts/range_segment.py'
@@ -85,6 +88,7 @@ jobs:
           python -m unittest discover -s tests -p test_short_recovery_policy.py
           python -m unittest discover -s tests -p test_archive_hd_policy.py
           python -m unittest discover -s tests -p test_batch_path_scope.py
+          python -m unittest discover -s tests -p test_local_llm.py
           python -m compileall -q scripts
       - name: Test each provider independently
         run: python scripts/source_audit.py

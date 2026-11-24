@@ -90,6 +90,8 @@ class LocalQwen:
             # Always extract from the verified release; never run an unverified
             # executable restored from a cache.
             runtime=self.root/"runtime"
+            import shutil
+            shutil.rmtree(runtime,ignore_errors=True)
             runtime.mkdir(exist_ok=True)
             with tarfile.open(archive,"r:gz") as tar:
                 tar.extractall(runtime,filter="data")

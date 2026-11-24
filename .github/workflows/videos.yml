@@ -216,6 +216,15 @@ jobs:
             .cache/huggingface
             .cache/piper
           key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/media_validation.py') }}
+      - name: Restore verified local Qwen download cache
+        if: steps.selected.outputs.render == 'true'
+        id: qwen-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cache/local-llm/*.gguf
+            .cache/local-llm/*.tar.gz
+          key: purffle-qwen-cpu-v1-${{ runner.os }}-${{ hashFiles('scripts/local_llm.py') }}
       - name: Restore API metadata cache
         if: steps.selected.outputs.render == 'true'
         uses: actions/cache/restore@v4
@@ -275,6 +284,15 @@ jobs:
           command -v ffmpeg
           command -v ffprobe
           python scripts/emergency_result.py --mode short --topic "$SLOT_TOPIC" --slot "$SLOT_INDEX"
+      - name: Save Qwen files only if downloaded
+        if: always() && steps.selected.outputs.render == 'true' && steps.qwen-cache.outputs.cache-hit != 'true' && hashFiles('.cache/local-llm/*.gguf') != ''
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache/local-llm/*.gguf
+            .cache/local-llm/*.tar.gz
+          key: purffle-qwen-cpu-v1-${{ runner.os }}-${{ hashFiles('scripts/local_llm.py') }}
       - name: Save local models even when production fails
         if: always() && steps.selected.outputs.render == 'true' && steps.model-cache.outputs.cache-hit != 'true'
         continue-on-error: true
