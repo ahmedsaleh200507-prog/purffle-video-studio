@@ -551,7 +551,10 @@ def main():
         stage="long_stock_preflight"
         from video_sources import ProviderRegistry
         registry = ProviderRegistry()
-        print("[LONG SOURCES READY]", confirm_long_stock_sources(registry), flush=True)
+        try:
+            print("[LONG SOURCES READY]", confirm_long_stock_sources(registry), flush=True)
+        except RuntimeError as exc:
+            print("[LONG SOURCES FALLBACK]", str(exc), flush=True)
         stage="script"
         text=chapters(a.topic,a.language)
         from long_quality_gate import verify_narration
@@ -565,23 +568,36 @@ def main():
                 f.write(f"{j}\n{srt_time(start)} --> {srt_time(end)}\n{line}\n\n")
         stage="real_stock"
         used,scenes,credits=set(),[],[]
+        from long_still_recovery import render_recovery
         stock_bank, reused_source_ids = [], set()
+        still_ids, recovery_chapters = set(), []
         for i,(wav,seconds) in enumerate(audio):
-            clips=find_stock(i,seconds,used,work,registry=registry,topic=a.topic,
-                             bank=stock_bank,reused=reused_source_ids,chapter=text[i])
-            stage=f"render_chapter_{i+1}"
-            scenes.append(render_scene(i+1,wav,seconds,clips,work))
-            # Store only completed, independently screened, unique originals.
-            stock_bank.extend(c for c in clips if not c[2].get("reused"))
-            credits.extend(c[2] for c in clips)
+            try:
+                clips=find_stock(i,seconds,used,work,registry=registry,topic=a.topic,
+                                 bank=stock_bank,reused=reused_source_ids,chapter=text[i])
+                stage=f"render_chapter_{i+1}"
+                scenes.append(render_scene(i+1,wav,seconds,clips,work))
+                stock_bank.extend(c for c in clips if not c[2].get("reused"))
+                credits.extend(c[2] for c in clips)
+            except Exception as exc:
+                print("[LONG CHAPTER RECOVERY]", i+1, type(exc).__name__, flush=True)
+                stage=f"recover_chapter_{i+1}"
+                scene, recovery_credits=render_recovery(
+                    i+1,wav,seconds,text[i],work,still_ids,run)
+                scenes.append(scene)
+                credits.extend(recovery_credits)
+                recovery_chapters.append(i+1)
             print(f"[RENDER] {i+1}/14",flush=True)
             stage="real_stock"
+        save(output/"credits.json",credits)
         stage="final_mp4"
         final=output/"long-video.mp4"
         finish(scenes,output/"captions.srt",final,work)
         duration,width,height,audible=probe(final)
         if not (540<=duration<=660 and width==1920 and height==1080 and audible):
             raise RuntimeError("Final video failed measured duration/1080p/audio validation")
+        report.update(status="review",mp4="long-video.mp4",duration=duration,
+                      recovery_chapters=recovery_chapters)
         stage="full_timeline_qa"
         from output_qa import validate_timeline
         full_qa=validate_timeline(final,output/"captions.srt",
@@ -590,10 +606,14 @@ def main():
         save(output/"output-qa.json",full_qa)
         save(output/"credits.json",credits)
         from long_quality_gate import verify_finished
-        publishing_qa=verify_finished(
-            final,text,credits,language=a.language)
+        publishing_qa=({**preliminary_qa,
+            "publication_quality":"review_mixed_media",
+            "photo_uses":sum(c.get("media_type")=="photo" for c in credits),
+            "illustration_uses":sum(c.get("media_type")=="illustration" for c in credits),
+            "recovery_chapters":recovery_chapters}
+            if recovery_chapters else verify_finished(final,text,credits,language=a.language))
         save(output/"documentary-quality.json",publishing_qa)
-        report.update(status="ok",mp4="long-video.mp4",duration=duration,
+        report.update(status="review" if recovery_chapters else "ok",mp4="long-video.mp4",duration=duration,
                       clips=len(credits),narration_duration=voice_seconds,
                       reused_unused_segments=sum(bool(c.get("reused")) for c in credits),
                       new_unique_sources=len({
@@ -603,10 +623,10 @@ def main():
                       audio_target_lufs=-17,
                       burnt_in_subtitles=False,
                       subtitle_track="separate_srt_sidecar_only",
-                      visual_verification="local_clip_screening",
+                      visual_verification="mixed_media_review" if recovery_chapters else "local_clip_screening",
                       illustrative_subject_clips=sum(
                           c.get("visual_role") == "illustrative_subject_only" for c in credits),
-                      note="All clips pass metadata + local CLIP screening. Illustrative subject B-roll is not exact footage of a narrated event.")
+                      note=("Contains licensed photos or marked original illustrations; review before publishing." if recovery_chapters else "All clips pass metadata + local CLIP screening. Illustrative B-roll is not exact footage of narrated events."))
     except Exception as e:
         report.update(stage=stage,error=(type(e).__name__+": "+str(e))[:800])
         # A fixed 602-second file with seven repeated sentences is NOT

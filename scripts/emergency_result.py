@@ -65,6 +65,9 @@ def long(raw, language):
     report = _read(report_path)
     qa = _read(out / "documentary-quality.json")
     finished = out / "long-video.mp4"
+    if report.get("mp4") == "long-video.mp4" and finished.is_file() and finished.stat().st_size > 1000:
+        print("[LONG MP4 PRESERVED] quality status:", report.get("status"), flush=True)
+        return report
     if (report.get("status") == "ok"
             and qa.get("publication_quality") == "narrated_real_footage_validated"
             and finished.is_file()):
