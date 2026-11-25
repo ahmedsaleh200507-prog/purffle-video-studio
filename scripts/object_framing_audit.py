@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import requests
 from PIL import Image
-from object_framing import detect, MODEL, REVISION
+from object_framing import detect, MODEL, REVISION, track_focus
 
 # Hugging Face documentation's known cat fixture. HTTPS verification stays enabled.
 FIXTURES = (
@@ -42,6 +42,25 @@ def main():
         result["detections"] = cats
         if not cats:
             raise RuntimeError("Expected a visible cat in the documented test fixture")
+        result["stage"] = "tracking_geometry"
+        def obj(x, score=.9):
+            return {"box":[x-.05,.3,x+.05,.65],"score":score}
+        times = [0.,1.,2.,3.,4.]
+        rows = [[obj(x)] for x in (.15,.30,.50,.70,.85)]
+        track = track_focus(rows,times,.32)
+        missing = track_focus([rows[0],[],*rows[2:]],times,.32)
+        ambiguous = track_focus([[obj(.15),obj(.8,.89)],*rows[1:]],times,.32)
+        stationary = track_focus([[obj(.5)]]*5,times,.32)
+        ok = (track["state"]=="shadow_proposal"
+              and track["min_tracked_coverage"]>=.8
+              and missing["state"]=="missing_detection"
+              and ambiguous["state"]=="ambiguous_identity"
+              and stationary["state"]=="no_safe_improvement")
+        result["tracking_geometry"] = {"pass":ok,"moving":track,
+            "missing":missing,"ambiguous":ambiguous,"stationary":stationary,
+            "scope":"synthetic detection sequences, not real video tracking"}
+        if not ok:
+            raise RuntimeError("Tracking geometry checks failed")
         result.update({"pass": True, "stage": "complete"})
     except Exception as exc:
         result.update(error_type=type(exc).__name__, error=str(exc))
