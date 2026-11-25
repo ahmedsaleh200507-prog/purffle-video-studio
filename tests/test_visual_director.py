@@ -334,3 +334,14 @@ def test_aurora_production_scene_count_is_two_without_weakened_video_gate():
     assert "min_scenes=script_scene_count" in source
     assert "max_scenes=script_scene_count" in source
     assert "validate_narration_timing(palette, screenplay" in source
+
+
+def test_breaching_subject_tags_allow_inspection_not_acceptance():
+    from visual_director import metadata_action_candidate
+    contract = {"family":"breaching","event_required":True,"subject":"whale",
+                "metadata_keywords":["breaching","jumping"],"sentence_contracts":[]}
+    assert metadata_action_candidate(contract,"humpback whale ocean") == "subject_only_visual_check"
+    assert metadata_action_candidate(contract,"whale breaching") == "explicit_event"
+    assert metadata_action_candidate(contract,"ocean sunset") == "reject"
+    assert metadata_action_candidate(contract,"whale without jumping") == "reject"
+    assert metadata_action_candidate(contract,"whale animation") == "reject"

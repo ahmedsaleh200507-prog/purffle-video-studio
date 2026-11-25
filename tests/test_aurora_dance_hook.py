@@ -21,6 +21,8 @@ def test_question_routes_to_dance_not_generic_glow():
     assert verified_documentary_kind("Why Do Northern Lights Glow?") == "northern_lights_glow"
     assert verified_documentary_kind("How Do Ocean Waves Form?") == "ocean_waves"
     assert verified_documentary_kind("Warum tanzen Nordlichter am Himmel?") == "northern_lights_dance"
+    assert verified_documentary_kind("Wie entstehen Nordlichter?") == "northern_lights_glow"
+    assert verified_documentary_kind("How do auroras form?") == "northern_lights_glow"
 
 
 def test_official_noaa_nasa_sources_are_pinned_not_arbitrary_search():
@@ -77,3 +79,11 @@ def test_old_18_second_glow_only_script_is_rejected_for_dancing_topic(tmp_path):
 def test_new_script_is_not_forced_to_exactly_thirty_seconds():
     from retention_storyboard import choose_duration_seconds
     assert choose_duration_seconds(TOPIC, 3, fact_count=2) != 30
+
+
+def test_german_aurora_formation_uses_curated_sources():
+    fake = Mock()
+    bundle = discover_evidence("Wie entstehen Nordlichter?", "de", session=fake)
+    assert bundle.method == "curated_editor_reviewed"
+    assert any("nasa.gov" in row["url"] for row in bundle.sources)
+    fake.get.assert_not_called()

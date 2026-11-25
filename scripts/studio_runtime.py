@@ -474,11 +474,13 @@ class StrictVisuals:
                         raise ValueError(
                             "volcano_final_action_mismatch: no provider evidence "
                             "for an active eruption, plume, ash, or molten lava")
+                    action_metadata = "explicit_event"
                     if director_contract:
-                        from visual_director import metadata_allows
-                        if not metadata_allows(director_contract, " ".join(
+                        from visual_director import metadata_action_candidate
+                        action_metadata = metadata_action_candidate(director_contract, " ".join(
                                 (str(item.text),
-                                 str(license_info.get("source_page", ""))))):
+                                 str(license_info.get("source_page", "")))))
+                        if action_metadata == "reject":
                             raise ValueError(
                                 "visual_director_action_metadata_mismatch: "
                                 "provider cannot establish required visible action")
@@ -494,6 +496,7 @@ class StrictVisuals:
                     evidence = metadata_evidence(data, item.text, director_contract)
                     if evidence["contradictions"]:
                         raise ValueError("semantic_contradiction: " + "; ".join(evidence["contradictions"]))
+                    evidence["action_metadata"] = action_metadata
                     item.extra["relevance_evidence"] = evidence
                     ranked.append((score, item, url_key))
                 except Exception as exc:
@@ -518,10 +521,15 @@ class StrictVisuals:
                     return 0 if item.height >= item.width else 1
                 return 2 if scale <= 1.20 else 3
 
-            ranked.sort(key=lambda row: (crop_rank(row[1]), -row[0], row[1].rank,
+            ranked.sort(key=lambda row: (row[1].extra.get("relevance_evidence",{}).get("action_metadata") == "subject_only_visual_check", crop_rank(row[1]), -row[0], row[1].rank,
                                           -int(row[1].height > row[1].width),
                                           -min(row[1].width, row[1].height)))
+            subject_only_attempts = 0
             for score, item, url_key in ranked[:max_candidates]:
+                if item.extra.get("relevance_evidence",{}).get("action_metadata") == "subject_only_visual_check":
+                    if subject_only_attempts >= 2:
+                        continue
+                    subject_only_attempts += 1
                 rejection_key = (spec.object, spec.action,
                                  json.dumps(director_contract, sort_keys=True), item.key)
                 if time.monotonic() >= phase_deadline:

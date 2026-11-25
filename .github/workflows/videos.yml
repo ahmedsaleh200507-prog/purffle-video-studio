@@ -210,7 +210,7 @@ jobs:
           ffmpeg -hide_banner -version | head -n 1
           ffprobe -hide_banner -version | head -n 1
           python -m pip install --upgrade pip
-          pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
+          pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-dev.txt 'jsonschema>=4.20,<5' 'sentencepiece>=0.2,<1'
       - name: Restore local model cache
         if: steps.selected.outputs.render == 'true'

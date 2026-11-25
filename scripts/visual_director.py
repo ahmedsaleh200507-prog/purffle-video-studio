@@ -338,6 +338,31 @@ def metadata_allows(contract, provider_text):
                for word in clues)
 
 
+def metadata_action_candidate(contract, provider_text):
+    """Allow a narrowly bounded wildlife subject-only candidate for visual inspection.
+
+    An incomplete tag is not proof of an event. All actual crop, motion and
+    event checks remain mandatory; explicit contradictory tags stay rejected.
+    """
+    if metadata_allows(contract, provider_text):
+        return "explicit_event"
+    if contract.get("family") != "breaching" or contract.get("required_metadata_groups"):
+        return "reject"
+    if any(c.get("event_required") and c.get("family") != "breaching"
+           for c in contract.get("sentence_contracts", [])):
+        return "reject"
+    subject = str(contract.get("subject","")).casefold()
+    text = str(provider_text or "").casefold().replace("-", " ").replace("_"," ")
+    whale = r"\b(?:whales?|humpbacks?|wals?|wale|buckelwale?)\b"
+    dolphin = r"\b(?:dolphins?|delfine?)\b"
+    patterns = [p for p in (whale,dolphin) if re.search(p,subject)]
+    if not patterns or not any(re.search(p,text) for p in patterns):
+        return "reject"
+    if re.search(r"\b(?:no|without|lacking|absence of|not showing|never)\b|\b(?:animation|animated|cartoon|illustration|drawing|dead|stranded|beached)\b",text):
+        return "reject"
+    return "subject_only_visual_check"
+
+
 def visual_scores(contract, scores, *, opening=False):
     """Generic event-vs-non-event ranking over the USED source-video interval.
 

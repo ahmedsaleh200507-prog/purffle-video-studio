@@ -716,7 +716,8 @@ def verified_documentary_kind(topic: str) -> str | None:
          or tokens & {"aurora", "auroras", "polarlichter", "polarlicht",
                       "nordlichter", "nordlicht"})
          and (tokens & {"glow", "glows", "shine", "shines", "colors",
-                        "colour", "why", "warum", "leuchten", "leuchtet"})):
+                        "colour", "why", "warum", "leuchten", "leuchtet", "entstehen",
+                        "entsteht", "form", "formed", "formation", "created"})):
         return "northern_lights_glow"
     # Match the ordinary wind-driven wave explainer only. Do not replace
     # tsunami, tides, swell-specific, rogue-wave or earthquake explanations.

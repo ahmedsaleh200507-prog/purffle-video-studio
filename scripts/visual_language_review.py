@@ -51,6 +51,7 @@ def observe(frames, subject, query):
                     "seconds": round(time.monotonic()-t, 2)}
             except Exception as exc:
                 _FAILED.add(key)
-                result["models"][key] = {"state": "unavailable", "error_type": type(exc).__name__}
+                result["models"][key] = {"state": "unavailable", "error_type": type(exc).__name__,
+                    "error_detail": str(exc)[:300] if isinstance(exc, ImportError) else "see error type"}
         print("[VLM SHADOW]", result, flush=True)
     return result
