@@ -747,13 +747,77 @@ class StrictVisuals:
                             scorer=self.matcher._similarities,
                             opening=(idx == 0))
                         match["director_check"] = event_check
+                    # Dynamic materialization is optional and never replaces a
+                    # validated static clip until the derived clip passes again.
+                    dynamic_review={"state":"not_applied"}
+                    track=match.get("object_framing",{}).get("tracking_shadow",{})
+                    if (os.environ.get("PURFFLE_DYNAMIC_CROP")=="1"
+                            and track.get("state")=="shadow_proposal"
+                            and native_scale<=1.0001 and isinstance(self.matcher,SceneMatcher)):
+                        from dynamic_crop import render_tracked
+                        derived=None
+                        try:
+                            derived=render_tracked(path,track,float(need),required_width,required_height,
+                                                   deadline=phase_deadline)
+                            q2=self.quality.validate(derived,need=float(need)+.05)
+                            if (q2["width"],q2["height"])!=(required_width,required_height):
+                                raise ValueError("Dynamic crop dimensions mismatch")
+                            m2=self.matcher.match(derived,spec,metadata=item.text,duration=need)
+                            m2["crop_focus_x"]=.5
+                            frames2=_first_frames(derived,focus=.5,seconds=check_times)
+                            integrity2=assess_portrait_pillarbox(frames2)
+                            if not integrity2["verified"]:
+                                raise ValueError("Dynamic crop border check failed")
+                            proof2=verify_crop_subject(frames2,spec,self.matcher)
+                            second2=proof2.get("siglip_shadow_review",{})
+                            if second2.get("state")=="observed" and second2.get("agrees") is False:
+                                raise ValueError("Dynamic crop secondary disagreement")
+                            if subject_specification:
+                                check2=_semantic_subject_screen(frames2,subject_specification,
+                                    scorer=self.matcher._similarities,
+                                    require_all_frames=permanent_subject,minimum_margin=critical_margin)
+                                if not check2["verified"]:
+                                    raise ValueError("Dynamic crop topic mismatch")
+                                m2["subject_screen"]=check2
+                            if director_contract:
+                                m2["director_check"]=verify_visible_event_or_illustrative_subject(
+                                    derived,float(need),.5,director_contract,m2,
+                                    scorer=self.matcher._similarities,opening=(idx==0))
+                            if idx==0:
+                                from opening_impact import _evaluate_frames
+                                if not _evaluate_frames(_first_frames(derived,focus=.5)).get("verified"):
+                                    raise ValueError("Dynamic opening failed")
+                            derived_digest=self.downloader.digest(derived)
+                            layout2=layout_for(q2)
+                            if layout2 is None:
+                                raise ValueError("Dynamic layout unavailable")
+                            dynamic_review={"state":"validated_materialized","keyframes":track["keyframes"],
+                                "source_dimensions":[quality["width"],quality["height"]],
+                                "source_sha256":digest,"derived_sha256":derived_digest,
+                                "sampled_box_coverage":track["tracked_coverage"]}
+                            m2.update(object_framing=match.get("object_framing",{}),
+                                action_window=window_review,portrait_integrity=integrity2,
+                                crop_subject_proof=proof2,
+                                suitability=suitability(item.extra.get("relevance_evidence",{}),m2,q2))
+                            q2["original_source_quality"]=quality
+                            layout2={**layout2,"mode":"dynamic_materialized_crop"}
+                            q2["portrait_layout"]=layout2
+                            path,quality,match,layout=derived,q2,m2,layout2
+                            item.extra["portrait_layout"]=layout2
+                        except Exception as exc:
+                            if derived is not None:
+                                derived.unlink(missing_ok=True)
+                            dynamic_review={"state":"static_fallback","error_type":type(exc).__name__}
+                    match["dynamic_crop"]=dynamic_review
                     if window_review["state"]=="materialized_pending_full_validation":
                         window_review["state"]="validated_interval"
                     item.path = path
                     item.width, item.height = int(quality["width"]), int(quality["height"])
                     item.duration = float(quality["duration"])
+                    actual_digest=self.downloader.digest(path)
                     item.extra.update({"quality": quality, "match": match, "start": 0.0,
-                                       "strict_validated": True, "sha256": digest})
+                                       "strict_validated": True, "sha256": actual_digest,
+                                       "original_sha256": digest})
                     license_info = item.extra.get("license", {})
                     # #91 lava failure: selecting the first on-topic 4K clip
                     # and checking the opening only AFTER all three scenes
@@ -777,6 +841,7 @@ class StrictVisuals:
                     if not attribution:
                         raise ValueError("Missing license provenance/attribution")
                     self.credits.add(attribution)
+                    self.used_hashes.add(actual_digest)
                     self._remember(item, url_key, digest)
                     # Coverr's MP4 link contains a signed access token tied
                     # to the private API key. The renderer already uses the
@@ -787,7 +852,7 @@ class StrictVisuals:
                     scene.update({"status": "selected", "source": source, "id": item.id,
                                   "director_contract": director_contract,
                                   "source_url": item.url, "downloaded_file": str(path),
-                                  "sha256": digest, "quality": quality, "match": match,
+                                  "sha256": actual_digest, "original_sha256": digest, "quality": quality, "match": match,
                                   "metadata_text": str(item.text)[:4000],
                                   "portrait_layout": layout,
                                   "recorded_date": item.extra.get("recorded_date",""),

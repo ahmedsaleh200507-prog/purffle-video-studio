@@ -115,6 +115,7 @@ jobs:
       PURFFLE_SHORTS_CENTER_CROP: '1'  # Default; verified object proposals can override
       PURFFLE_SMART_CROP: '1'
       PURFFLE_ACTION_WINDOW: '1'
+      PURFFLE_DYNAMIC_CROP: '0'  # Enable after real FFmpeg tracking audit
       PURFFLE_SHORTS_PORTRAIT_FIRST: '1'
       PURFFLE_AUTO_720_FALLBACK: '0'
       PURFFLE_REAL_ONLY_RECOVERY: '1'

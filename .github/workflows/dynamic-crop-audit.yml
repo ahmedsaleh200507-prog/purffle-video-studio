@@ -1,0 +1,30 @@
+name: '12 - Test Dynamic Crop Rendering'
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/dynamic_crop.py'
+      - 'tests/test_dynamic_crop.py'
+      - '.github/workflows/dynamic-crop-audit.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: ${{ github.workspace }}/scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y -qq ffmpeg
+          fi
+      - run: pip install 'Pillow>=10.1,<14'
+      - run: python -m compileall -q scripts
+      - run: python -m unittest discover -v -s tests -p test_dynamic_crop.py
