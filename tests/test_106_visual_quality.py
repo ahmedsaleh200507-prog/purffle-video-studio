@@ -51,3 +51,18 @@ def test_106_illustrative_crop_gate_runs_before_scene_is_selected():
     assert src.index("assess_portrait_pillarbox(crop_frames)") < src.index(
         'scene.update({"status": "selected"')
     assert "portrait_pillarbox_invalid" in src
+
+
+def test_103_white_picture_frame_rejected():
+    frame=Image.new("RGB",(96,168),"white")
+    ImageDraw.Draw(frame).rectangle((10,16,85,151),fill=(30,90,145))
+    result=assess_portrait_pillarbox([frame]*3)
+    assert not result["verified"]
+    assert result["reason"]=="persistent_white_picture_frame"
+
+
+def test_103_bright_sky_or_snow_not_picture_frame():
+    frame=Image.new("RGB",(96,168),"white")
+    ImageDraw.Draw(frame).rectangle((0,70,95,167),fill=(30,90,145))
+    assert assess_portrait_pillarbox([frame]*3)["verified"]
+    assert assess_portrait_pillarbox([Image.new("RGB",(96,168),"white")]*3)["verified"]

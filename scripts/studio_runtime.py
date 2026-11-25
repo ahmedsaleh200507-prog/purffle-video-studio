@@ -648,6 +648,16 @@ class StrictVisuals:
                         match["portrait_integrity"] = crop_integrity
                         from crop_subject_policy import verify_crop_subject
                         match["crop_subject_proof"]=verify_crop_subject(crop_frames,spec,self.matcher)
+                        # Production #103: the second whale shot passed CLIP but
+                        # independent SigLIP favored alternatives in two frames.
+                        # Reject this measured disagreement for whale candidates,
+                        # not missing/disabled optional inference.
+                        from topic_footage import words
+                        second=match["crop_subject_proof"].get("siglip_shadow_review",{})
+                        if (words(spec.object) & {"whale","wal","wale","buckelwal"}
+                                and second.get("state")=="observed"
+                                and second.get("agrees") is False):
+                            raise ValueError("whale_subject_secondary_disagreement: SigLIP did not corroborate the visible whale")
                     from scene_relevance import suitability
                     match["suitability"] = suitability(item.extra.get("relevance_evidence", {}), match, quality)
                     # #84: A generic 'ship outdoors' CLIP score let a mostly

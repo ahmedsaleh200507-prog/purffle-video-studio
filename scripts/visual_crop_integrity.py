@@ -25,6 +25,17 @@ def _edge_stats(frame):
     return stats
 
 
+def _white_frame(frame):
+    """Detect a baked-in bright rectangular matte, not a bright sky alone."""
+    frame=frame.convert("RGB").resize((96,168))
+    def white_fraction(rect):
+        pixels=list(frame.crop(rect).getdata())
+        return sum(min(p)>=238 and max(p)-min(p)<=12 for p in pixels)/len(pixels)
+    # A continuous bright border on four edges, but not the image interior.
+    edges=[(0,0,6,168),(90,0,96,168),(0,0,96,10),(0,158,96,168)]
+    return all(white_fraction(r)>=.94 for r in edges) and white_fraction((24,42,72,126))<.6
+
+
 def assess_portrait_pillarbox(frames) -> dict:
     """Return FAIL only for a persistent near-black flat side band.
 
@@ -35,6 +46,7 @@ def assess_portrait_pillarbox(frames) -> dict:
     if len(frames) < 3:
         return {"verified": False, "reason": "portrait_crop_frames_missing",
                 "black_side_frames": 0}
+    white_frames=sum(_white_frame(frame) for frame in frames[:3])
     failures, sides = 0, []
     for frame in frames[:3]:
         left, right = _edge_stats(frame)
@@ -44,9 +56,10 @@ def assess_portrait_pillarbox(frames) -> dict:
             failures += 1
             sides.append("left" if bad_left else "right")
     return {
-        "verified": failures < 2,
-        "reason": ("portrait_crop_visible" if failures < 2
-                   else "persistent_black_side_pillarbox"),
+        "verified": failures < 2 and white_frames < 2,
+        "reason": ("persistent_white_picture_frame" if white_frames >= 2 else
+                   "portrait_crop_visible" if failures < 2 else "persistent_black_side_pillarbox"),
+        "white_frame_count": white_frames,
         "black_side_frames": failures,
         "problem_sides": sides,
         "method": "three_actual_ffmpeg_portrait_crops_edge_content",
