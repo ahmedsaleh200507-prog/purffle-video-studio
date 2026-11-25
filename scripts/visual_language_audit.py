@@ -21,9 +21,9 @@ MODELS = {
 }
 FIXTURES = [
     ("cats", "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/coco_sample.png",
-     r"\b(?:cats?|kittens?|felines?)\b", r"\b(?:cars?|automobiles?|vehicles?)\b"),
+     r"\b(?:cats?|kittens?|felines?)\b", r"\b(?:cars?|automobiles?|vehicles?|volkswagen\s+beetle|vw\s+beetle)\b"),
     ("car", "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg",
-     r"\b(?:cars?|automobiles?|vehicles?)\b", r"\b(?:cats?|kittens?|felines?)\b"),
+     r"\b(?:cars?|automobiles?|vehicles?|volkswagen\s+beetle|vw\s+beetle)\b", r"\b(?:cats?|kittens?|felines?)\b"),
 ]
 
 def load_image(url):
@@ -73,6 +73,19 @@ def caption(key, processor, model, image):
         new_ids = ids[:, inputs.input_ids.shape[1]:]
         return processor.batch_decode(new_ids, skip_special_tokens=True)[0].strip()
 
+def validate_lexical_rules():
+    """A named car model can express the vehicle category without 'car'."""
+    cat_positive, cat_negative = FIXTURES[0][2:]
+    car_positive, car_negative = FIXTURES[1][2:]
+    for phrase in ("a car", "a Volkswagen Beetle", "a VW Beetle"):
+        if not re.search(car_positive, phrase, re.I) or not re.search(cat_negative, phrase, re.I):
+            raise RuntimeError("Vehicle category synonym regression")
+    for phrase in ("a beetle on a leaf", "a cat sleeping"):
+        if re.search(car_positive, phrase, re.I):
+            raise RuntimeError("Vehicle category false match")
+    if not re.search(cat_positive, "two cats", re.I) or not re.search(car_negative, "two cats", re.I):
+        raise RuntimeError("Cat category regression")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, choices=MODELS)
@@ -84,6 +97,7 @@ def main():
               "scope": "two known still images; lexical smoke only; no video or action accuracy",
               "cases": [], "stage": "load"}
     try:
+        validate_lexical_rules()
         torch.set_num_threads(2)
         t = time.monotonic()
         processor, model = load_engine(key)
