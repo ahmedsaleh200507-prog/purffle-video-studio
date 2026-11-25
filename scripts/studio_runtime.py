@@ -385,6 +385,18 @@ class StrictVisuals:
         else:
             batches=((src,items,"any",attempt_deadline) for src,items in
                      discover(self.registry,source_order,queries,attempt_deadline))
+        if os.environ.get("PURFFLE_VERIFIED_LIBRARY")=="1":
+            from itertools import chain
+            from verified_library import candidates as library_candidates
+            try:
+                library_path=Path("media_cache/verified-library/index.json")
+                hits=library_candidates(library_path,self.registry,spec,queries,need,source_order)
+                scene["verified_library_candidates"]=len(hits)
+                library_deadline=min(attempt_deadline,time.monotonic()+20.)
+                batches=chain(((item.source,[item],"library_revalidation",library_deadline)
+                               for item in hits),batches)
+            except Exception as exc:
+                scene["verified_library_error"]=type(exc).__name__
         for source, candidates, orientation_phase, phase_deadline in batches:
             print(f"[SOURCE CHECK] {source}: {len(candidates)} candidates scene={idx+1} phase={orientation_phase}", flush=True)
             ranked = []
@@ -843,6 +855,13 @@ class StrictVisuals:
                     self.credits.add(attribution)
                     self.used_hashes.add(actual_digest)
                     self._remember(item, url_key, digest)
+                    if os.environ.get("PURFFLE_VERIFIED_LIBRARY")=="1":
+                        try:
+                            from verified_library import remember as library_remember
+                            match["verified_library_saved"]=library_remember(
+                                Path("media_cache/verified-library/index.json"),item,spec,source_quality)
+                        except Exception as exc:
+                            match["verified_library_error"]=type(exc).__name__
                     # Coverr's MP4 link contains a signed access token tied
                     # to the private API key. The renderer already uses the
                     # validated local path: discard the token before emitting

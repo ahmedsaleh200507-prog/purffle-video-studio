@@ -115,7 +115,8 @@ jobs:
       PURFFLE_SHORTS_CENTER_CROP: '1'  # Default; verified object proposals can override
       PURFFLE_SMART_CROP: '1'
       PURFFLE_ACTION_WINDOW: '1'
-      PURFFLE_DYNAMIC_CROP: '0'  # Enable after real FFmpeg tracking audit
+      PURFFLE_DYNAMIC_CROP: '1'  # Guarded; static fallback on failed derived validation
+      PURFFLE_VERIFIED_LIBRARY: '1'
       PURFFLE_SHORTS_PORTRAIT_FIRST: '1'
       PURFFLE_AUTO_720_FALLBACK: '0'
       PURFFLE_REAL_ONLY_RECOVERY: '1'
@@ -241,6 +242,15 @@ jobs:
             .cache/local-llm/Qwen3-8B-Q4_K_M.gguf
             .cache/local-llm/llama-b12644.tar.gz
           key: purffle-qwen-quality-v1-${{ runner.os }}
+      - name: Restore public-domain verified source index
+        if: steps.selected.outputs.render == 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: media_cache/verified-library/index.json
+          key: purffle-public-source-index-v1-${{ runner.os }}-${{ github.run_id }}-${{ matrix.slot }}
+          restore-keys: |
+            purffle-public-source-index-v1-${{ runner.os }}-
       - name: Restore API metadata cache
         if: steps.selected.outputs.render == 'true'
         uses: actions/cache/restore@v4
@@ -327,6 +337,13 @@ jobs:
             .cache/huggingface
             .cache/piper
           key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/media_validation.py') }}
+      - name: Save public-domain verified source index
+        if: always() && steps.selected.outputs.render == 'true' && hashFiles('media_cache/verified-library/index.json') != ''
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: media_cache/verified-library/index.json
+          key: purffle-public-source-index-v1-${{ runner.os }}-${{ github.run_id }}-${{ matrix.slot }}
       - name: Save API responses and quota cooldowns
         if: always() && steps.selected.outputs.render == 'true'
         continue-on-error: true
