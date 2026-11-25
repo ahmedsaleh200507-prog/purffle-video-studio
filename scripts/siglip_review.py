@@ -11,7 +11,13 @@ _LOCK=threading.RLock()
 _ENGINE=None
 _FAILED=False
 
+from visual_score_cache import ExactScoreCache
+_SCORE_CACHE=ExactScoreCache()
+
 def score(frames,captions):
+    return _SCORE_CACHE.score(frames,captions,_uncached_score)
+
+def _uncached_score(frames,captions):
     global _ENGINE,_FAILED
     with _LOCK:
         if _FAILED:

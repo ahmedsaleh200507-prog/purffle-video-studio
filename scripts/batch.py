@@ -408,7 +408,10 @@ def run_job(index: int, raw: str, out: Path, timeout: int = 1500, *,
                 stale_title.unlink(missing_ok=True)
         # Download paths in the report are provenance; raw sources are transient.
         # Do this only after the worker/process group has stopped and rendered.
-        shutil.rmtree(ROOT / 'media_cache' / 'downloads', ignore_errors=True)
+        # A second emergency recovery can reuse verified source files and
+        # their hashes instead of downloading them all again.
+        if result.get('mp4') and result['status'] in ('ok','review'):
+            shutil.rmtree(ROOT / 'media_cache' / 'downloads', ignore_errors=True)
         result['seconds'] = round(time.monotonic() - started, 1)
         result['log'] = str(log_path)
         write_json(target / 'report.json', result)

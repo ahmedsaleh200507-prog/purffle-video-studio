@@ -286,6 +286,7 @@ jobs:
         env:
           SLOT_TOPIC: ${{ inputs[matrix.input] }}
           SLOT_INDEX: ${{ matrix.slot }}
+          PURFFLE_LAST_RESORT_GRAPHICS: '1'
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
         run: |
           # A normal successful MP4 is always preferred.
@@ -354,7 +355,9 @@ jobs:
           key: purffle-v2-api-${{ runner.os }}-${{ github.run_id }}-${{ matrix.slot }}
       - name: Remove transient render work
         if: always() && steps.selected.outputs.render == 'true'
-        run: find finished -type d \( -name work -o -name real-recovery \) -prune -exec rm -rf {} + 2>/dev/null || true
+        run: |
+          find finished -type d \( -name work -o -name real-recovery \) -prune -exec rm -rf {} + 2>/dev/null || true
+          rm -rf media_cache/downloads
       - name: Upload the selected video and diagnostic files
         if: always() && steps.selected.outputs.render == 'true'
         uses: actions/upload-artifact@v4

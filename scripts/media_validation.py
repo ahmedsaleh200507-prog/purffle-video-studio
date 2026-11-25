@@ -691,13 +691,18 @@ class SceneMatcher:
                 raise ValidationError("Local visual verifier unavailable; scene cannot be accepted") from exc
 
     def _similarities(self, images, captions):
+        from PIL import ImageOps
+        from visual_score_cache import ExactScoreCache
+        images=[ImageOps.pad(im,(224,224),color=(127,127,127)) for im in images]
+        with self._lock:
+            if not hasattr(SceneMatcher,"_exact_cache"):
+                SceneMatcher._exact_cache=ExactScoreCache()
+        return SceneMatcher._exact_cache.score(images,captions,self._uncached_similarities)
+
+    def _uncached_similarities(self, images, captions):
         self._load()
         import torch
         with self._lock, torch.inference_mode():
-            from PIL import ImageOps
-            # Preserve the entire frame; the default CLIP center crop can hide a
-            # subject close to a landscape frame's left or right edge.
-            images = [ImageOps.pad(im, (224, 224), color=(127, 127, 127)) for im in images]
             inputs = self._processor(text=captions, images=images, return_tensors="pt", padding=True,
                                      truncation=True, max_length=77)
             output = self._model(**inputs)

@@ -232,8 +232,15 @@ def _recover_short(topic,language,target):
             for j,(path,credit,n) in enumerate(pieces):
                 part=work/f"scene-{i}-piece-{j}.mp4"
                 if path is None:
-                    photos=stills({**scene,"topic":topic},i*10+j,work,seen,size=(1080,1920),limit=1,require_verified=True,matcher=matcher)
-                    path,credit=photos[0]
+                    try:
+                        photos=stills({**scene,"topic":topic},i*10+j,work,seen,size=(1080,1920),limit=1,require_verified=True,matcher=matcher)
+                        path,credit=photos[0]
+                    except Exception:
+                        if os.environ.get("PURFFLE_LAST_RESORT_GRAPHICS")!="1":
+                            raise
+                        from reviewed_graphic import reviewed_graphic
+                        path,credit=reviewed_graphic(scene,i*10+j,work,language)
+                        print("[LAST RESORT GRAPHIC] not real footage",i,j,flush=True)
                     input_args=["-loop","1","-framerate","30","-i",str(path)]
                     filter_text="setsar=1,format=yuv420p"
                 else:
@@ -277,7 +284,9 @@ def _recover_short(topic,language,target):
     (target/"output-qa.json").write_text(json.dumps(qa,indent=2),encoding="utf8")
     shutil.rmtree(work,ignore_errors=True)
     return {"status":"review","mp4":str(out),"resolution":"1080x1920","duration":qa["duration"],
-            "quality_mode":"verified_mixed_media_review" if mix["target_met"] else "photo_heavy_or_low_video_share_review",
+            "quality_mode":("reviewed_narration_with_graphic_fallback" if any(c.get("media_type")=="illustration" for c in credits)
+                            else "verified_mixed_media_review" if mix["target_met"] else "photo_heavy_or_low_video_share_review"),
+            "graphic_uses":sum(c.get("media_type")=="illustration" for c in credits),
             "media_mix":mix,"narrator_mode":"piper:"+provenance(language)["model"],
             "photo_uses":sum(c.get("media_type")=="photo" for c in credits),
             "video_uses":sum(c.get("media_type")=="video" for c in credits),

@@ -1,0 +1,33 @@
+name: '15 - Test Production Speed and Recovery'
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/visual_score_cache.py'
+      - 'scripts/reviewed_graphic.py'
+      - 'scripts/short_recovery.py'
+      - 'scripts/batch.py'
+      - 'tests/test_completion_speed.py'
+      - '.github/workflows/completion-speed-audit.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: ${{ github.workspace }}/scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'Pillow>=10.1,<14'
+      - run: |
+          if [ ! -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq fonts-dejavu-core
+          fi
+      - run: python -m compileall -q scripts
+      - run: python -m unittest discover -v -s tests -p test_completion_speed.py
