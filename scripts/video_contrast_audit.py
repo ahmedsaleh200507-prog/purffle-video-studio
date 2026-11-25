@@ -52,6 +52,19 @@ def evaluate(key, frames):
         passed=[bool(r["person"]) and not r["whale"] for r in rows]
         return {"detections":rows,"positive_wins":passed,"pass":sum(passed)>=2,
                 "scope":"category localization; no identity or action proof"}
+    if key=="dino_verified":
+        from object_framing import detect
+        from object_region_review import corroborate
+        rows=[]
+        for frame in frames:
+            row={}
+            for subject in ("person","whale"):
+                raw=detect(frame,subject)
+                row[subject]={"raw":raw,**corroborate(frame,subject,raw)}
+            rows.append(row)
+        passed=[bool(r["person"]["accepted"]) and not r["whale"]["accepted"] for r in rows]
+        return {"regions":rows,"positive_wins":passed,"pass":sum(passed)>=2,
+                "scope":"independent crop corroboration; raw detector errors retained; no identity/action proof"}
     from visual_language_audit import load_engine, caption
     processor, model=load_engine(key)
     rows=[]
@@ -67,7 +80,7 @@ def main():
     import torch
     torch.set_num_threads(2)
     p=argparse.ArgumentParser()
-    p.add_argument("--model",choices=["clip","siglip","dino","florence","qwen"],required=True)
+    p.add_argument("--model",choices=["clip","siglip","dino","florence","qwen","dino_verified"],required=True)
     key=p.parse_args().model
     out=Path("video-contrast-audit")
     out.mkdir(exist_ok=True)

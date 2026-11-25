@@ -85,8 +85,13 @@ def propose(path,seconds,subject,source_width,source_height,output_width,output_
         from media_validation import _frame
         times=(.15,max(.2,seconds*.45),max(.3,min(seconds*.85,seconds-.15)))
         frames=[_frame(path,t,640,preserve_aspect=True) for t in times]
-        rows=[detect(frame,subject) for frame in frames]
+        raw_rows=[detect(frame,subject) for frame in frames]
+        from object_region_review import corroborate
+        evidence=[corroborate(frame,subject,row) for frame,row in zip(frames,raw_rows)]
+        rows=[r["accepted"] for r in evidence]
         result=stable_focus(rows,fraction,default)
+        result["region_review"]=[{"raw_count":len(raw),"checks":r["checks"]}
+                                  for raw,r in zip(raw_rows,evidence)]
         result["tracking_shadow"]=track_focus(rows,times,fraction,default)
         return result
     except Exception as exc:

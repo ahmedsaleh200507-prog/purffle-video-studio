@@ -1,0 +1,51 @@
+name: '10 - Test Verified Object Regions'
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/video_contrast_audit.py'
+      - 'scripts/object_region_review.py'
+      - 'scripts/object_framing.py'
+      - 'tests/test_object_region_review.py'
+      - '.github/workflows/object-region-audit.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        model: [dino_verified]
+    env:
+      PYTHONPATH: ${{ github.workspace }}/scripts
+      HF_HOME: ${{ github.workspace }}/.cache/huggingface
+      OMP_NUM_THREADS: '2'
+      TOKENIZERS_PARALLELISM: 'false'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install FFmpeg if missing
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update -qq
+            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y -qq ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+      - run: pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install 'transformers==4.57.1' 'Pillow>=10.1,<14' requests 'sentencepiece>=0.2,<1'
+      - run: PYTHONPATH=scripts python -m unittest discover -s tests -p test_object_region_review.py
+      - run: python scripts/video_contrast_audit.py --model ${{ matrix.model }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: video-contrast-${{ matrix.model }}
+          path: video-contrast-audit/
+          if-no-files-found: warn
