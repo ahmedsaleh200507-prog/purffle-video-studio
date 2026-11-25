@@ -51,7 +51,7 @@ def real_video_audit():
                         raise ValueError("Video test fixture exceeds download bound")
                     fp.write(chunk)
         digest=hashlib.sha1()
-        digest.update(f"blob {size}\\0".encode())
+        digest.update(f"blob {size}".encode() + bytes([0]))
         with path.open("rb") as fp:
             for chunk in iter(lambda:fp.read(65536),b""):
                 digest.update(chunk)
