@@ -1,0 +1,27 @@
+name: '11 - Test Action Window and Visual Quality'
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/action_window.py'
+      - 'scripts/studio_runtime.py'
+      - 'scripts/visual_crop_integrity.py'
+      - 'tests/test_action_window.py'
+      - '.github/workflows/action-window-audit.yml'
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: ${{ github.workspace }}/scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'Pillow>=10.1,<14' 'pytest>=8,<10'
+      - run: python -m compileall -q scripts
+      - run: python -m pytest -q tests/test_action_window.py tests/test_106_visual_quality.py

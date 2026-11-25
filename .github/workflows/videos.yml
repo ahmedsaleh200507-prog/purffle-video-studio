@@ -114,6 +114,7 @@ jobs:
       RESOLUTION: 1080x1920
       PURFFLE_SHORTS_CENTER_CROP: '1'  # Default; verified object proposals can override
       PURFFLE_SMART_CROP: '1'
+      PURFFLE_ACTION_WINDOW: '1'
       PURFFLE_SHORTS_PORTRAIT_FIRST: '1'
       PURFFLE_AUTO_720_FALLBACK: '0'
       PURFFLE_REAL_ONLY_RECOVERY: '1'

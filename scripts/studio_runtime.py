@@ -577,6 +577,31 @@ class StrictVisuals:
                     # Requiring the ACTUAL scene duration still forbids
                     # looping, frozen tail frames or insufficient footage.
                     quality = source_quality
+                    # Search later source intervals only for a required visible
+                    # event. Keep original digest for source deduplication.
+                    window_review = {"state":"disabled","offset":0.}
+                    if (os.environ.get("PURFFLE_ACTION_WINDOW")=="1"
+                            and idx==0 and isinstance(self.matcher,SceneMatcher)
+                            and director_contract and director_contract.get("event_required")):
+                        from action_window import select_window,extract_window
+                        window_review=select_window(path,float(quality["duration"]),float(need),
+                            director_contract,scorer=self.matcher._similarities,deadline=phase_deadline)
+                        if window_review["offset"]>0:
+                            trimmed=None
+                            try:
+                                trimmed=extract_window(path,window_review["offset"],float(need),deadline=phase_deadline)
+                                trimmed_quality=self.quality.validate(trimmed,need=need)
+                                if layout_for(trimmed_quality) is None:
+                                    raise ValueError("Trim cannot satisfy output dimensions")
+                                path=trimmed
+                                quality=trimmed_quality
+                                window_review["state"]="materialized_pending_full_validation"
+                                window_review["original_sha256"]=digest
+                                window_review["trim_sha256"]=self.downloader.digest(path)
+                            except Exception as exc:
+                                if trimmed is not None:
+                                    trimmed.unlink(missing_ok=True)
+                                window_review.update(state="trim_failed_keep_original",error_type=type(exc).__name__,offset=0.)
                     layout = layout_for(quality)
                     if layout is None:
                         raise ValueError("No valid portrait layout for measured source")
@@ -604,6 +629,7 @@ class StrictVisuals:
                             f"to {required_width}x{required_height}"
                         )
                     match = self.matcher.match(path, spec, metadata=item.text, duration=need)
+                    match["action_window"]=window_review
                     if center_enabled():
                         match["crop_focus_x"] = .5
                     from object_framing import enabled as smart_crop_enabled,propose
@@ -720,6 +746,8 @@ class StrictVisuals:
                             scorer=self.matcher._similarities,
                             opening=(idx == 0))
                         match["director_check"] = event_check
+                    if window_review["state"]=="materialized_pending_full_validation":
+                        window_review["state"]="validated_interval"
                     item.path = path
                     item.width, item.height = int(quality["width"]), int(quality["height"])
                     item.duration = float(quality["duration"])
