@@ -821,6 +821,14 @@ class StrictVisuals:
                                 derived.unlink(missing_ok=True)
                             dynamic_review={"state":"static_fallback","error_type":type(exc).__name__}
                     match["dynamic_crop"]=dynamic_review
+                    if (os.environ.get("PURFFLE_EVENT_THEME_REVIEW")=="1"
+                            and isinstance(self.matcher,SceneMatcher)):
+                        try:
+                            from event_theme_review import observe_theme
+                            final_frames=frames2 if dynamic_review["state"]=="validated_materialized" else crop_frames
+                            match["theme_review"]=observe_theme(final_frames,topic,spec.object,subject_specification)
+                        except Exception as exc:
+                            match["theme_review"]={"state":"unavailable","error_type":type(exc).__name__}
                     if window_review["state"]=="materialized_pending_full_validation":
                         window_review["state"]="validated_interval"
                     item.path = path

@@ -1,0 +1,28 @@
+name: '14 - Test Event and Theme Review'
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/event_theme_review.py'
+      - 'scripts/visual_director.py'
+      - 'scripts/studio_runtime.py'
+      - 'tests/test_event_theme_review.py'
+      - '.github/workflows/event-theme-audit.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: ${{ github.workspace }}/scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'Pillow>=10.1,<14' 'pytest>=8,<10'
+      - run: python -m compileall -q scripts
+      - run: python -m unittest discover -v -s tests -p test_event_theme_review.py
+      - run: python -m pytest -q tests/test_action_window.py tests/test_106_visual_quality.py

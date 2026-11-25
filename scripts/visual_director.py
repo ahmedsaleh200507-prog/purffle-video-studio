@@ -383,7 +383,8 @@ def visual_scores(contract, scores, *, opening=False):
     required_margin = .04 if composite else .02
     matching_frames = sum(float(row[0]) >= .24 and delta >= required_margin
                           for row, delta in zip(scores, scored))
-    passed = peak >= 0.24 and margin >= required_margin
+    # Both conditions must hold in the SAME frame, not separate frames.
+    passed = matching_frames >= 1
     if composite:
         passed = passed and matching_frames >= 2
     # On scene 1 a late event cannot rescue a sky-only or dormant first
@@ -436,6 +437,7 @@ def _frame_at(path, seconds, crop_focus, *, runner=None):
 def inspect_action(path, duration, crop_focus, contract, *,
                    scorer=None, frames=None, opening=False):
     """Check the ACTUAL rendered interval (not the whole stock source clip)."""
+    sample_from_source = frames is None
     if frames is None:
         length = float(duration)
         if not math.isfinite(length) or length <= 0:
@@ -451,7 +453,30 @@ def inspect_action(path, duration, crop_focus, contract, *,
         from media_validation import SceneMatcher
         scorer = SceneMatcher()._similarities
     matrix = scorer(frames, [contract["positive"], contract["negative"]])
-    return visual_scores(contract, matrix, opening=opening)
+    result=visual_scores(contract, matrix, opening=opening)
+    # The preview window search supplies its own frames and must remain fast.
+    # Only independently sample the actual interval after a primary pass.
+    if sample_from_source and result["verified"]:
+        import os
+        if os.environ.get("PURFFLE_EVENT_THEME_REVIEW")=="1":
+            from event_theme_review import observe, motion_pair
+            independent=observe("event",frames,[contract["positive"],contract["negative"]])
+            result["independent_event_review"]=independent
+            if independent.get("state")=="observed":
+                try:
+                    threshold=result["required_margin"]
+                    eligible=[i for i,row in enumerate(matrix)
+                              if float(row[0])>=.24 and float(row[0])-float(row[1])>=threshold]
+                    best=max(eligible,key=lambda i:float(matrix[i][0])-float(matrix[i][1]))
+                    t=times[best]
+                    next_t=min(length-.03,t+.20)
+                    if next_t>t+.03:
+                        adjacent=_frame_at(path,next_t,crop_focus)
+                        result["event_nearby_motion"]=motion_pair(frames[best],adjacent)
+                        result["event_nearby_motion"]["sample_times"]=[round(t,3),round(next_t,3)]
+                except Exception as exc:
+                    result["event_nearby_motion"]={"state":"unavailable","error_type":type(exc).__name__}
+    return result
 
 
 
