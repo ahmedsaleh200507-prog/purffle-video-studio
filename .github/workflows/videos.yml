@@ -89,6 +89,7 @@ jobs:
       PURFFLE_LOCAL_QUALITY: '1'
       PURFFLE_CLOUD_MODEL_ROUTER: '1'
       PURFFLE_SIGLIP_REVIEW: '1'
+      PURFFLE_VLM_SHADOW: '1'
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
       COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}

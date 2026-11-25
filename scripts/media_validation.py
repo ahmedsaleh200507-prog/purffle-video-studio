@@ -765,7 +765,13 @@ class SceneMatcher:
             windows.append(center_frame.crop((left, 0, left + crop_w, h)))
         crop_scores = self._similarities(windows, [object_caption])
         best = max(range(3), key=lambda i: crop_scores[i][0])
-        return {"metadata_score": round(metadata_score, 4), "visual_score": round(visual_score, 4),
+        from visual_language_review import observe as observe_vlm
+        try:
+            vlm_review = observe_vlm(frames, spec.object, spec.visual_search_query)
+        except Exception as exc:
+            vlm_review = {"state":"unavailable","error_type":type(exc).__name__}
+        return {"visual_language_review": vlm_review,
+                "metadata_score": round(metadata_score, 4), "visual_score": round(visual_score, 4),
                 "object_score": round(object_score, 4), "visual_margin": round(visual_margin, 4),
                 "threshold": self.threshold, "model": os.environ.get("PURFFLE_CLIP_MODEL", "openai/clip-vit-base-patch32"),
                 "sample_scores": positive_scores, "crop_focus_x": centers[best],
