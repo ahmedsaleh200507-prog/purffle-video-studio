@@ -166,3 +166,41 @@ def track_focus(detections, times, crop_fraction, default=.5):
             "tracked_coverage":round(statistics.mean(moving_scores),4),
             "min_tracked_coverage":round(min(moving_scores),4),
             "scope":"sampled box geometry only; dynamic render not enabled"}
+
+
+def best_object_window(detections, times, duration, window):
+    """Rank sampled contiguous windows by target presence, not action semantics.
+
+    Return an audit suggestion only; do not change the production clip start.
+    Missing observations count against the window. Require a complete window.
+    """
+    if (not math.isfinite(duration) or not math.isfinite(window) or
+        not 0 < window <= duration or len(times) != len(detections) or len(times)<3
+        or any(not math.isfinite(t) or not 0<=t<=duration for t in times)
+        or any(b<=a for a,b in zip(times,times[1:]))):
+        return {"state":"invalid_samples"}
+    step=statistics.median(b-a for a,b in zip(times,times[1:]))
+    if step>window/2 or times[0]>step or duration-times[-1]>step:
+        return {"state":"insufficient_sampling"}
+    scores=[max((float(d["score"]) for d in row if math.isfinite(d["score"])
+                 and .35<=d["score"]<=1), default=0.) for row in detections]
+    candidates=[]
+    for start in sorted({0.,duration-window,*[t for t in times if t+window<=duration]}):
+        end=start+window
+        indices=[i for i,t in enumerate(times) if start<=t<=end]
+        if len(indices)<3:
+            continue
+        ts=[times[i] for i in indices]
+        if ts[0]-start>step or end-ts[-1]>step or any(b-a>1.5*step for a,b in zip(ts,ts[1:])):
+            continue
+        values=[scores[i] for i in indices]
+        presence=sum(v>0 for v in values)/len(values)
+        if presence<.8:
+            continue
+        candidates.append((statistics.mean(values),presence,-start,end,len(indices)))
+    if not candidates:
+        return {"state":"no_verified_window"}
+    score,presence,negative_start,end,n=max(candidates)
+    return {"state":"shadow_proposal","start":round(-negative_start,3),"end":round(end,3),
+            "mean_detection_score":round(score,4),"presence_fraction":round(presence,4),
+            "sample_count":n,"scope":"object presence only; no action or production trim validation"}

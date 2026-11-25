@@ -24,6 +24,7 @@ jobs:
           python-version: '3.12'
       - run: pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
       - run: pip install 'transformers==4.57.1' 'Pillow>=10.1,<14' requests
+      - run: ffmpeg -version && ffprobe -version
       - run: python scripts/object_framing_audit.py
       - uses: actions/upload-artifact@v4
         if: always()
