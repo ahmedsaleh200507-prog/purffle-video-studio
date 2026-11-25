@@ -593,11 +593,12 @@ class StrictVisuals:
                                 trimmed_quality=self.quality.validate(trimmed,need=need)
                                 if layout_for(trimmed_quality) is None:
                                     raise ValueError("Trim cannot satisfy output dimensions")
-                                path=trimmed
-                                quality=trimmed_quality
+                                trimmed_digest=self.downloader.digest(trimmed)
                                 window_review["state"]="materialized_pending_full_validation"
                                 window_review["original_sha256"]=digest
-                                window_review["trim_sha256"]=self.downloader.digest(path)
+                                window_review["trim_sha256"]=trimmed_digest
+                                path=trimmed
+                                quality=trimmed_quality
                             except Exception as exc:
                                 if trimmed is not None:
                                     trimmed.unlink(missing_ok=True)
