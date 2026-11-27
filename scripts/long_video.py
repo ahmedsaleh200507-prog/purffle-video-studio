@@ -94,7 +94,8 @@ def chapters(topic, language="en"):
     from long_script import build_documentary
     # Preserve the proven English volcano workflow. Mixed-language jobs and
     # other documentary subjects receive genuinely topic-specific outlines.
-    if language == "en" and any(
+    from editorial_standard import enabled
+    if not enabled() and language == "en" and any(
             term in topic.casefold() for term in ("volcano", "volcan", "lava")):
         return build_documentary(topic)
     from long_generic import build_multilingual_documentary
@@ -700,7 +701,8 @@ def main():
         except RuntimeError as exc:
             print("[LONG SOURCES FALLBACK]", str(exc), flush=True)
         stage="script"
-        identity=[a.topic,a.language]
+        from editorial_standard import enabled,VERSION,audit_structure,review_long,final_timing
+        identity=[a.topic,a.language,VERSION if enabled() else "legacy"]
         text=checkpoint.get("complete-script",identity)
         if text is None:
             text=chapters(a.topic,a.language)
@@ -708,6 +710,15 @@ def main():
             print("[SCRIPT RESUME] complete script",flush=True)
         from long_quality_gate import verify_narration
         preliminary_qa=verify_narration(text,a.language)
+        if enabled():
+            preliminary_qa["editorial_structure"]=audit_structure([c["narration"] for c in text],a.language,mode="long")
+            stage="long_editorial_review"
+            editorial=checkpoint.get("editorial-review",[identity,text])
+            if editorial is None:
+                from long_llm import get_long_client
+                editorial=review_long(a.topic,a.language,text,get_long_client())
+                checkpoint.put("editorial-review",[identity,text],editorial)
+            preliminary_qa["editorial_review"]=editorial
         checkpoint.put("complete-script",identity,text)
         save(output/"script.json",{"language":a.language,"chapters":text})
         save(output/"script-quality.json",preliminary_qa)
@@ -889,6 +900,13 @@ def main():
         full_qa=validate_timeline(final,output/"captions.srt",
             expected_size=(1920,1080),expected_duration=voice_seconds,
             expected_text=' '.join(c['narration'] for c in text))
+        if enabled():
+            from shorts_final_qa import inspect_output_audio
+            onset=inspect_output_audio(final)
+            if not onset["passed"]:
+                raise RuntimeError("long_editorial_opening_audio_failed")
+            full_qa["editorial_timing"]=final_timing(output/"captions.srt",duration,mode="long")
+            full_qa["opening_audio"]=onset
         save(output/"output-qa.json",full_qa)
         save(output/"credits.json",credits)
         from video_first_policy import media_mix
@@ -902,6 +920,9 @@ def main():
             "illustration_uses":sum(c.get("media_type")=="illustration" for c in credits),
             "recovery_chapters":recovery_chapters}
             if recovery_chapters else verify_finished(final,text,credits,language=a.language))
+        if enabled():
+            publishing_qa["editorial_review"]=preliminary_qa["editorial_review"]
+            publishing_qa["editorial_timing"]=full_qa["editorial_timing"]
         save(output/"documentary-quality.json",publishing_qa)
         report.update(status="review" if recovery_chapters else "ok",mp4="long-video.mp4",duration=duration,
                       clips=len(credits),narration_duration=voice_seconds,
