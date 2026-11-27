@@ -87,7 +87,8 @@ def _recover_short(topic,language,target):
     from geography_policy import scene_requirement,require_geography
     from output_qa import validate_timeline
     target=Path(target).resolve()
-    if not (target/"reviewed-script.json").is_file():
+    from fact_checked_topics import verified_documentary_kind
+    if verified_documentary_kind(topic) or not (target/"reviewed-script.json").is_file():
         recover_approved_dossier(topic,language,target)
     data=json.loads((target/"reviewed-script.json").read_text(encoding="utf8"))
     if (data.get("reviewed") is not True or data.get("topic")!=topic
@@ -173,6 +174,8 @@ def _recover_short(topic,language,target):
                 match=matcher.match(candidate,spec,metadata=source_metadata,duration=duration)
                 chosen_focus=float(row.get("match",{}).get("crop_focus_x",.5))
                 frames=_first_frames(candidate,focus=chosen_focus,seconds=(.15,duration*.45,max(.2,duration*.85)))
+                from source_overlay import check_source
+                check_source(candidate,duration,chosen_focus)
                 verify_crop_subject(frames,spec,matcher)
                 verify_visible_event_or_illustrative_subject(candidate,duration,chosen_focus,contract,match,scorer=matcher._similarities,opening=i==1)
                 chosen=candidate
