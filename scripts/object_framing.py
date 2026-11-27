@@ -137,8 +137,13 @@ def propose(path,seconds,subject,source_width,source_height,output_width,output_
         result["region_review"]=[{"raw_count":len(raw),"checks":r["checks"]}
                                   for raw,r in zip(raw_rows,evidence)]
         result["tracking_shadow"]=track_focus(rows,times,fraction,default)
-        from advanced_visuals import track_review
+        from advanced_visuals import track_review,tracking_agreement
         result["bytetrack_shadow"]=track_review(rows,times)
+        result["tracking_agreement"]=tracking_agreement(result["bytetrack_shadow"],rows,times,result["tracking_shadow"])
+        if (result["tracking_shadow"].get("state")=="shadow_proposal"
+                and result["bytetrack_shadow"].get("state")=="observed"
+                and result["tracking_agreement"]["state"]!="agrees"):
+            result["tracking_shadow"]={"state":"independent_tracking_inconclusive","keyframes":[]}
         if result["tracking_shadow"]["state"] in ("ambiguous_identity","lost_identity"):
             group=group_focus(rows,fraction,default)
             result["group_framing"]=group
