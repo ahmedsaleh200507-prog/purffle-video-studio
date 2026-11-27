@@ -1,4 +1,5 @@
 name: Bilingual real Shorts canary
+# Revision 2: unified four-phase editorial contract, exact-answer and source-text gates.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
