@@ -1,5 +1,5 @@
 name: Writers room text quality pilot
-# V4: topic-adaptive storytelling across varied source-reviewed subjects.
+# V5: two-call text pilot, one optional rewrite and recheck.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
@@ -12,7 +12,7 @@ jobs:
   text:
     if: github.ref == 'refs/heads/chatgpt/yellow-system-fixes'
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -20,22 +20,10 @@ jobs:
         include:
           - language: en
             mode: short
-            topic: Why do volcanoes erupt?
-          - language: de
-            mode: short
-            topic: Warum leuchten Polarlichter?
-          - language: en
-            mode: short
             topic: Why Do Octopuses Have Three Hearts?
           - language: de
             mode: short
-            topic: Warum beschlägt der Badezimmerspiegel?
-          - language: en
-            mode: long
-            topic: Why Do Steel Ships Float?
-          - language: de
-            mode: long
-            topic: Warum springen Wale aus dem Meer?
+            topic: Warum leuchten Polarlichter?
     env:
       PYTHONPATH: scripts
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -55,7 +43,7 @@ jobs:
         run: |
           python -m compileall -q scripts/story_room.py
           python -m pytest -q tests/test_story_room.py
-      - name: Generate competing drafts, edit and compare
+      - name: Generate and independently review narration
         run: |
           mkdir -p story-room-proof
           python - <<'PY'
