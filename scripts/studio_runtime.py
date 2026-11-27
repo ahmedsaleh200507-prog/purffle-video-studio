@@ -830,6 +830,8 @@ class StrictVisuals:
                             match["theme_review"]=observe_theme(final_frames,topic,spec.object,subject_specification)
                         except Exception as exc:
                             match["theme_review"]={"state":"unavailable","error_type":type(exc).__name__}
+                    from visual_consensus import summarize as summarize_visual_evidence
+                    match["visual_consensus"]=summarize_visual_evidence(match)
                     if window_review["state"]=="materialized_pending_full_validation":
                         window_review["state"]="validated_interval"
                     item.path = path
