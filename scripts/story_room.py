@@ -8,7 +8,7 @@ import re
 from editorial_standard import AUDIENCE_BRIEF, audit_structure, word_tokens
 from cloud_model_router import Router, MODELS, ModelError
 
-VERSION = "story-room-v6-reader-first"
+VERSION = "story-room-reader-first"
 WRITERS = ("openai/gpt-oss-120b", "gemini-3.6-flash", "gemini-3.1-flash-lite")
 EDITORS = ("gemini-3.6-flash", "qwen/qwen3.8-27b", "openai/gpt-oss-120b", "gemini-3.1-flash-lite")
 CRITERIA = ("hook", "curiosity", "progression", "native_language", "payoff")
@@ -104,7 +104,7 @@ def obvious_opening_problem(text, evidence):
         return "unsupported_eyewitness_anecdote"
     # Narrow guard for the recurring technical-first failure; not a general ban on
     # scientific words. Two specialist terms in an opening without prior context.
-    jargon=r"\b(?:elektron\w*|electron\w*|magnetfeld\w*|magnetic field|molek\w*|molecul\w*|ionisier\w*|ioniz\w*)\b"
+    jargon=r"\b(?:elektron\w*|electron\w*|(?:erd)?magnetfeld\w*|magnetic field|(?:stickstoff|sauerstoff)?molek\w*|molecul\w*|ionisier\w*|ioniz\w*)\b"
     if len(re.findall(jargon,first,re.I))>=2:
         return "technical_mechanism_before_audience_context"
     return ""
@@ -128,7 +128,8 @@ class StoryRoom:
                 continue
             try:
                 raw=self.router.request(provider,model,messages=messages,schema=schema,
-                                        max_tokens=1600,temperature=temperature)
+                                        max_tokens=2600 if role in ("writer","rewrite") else 1600,temperature=temperature,
+                                        reasoning_effort="high" if role in ("writer","rewrite") and model=="openai/gpt-oss-120b" else "low")
                 self.trace.append({"role":role,"model":model,"status":"accepted_json"})
                 return json.loads(raw),model
             except ModelError as exc:
@@ -165,7 +166,7 @@ class StoryRoom:
         self.trace=[]
         draft,writer=self.ask("writer",common+
             "\nChoose the best true detail and story form internally, then write the finished narration. "
-            "Internally try three different first lines, choose the one an ordinary listener understands immediately, then write the script. Do not output the alternatives. Read the opening aloud mentally: if it begins with technical explanation, replace it with the real interesting fact. If the reference is sparse, use fewer words, never invent a story.",
+            "Think carefully before writing: identify the single most surprising supported fact, what the listener expects instead, and the specific insight that resolves their curiosity. Try three different first lines privately; choose the strongest, not the most dramatic. Do not invent actions or consequences to make ordinary facts interesting. If no source supports a consequence, omit it. Do not output the alternatives. Read the opening aloud mentally: if it begins with technical explanation, replace it with the real interesting fact. If the reference is sparse, use fewer words, never invent a story.",
             DRAFT_SCHEMA,WRITERS,temperature=.55)
         attempts=[]
         def structure(text):
@@ -189,7 +190,7 @@ class StoryRoom:
                     RUBRIC+"\nBefore scoring, actively try to falsify the opening: if the listener cannot say why this matters in everyday words, mark no_reason_to_continue. A scientific process is not itself a reason to continue. A score of 8 requires a specific supported audience-facing surprise, not merely clear facts. If the first sentence is a witness anecdote, require it to be documented in the reference. Check every material claim against the supplied reference; reject unsupported additions, "
                     "overstatements or misleading wording even if entertaining. This is a reference-consistency screen, not independent factual verification. "
                     "Give concrete feedback on exactly what to change. Quote the actual opening and weakest phrase. "
-                    "Do not award a pass for adequate textbook prose.\nSCRIPT:\n"+text,
+                    "Do not award a pass for adequate textbook prose. Inspect the actual final line: a generic statement that the organism survives, the phenomenon occurs, or nature is clever adds no insight. Do not accept any new cause, behavior or necessity not present in the reference.\nSCRIPT:\n"+text,
                     STRICT_REVIEW_SCHEMA,EDITORS,avoid=writer,temperature=.1)
                 verdicts.append(verdict)
                 judges.append(judge)
