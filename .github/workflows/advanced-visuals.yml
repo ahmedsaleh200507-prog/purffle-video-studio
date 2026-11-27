@@ -60,3 +60,48 @@ jobs:
           assert any(m["state"]=="observed" for m in motions)
           print("[REAL OPTICAL FLOW]",json.dumps(motions))
           PY
+  real_tracking:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: scripts
+      PURFFLE_SMART_CROP: '1'
+      PURFFLE_ADVANCED_VISUALS: '1'
+      OMP_NUM_THREADS: '2'
+      TOKENIZERS_PARALLELISM: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r requirements-advanced-visuals.txt 'transformers==4.57.1' 'Pillow>=10.1,<14' requests 'sentencepiece>=0.2,<1'
+      - name: Install FFmpeg and OpenCV runtime
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update -qq
+          sudo apt-get -o Acquire::Retries=3 install -y -qq ffmpeg libgl1 libglib2.0-0t64
+      - name: Grounding DINO plus region verification plus ByteTrack on actual footage
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,time,torch
+          from video_contrast_audit import fixture
+          from media_validation import _frame
+          from object_framing import propose
+          torch.set_num_threads(2)
+          path=Path("audit-person.avi")
+          fixture(path)
+          w,h=_frame(path,.2,640,preserve_aspect=True).size
+          report=propose(path,3.0,"person",w,h,1080,1920,deadline=time.monotonic()+180)
+          print("[REAL TRACKING]",json.dumps(report),flush=True)
+          Path("tracking-report.json").write_text(json.dumps(report,indent=2))
+          assert report["bytetrack_shadow"]["state"]=="observed"
+          assert len(report["sample_times"])>=3
+          assert report["bytetrack_shadow"]["tracks"], "No corroborated track association"
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: actual-tracking-report
+          path: tracking-report.json
+          if-no-files-found: warn
