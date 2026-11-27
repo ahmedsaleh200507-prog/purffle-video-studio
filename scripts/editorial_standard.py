@@ -3,20 +3,37 @@ import os
 import re
 import math
 
-VERSION="purffle_audience_story_v5_b"
+VERSION="purffle_audience_story_v6_topic_adaptive"
 ANSWER_GATE_VERSION=3
+TOPIC_ADAPTATION=(
+    "Before writing, identify what is genuinely interesting about THIS exact subject, who would care, "
+    "what a curious first-time viewer would not expect, and which verified detail earns the attention. "
+    "Choose the narrative form that fits the material: a causal puzzle, a documented turning point, "
+    "a discovery and its evidence, a surprising function, a consequential decision, a change over time, "
+    "an everyday experience with an unexpected explanation, or another subject-specific form. "
+    "These are options, NOT a checklist or fixed template. Do not force a contrast, question, conflict, "
+    "chronology, analogy or mystery when the subject does not support one. "
+    "For history use documented events, choices and consequences, not invented dialogue or thoughts. "
+    "For technology reveal a real problem and solution or unexpected design tradeoff. "
+    "For nature reveal a distinctive behavior, adaptation or relationship. "
+    "For places, culture or objects use specific human or material details and their significance, not generic descriptions. "
+    "For science use an intuitive observation and evidence-based explanation where appropriate. "
+    "Other subjects require their own approach; never copy an opening pattern or story arc from another topic. "
+    "If replacing the subject name would make the same opening or ending work elsewhere, rewrite it. "
+    "Interest must come from verified subject matter, not added drama, unsupported claims or empty suspense. "
+)
 AUDIENCE_BRIEF=(
+    TOPIC_ADAPTATION+
     "Write for a curious viewer hearing the story once, not reading an encyclopedia. "
-    "Lead with a short, speakable, topic-specific contrast, unexpected true consequence or concrete observation, then explain why it happens. "
-    "For example, 'Some volcanoes explode. Others let lava flow. Why the difference?' illustrates a real contrast; do not reuse that formula for unrelated topics. "
-    "Start with the interesting part, not the definition, location, classification or a generic question. "
-    "Use a subject-specific hook with an immediate fact or concrete tension; avoid empty promises like you will not believe this. "
-    "Within the opening beat, explain what is at stake or why the fact matters. "
-    "Give the answer progressively: each beat adds a fresh fact, mechanism, consequence, contrast or evidence that changes understanding. "
-    "Use a natural spoken register, clear short clauses, familiar words, and explain any necessary technical term immediately. "
-    "Vary sentence length and rhythm; use questions only when they genuinely lead into an answer. "
-    "Never manufacture suspense, repeat the topic, tease a reveal without delivering it, or invent drama. "
-    "The ending must reward the exact curiosity raised at the opening with a memorable concrete insight, not simply restate the topic or repeat the opening. Read the script mentally as speech and cut stiff transitions, redundant definitions and filler."
+    "Start with the most interesting specific true detail, meaningful event, discovery, tension or consequence. "
+    "Do not start with a generic definition, location, greeting or the title repeated as a question. "
+    "Give useful value immediately and a genuine reason to hear the next sentence. "
+    "Each new beat should change understanding: add a relevant fact, evidence, action, consequence or insight. "
+    "Use idiomatic native spoken language, varied rhythm and accessible words. "
+    "Explain necessary technical terms in context; never pile them up to sound authoritative. "
+    "Do not manufacture suspense or repeat the same rhetorical device across unrelated subjects. "
+    "End with a subject-specific insight that rewards attention; in a longer film sustain interest through meaningful developments. "
+    "Read the actual words as spoken narration and cut generic filler, stiff phrases and decorative summaries."
 )
 PHASES=("hook","curiosity","development","payoff")
 CORE_BRIEF=(
@@ -25,7 +42,7 @@ CORE_BRIEF=(
     "contrast, observable action, or specific question. Never invent shock or statistics. "
     "CURIOSITY: give a useful fact early and establish the question that remains. "
     "DEVELOPMENT: each beat advances the answer with new, connected information; "
-    "prefer concrete examples, understandable cause and effect, and natural spoken language. "
+    "prefer concrete evidence, relevant developments and natural spoken language. "
     "PAYOFF: resolve the promise, do not end with an unrelated fact, CTA or fake cliffhanger. "
     "Use accurate native-language speech, filmable real visuals and honest illustrative B-roll. "
     "No invented quotes, fictional documentary events, repetition, padding or misleading titles. "
@@ -50,7 +67,7 @@ def long_brief():
         "develop new evidence and mechanisms in logical order, chapters 13–14 "
         "resolve the question and explain its significance. Each chapter must add "
         "something new, with a natural transition, not restart the story. "
-        "Each chapter opens on a new specific insight or connected question, answers it, and moves naturally to the next chapter. "
+        "Each chapter contributes a new specific development, insight or connected question and moves naturally to the next chapter; do not force the same structure on every chapter. "
         "Do not use fourteen standalone mini introductions or repeated cliffhangers. Use an occasional new source-supported surprise, comparison, or consequence to renew interest."
     )
 
