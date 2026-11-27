@@ -133,6 +133,8 @@ def _recover_short(topic,language,target):
         if not scene["visual_subject"] or not scene["visual_search_query"]:
             raise RuntimeError("Reviewed script has no concrete scene subject")
         speech=synthesize(scene["narration"],work/f"voice-{i}",SimpleNamespace(language=language))
+        from studio_runtime import _validate_free_speech
+        _validate_free_speech(speech,provenance(language)["engine"],language)
         duration=float(speech.duration)
         real_word_captions(speech,offset)  # independently validate native word timing
         caption_words.extend(Word(w.text,offset+float(w.start),offset+float(w.end)) for w in speech.words)
@@ -303,7 +305,7 @@ def _recover_short(topic,language,target):
             "quality_mode":("reviewed_narration_with_graphic_fallback" if any(c.get("media_type")=="illustration" for c in credits)
                             else "verified_mixed_media_review" if mix["target_met"] else "photo_heavy_or_low_video_share_review"),
             "graphic_uses":sum(c.get("media_type")=="illustration" for c in credits),
-            "media_mix":mix,"narrator_mode":"piper:"+provenance(language)["model"],
+            "media_mix":mix,"narrator_mode":provenance(language)["engine"]+":"+provenance(language)["model"],
             "photo_uses":sum(c.get("media_type")=="photo" for c in credits),
             "video_uses":sum(c.get("media_type")=="video" for c in credits),
             "error":"Mixed-media fallback; review before publication"}
