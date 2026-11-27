@@ -17,13 +17,16 @@ def tracking_filter(width,height,proposal,duration):
         raise ValueError("Invalid tracking length")
     ts=[float(p["time"]) for p in points]
     xs=[float(p["focus_x"]) for p in points]
-    if (not all(math.isfinite(t) and 0<=t<=duration for t in ts)
+    coverage = [float(proposal.get(k, default)) for k, default in (
+        ("min_tracked_coverage", 0), ("tracked_coverage", 0), ("fixed_coverage", 1))]
+    if (not all(math.isfinite(v) and 0 <= v <= 1 for v in coverage)
+        or not all(math.isfinite(t) and 0<=t<=duration for t in ts)
         or not all(math.isfinite(x) and 0<=x<=1 for x in xs)
         or any(b<=a for a,b in zip(ts,ts[1:]))
         or any(abs(b-a)>.31*(u-t)+.001 for a,b,t,u in zip(xs,xs[1:],ts,ts[1:]))
         or ts[0]>.5 or duration-ts[-1]>max(.5,duration*.2)
-        or float(proposal.get("min_tracked_coverage",0))<.8
-        or float(proposal.get("tracked_coverage",0))-float(proposal.get("fixed_coverage",1))<.099):
+        or coverage[0]<.8
+        or coverage[1]-coverage[2]<.099):
         raise ValueError("Track does not satisfy coverage and speed bounds")
     value=f"{xs[-1]:.6f}"
     for i in reversed(range(len(ts)-1)):
