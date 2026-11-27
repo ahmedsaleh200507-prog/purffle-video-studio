@@ -1,5 +1,5 @@
 name: Bilingual real Shorts canary
-# Revision 4: user-approved fixed George English voice, unchanged Thorsten B and independent actual-audio timing proof.
+# Revision 5: George PCM ASR bypasses incompatible PyAV; fixed source-reviewed recovery scene count.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
