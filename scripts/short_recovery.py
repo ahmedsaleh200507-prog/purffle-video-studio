@@ -33,7 +33,7 @@ def recover_approved_dossier(topic,language,target):
     evidence=discover_evidence(topic,language)
     if evidence.method!="curated_editor_reviewed":
         raise RuntimeError("No official fixed offline dossier")
-    count=2 if kind in {"mirror_condensation","iceberg_breakup","whale_breaching",
+    count=4 if kind=="volcano_eruption" else 2 if kind in {"mirror_condensation","iceberg_breakup","whale_breaching",
                           "lightning_thunder_delay","ocean_glow_bioluminescence",
                           "northern_lights_glow"} else 3
     draft=approved_dossier_draft(topic,language,evidence,scene_count=count)
