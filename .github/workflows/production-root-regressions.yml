@@ -13,6 +13,8 @@ on:
       - 'scripts/science_*.py'
       - 'scripts/retention_storyboard.py'
       - 'scripts/editorial_standard.py'
+      - 'scripts/editorial_pacing.py'
+      - 'scripts/studio_runtime.py'
       - '.github/workflows/long-batch.yml'
       - 'scripts/long_*.py'
       - 'scripts/batch.py'
