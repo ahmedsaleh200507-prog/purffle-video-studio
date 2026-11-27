@@ -95,7 +95,8 @@ def chapters(topic, language="en"):
     # Preserve the proven English volcano workflow. Mixed-language jobs and
     # other documentary subjects receive genuinely topic-specific outlines.
     from editorial_standard import enabled
-    if not enabled() and language == "en" and any(
+    from production_narration import enabled as creative_enabled
+    if not enabled() and not creative_enabled() and language == "en" and any(
             term in topic.casefold() for term in ("volcano", "volcan", "lava")):
         return build_documentary(topic)
     from long_generic import build_multilingual_documentary
@@ -709,7 +710,8 @@ def main():
             print("[LONG SOURCES FALLBACK]", str(exc), flush=True)
         stage="script"
         from editorial_standard import enabled,VERSION,audit_structure,review_long,final_timing
-        identity=[a.topic,a.language,VERSION if enabled() else "legacy"]
+        from production_narration import enabled as creative_enabled, VERSION as CREATIVE_VERSION
+        identity=[a.topic,a.language,(VERSION if enabled() else "legacy") + (":"+CREATIVE_VERSION if creative_enabled() else "")]
         text=checkpoint.get("complete-script",identity)
         if text is None:
             text=chapters(a.topic,a.language)
