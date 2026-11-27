@@ -20,10 +20,30 @@ def fish_fixture(path):
     name=source["source_page"].split("/wiki/File:",1)[1]
     h=hashlib.md5(name.encode()).hexdigest()
     url=f"https://upload.wikimedia.org/wikipedia/commons/{h[0]}/{h[:2]}/{requests.utils.quote(name,safe='')}"
+    # Respect Retry-After; only the fixture preparation job contacts Wikimedia.
+    for attempt in range(3):
+        response=requests.get(url,stream=True,timeout=(15,45),
+            headers={"User-Agent":"PurffleVideoStudio/2.0 (real visual audit; github.com/ahmedsaleh200507-prog/purffle-video-studio)"})
+        if response.status_code not in (429,503):
+            break
+        retry=response.headers.get("Retry-After","")
+        response.close()
+        if attempt==2:
+            raise RuntimeError("Fixture temporarily rate limited")
+        try:
+            delay=max(15.,float(retry))
+        except ValueError:
+            from email.utils import parsedate_to_datetime
+            try:
+                delay=max(15.,parsedate_to_datetime(retry).timestamp()-time.time())
+            except (TypeError,ValueError,OverflowError):
+                delay=20.*(attempt+1)
+        if not math.isfinite(delay) or delay>90:
+            raise RuntimeError("Fixture Retry-After exceeds audit time budget")
+        time.sleep(delay)
     digest=hashlib.sha256()
     size=0
-    with requests.get(url,stream=True,timeout=(15,45),
-            headers={"User-Agent":"PurffleVideoStudio/2.0 (real visual audit; github.com/ahmedsaleh200507-prog/purffle-video-studio)"}) as response:
+    with response:
         response.raise_for_status()
         with path.open("wb") as fp:
             for chunk in response.iter_content(65536):
@@ -93,12 +113,44 @@ def motion_audit(path):
     return {"pass":sum(r["localized_change_observed"] for r in moving)>=2 and not any(r["localized_change_observed"] for r in frozen),
             "moving":moving,"frozen":frozen,"scope":"actual adjacent frames versus frozen controls; not semantic motion"}
 
+def sha256(path):
+    digest=hashlib.sha256()
+    with path.open("rb") as fp:
+        for chunk in iter(lambda:fp.read(65536),b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+def prepare_fixtures(directory):
+    directory.mkdir(parents=True,exist_ok=True)
+    manifest={}
+    for name in CASES:
+        path=directory/(name+(".avi" if name=="people" else ".webm"))
+        try:
+            if name=="people":
+                fixture(path)
+                source=VIDEO_URL
+            else:
+                source=fish_fixture(path)
+            manifest[name]={"state":"ready","source":source,"sha256":sha256(path)}
+        except Exception as exc:
+            path.unlink(missing_ok=True)
+            manifest[name]={"state":"unavailable","error":str(exc)[:500]}
+        print("[FIXTURE]",name,manifest[name],flush=True)
+    (directory/"manifest.json").write_text(json.dumps(manifest,indent=2),encoding="utf8")
+
 def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--model",choices=["clip","siglip","dino","florence","qwen","motion"])
+    parser.add_argument("--prepare",action="store_true")
+    parser.add_argument("--fixtures",type=Path,required=True)
+    args=parser.parse_args()
+    if args.prepare:
+        prepare_fixtures(args.fixtures)
+        return
+    if not args.model:
+        parser.error("--model is required unless preparing fixtures")
     import torch
     torch.set_num_threads(2)
-    parser=argparse.ArgumentParser()
-    parser.add_argument("--model",choices=["clip","siglip","dino","florence","qwen","motion"],required=True)
-    args=parser.parse_args()
     out=Path("real-visual-suite")
     out.mkdir(exist_ok=True)
     report={"model":args.model,"cases":{},"pass":False,
@@ -108,16 +160,19 @@ def main():
         if args.model in ("florence","qwen"):
             from visual_language_audit import load_engine
             engine=load_engine(args.model)
+        manifest=json.loads((args.fixtures/"manifest.json").read_text())
         with tempfile.TemporaryDirectory() as directory:
             for name,case in CASES.items():
                 start=time.monotonic()
                 try:
                     path=Path(directory)/(name+(".avi" if name=="people" else ".webm"))
-                    if name=="people":
-                        fixture(path)
-                        source=VIDEO_URL
-                    else:
-                        source=fish_fixture(path)
+                    entry=manifest.get(name,{})
+                    if entry.get("state")!="ready":
+                        raise RuntimeError("fixture_unavailable: "+entry.get("error","missing manifest entry"))
+                    path=args.fixtures/path.name
+                    if not path.is_file() or sha256(path)!=entry.get("sha256"):
+                        raise ValueError("Shared fixture integrity mismatch")
+                    source=entry["source"]
                     if args.model=="motion":
                         row=motion_audit(path)
                     else:
@@ -125,7 +180,7 @@ def main():
                         row=evaluate(args.model,frames,case,engine)
                     row["source"]=source
                 except Exception as exc:
-                    row={"pass":False,"error_type":type(exc).__name__,"error":str(exc)[:500]}
+                    row={"pass":False,"state":"unavailable" if "fixture_" in str(exc) else "error","error_type":type(exc).__name__,"error":str(exc)[:500]}
                 row["seconds"]=round(time.monotonic()-start,2)
                 report["cases"][name]=row
                 print("[REAL VISUAL CASE]",args.model,name,json.dumps(row,ensure_ascii=False),flush=True)
