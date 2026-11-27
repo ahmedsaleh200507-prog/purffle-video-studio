@@ -25,6 +25,12 @@ def select_window(path, duration, need, contract, *, scorer, deadline, inspector
     offsets=list(dict.fromkeys(round(v,3) for v in
         (0.,min(3.,tail),min(9.,tail),tail/2,tail*.75,tail)))
     attempts=[]
+    from advanced_visuals import cut_observation
+    cuts=cut_observation(path,duration,need,deadline)
+    # Preserve start and existing fallbacks; use cut-aligned offsets first
+    # when enabled, while keeping the six-preview budget.
+    if cuts.get("state")=="observed":
+        offsets=list(dict.fromkeys([0.,*cuts["candidate_offsets"],*offsets]))[:6]
     from visual_director import _frame_at
     for offset in offsets:
         if time.monotonic()+12>=deadline:
@@ -38,11 +44,11 @@ def select_window(path, duration, need, contract, *, scorer, deadline, inspector
                              "margin":result.get("best_action_margin")})
             if result.get("verified"):
                 return {"state":"keep_start" if offset==0 else "later_interval_proposed",
-                        "offset":offset,"attempts":attempts}
+                        "offset":offset,"attempts":attempts,"scene_boundaries":cuts}
         except Exception as exc:
             attempts.append({"offset":offset,"error_type":type(exc).__name__})
             continue
-    return {"state":"no_verified_later_interval","offset":0.,"attempts":attempts}
+    return {"state":"no_verified_later_interval","offset":0.,"attempts":attempts,"scene_boundaries":cuts}
 
 def extract_window(path, offset, need, *, deadline):
     """Materialize the interval so downstream timestamps remain zero-based."""
