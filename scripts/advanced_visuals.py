@@ -57,7 +57,7 @@ def track_observations(rows,times):
     # identify an individual conclusively or restore missing visual evidence.
     tracker=sv.ByteTrack(track_activation_threshold=.35,lost_track_buffer=30,
                          frame_rate=max(1,min(30,round((len(times)-1)/(times[-1]-times[0])))),
-                         minimum_consecutive_frames=2)
+                         minimum_consecutive_frames=1)
     tracks={}
     for i,(row,t) in enumerate(zip(rows,times)):
         clean=[]
@@ -78,10 +78,122 @@ def track_observations(rows,times):
     return {"state":"observed","tracks":tracks,"sample_count":len(rows),
             "scope":"sampled ByteTrack associations, not identity proof or render instruction"}
 
-def track_review(rows,times):
+def flow_boxes(before,after,rows):
+    """Propagate boxes using actual intermediate pixels, never invented detections."""
+    import cv2
+    import numpy as np
+    a,b=(np.asarray(f.convert("L")) for f in (before,after))
+    if a.shape!=b.shape:
+        return []
+    h,w=a.shape
+    result=[]
+    for d in rows:
+        x0,y0,x1,y1=d["box"]
+        left,top,right,bottom=int(x0*w),int(y0*h),int(x1*w),int(y1*h)
+        if right-left<8 or bottom-top<8:
+            continue
+        mask=np.zeros(a.shape,np.uint8)
+        mask[top:bottom,left:right]=255
+        pts=cv2.goodFeaturesToTrack(a,maxCorners=40,qualityLevel=.015,minDistance=3,mask=mask)
+        if pts is None or len(pts)<4:
+            continue
+        moved,ok,_=cv2.calcOpticalFlowPyrLK(a,b,pts,None,winSize=(15,15),maxLevel=2)
+        if moved is None or ok is None:
+            continue
+        back,good,_=cv2.calcOpticalFlowPyrLK(b,a,moved,None,winSize=(15,15),maxLevel=2)
+        if back is None or good is None:
+            continue
+        start=pts.reshape(-1,2)
+        end=moved.reshape(-1,2)
+        keep=(ok.ravel()==1)&(good.ravel()==1)&(np.linalg.norm(back.reshape(-1,2)-start,axis=1)<1.5)
+        keep &= np.isfinite(end).all(axis=1)
+        flow=(end-start)[keep]
+        if len(flow)<4 or len(flow)<.55*len(pts):
+            continue
+        shift=np.median(flow,axis=0)
+        residual=np.linalg.norm(flow-shift,axis=1)
+        if np.mean(residual<=2.5)<.65:
+            continue
+        dx,dy=float(shift[0]/w),float(shift[1]/h)
+        if abs(dx)>min(.08,(x1-x0)*.65) or abs(dy)>min(.08,(y1-y0)*.65):
+            continue
+        box=[x0+dx,y0+dy,x1+dx,y1+dy]
+        if not all(0<=v<=1 for v in box):
+            continue
+        score=float(d["score"])*.97
+        if score>=.35:
+            result.append({"box":box,"score":score,"origin":"optical_flow"})
+    return result
+
+def bridge_observations(rows,times,reader,deadline):
+    """Use short actual-frame steps between verified DINO/CLIP anchors.
+
+    Flow boxes only help association; final reports count observed anchors
+    exclusively. Incomplete bridging returns the original observations.
+    """
+    if len(rows)!=len(times) or len(times)<3:
+        return None
+    gaps=[b-a for a,b in zip(times,times[1:])]
+    if any(not math.isfinite(x) or x<=0 for x in gaps):
+        return None
+    step=max(.12,(times[-1]-times[0])/19)
+    if step>.25:
+        return None
+    divisions=[max(1,math.ceil(g/step-1e-8)) for g in gaps]
+    if sum(divisions)+1>24:
+        return None
+    dense_rows=[rows[0]]
+    dense_times=[times[0]]
+    anchors={0:0}
+    for i,n in enumerate(divisions):
+        if deadline-time.monotonic()<20:
+            return None
+        prev=reader(times[i])
+        propagated=rows[i]
+        for k in range(1,n):
+            if deadline-time.monotonic()<20:
+                return None
+            t=times[i]+gaps[i]*k/n
+            frame=reader(t)
+            propagated=flow_boxes(prev,frame,propagated)
+            dense_rows.append(propagated)
+            dense_times.append(t)
+            prev=frame
+        anchors[len(dense_rows)]=i+1
+        dense_rows.append(rows[i+1])
+        dense_times.append(times[i+1])
+    return dense_rows,dense_times,anchors
+
+def anchor_tracks(report,anchors,times):
+    """Remove every flow-only entry and preserve original anchor numbering."""
+    tracks={}
+    for key,entries in report.get("tracks",{}).items():
+        selected=[]
+        for entry in entries:
+            if entry["sample"] not in anchors:
+                continue
+            i=anchors[entry["sample"]]
+            selected.append({**entry,"sample":i,"time":float(times[i])})
+        if len(selected)>=2:
+            tracks[key]=selected
+    return {**report,"tracks":tracks,"sample_count":len(times),
+            "dense_sample_count":report["sample_count"],
+            "scope":"ByteTrack with pixel-flow bridge; only DINO/CLIP anchor boxes reported"}
+
+def track_review(rows,times,*,reader=None,deadline=None):
     if not reserve("tracks"):
         return {"state":"disabled_or_budget"}
     try:
+        if reader is not None and deadline is not None and deadline-time.monotonic()>35:
+            try:
+                bridge=bridge_observations(rows,times,reader,deadline)
+                if bridge is not None:
+                    dense,ts,anchors=bridge
+                    report=anchor_tracks(track_observations(dense,ts),anchors,times)
+                    if report["tracks"]:
+                        return report
+            except Exception as exc:
+                print("[TRACK BRIDGE UNAVAILABLE]",type(exc).__name__,flush=True)
         return track_observations(rows,times)
     except Exception as exc:
         return {"state":"unavailable","error_type":type(exc).__name__}
