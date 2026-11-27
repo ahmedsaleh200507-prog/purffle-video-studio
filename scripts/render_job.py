@@ -493,6 +493,9 @@ def main():
             expected_size=(s.width, s.height),
             expected_duration=float(voice_data['duration']) + END_PAD,
             expected_text=expected_text)
+        from retention_storyboard import validate_short_duration
+        validate_short_duration(full_qa['duration'],
+            storyboard_audit.get('planned_duration_seconds') if os.environ.get('PURFFLE_MEDIA_FIRST','1')=='1' else None)
         write_json(target.with_name('output-qa.json'), full_qa)
         result.update(status='ok', stage='complete', mp4=str(video), output_probe=info,
                       footage_report=os.environ['FOOTAGE_REPORT'],
