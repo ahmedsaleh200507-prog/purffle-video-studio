@@ -189,7 +189,9 @@ def main():
                     "whale_breaching", "lightning_thunder_delay",
                     "ocean_glow_bioluminescence",
                 }
-                target_count = (2 if verified_kind == "northern_lights_glow"
+                from editorial_pacing import enabled as pacing_enabled
+                target_count = (4 if pacing_enabled() and verified_kind == "volcano_eruption"
+                                else 2 if verified_kind == "northern_lights_glow"
                                 else 2 if verified_kind in concise_kinds
                                 else 3 if (verified_kind or
                                            _lightning_repeated_topic(topic))
@@ -397,42 +399,55 @@ def main():
                     # with untrusted model claims merely to obtain footage.
                     # Subject/license/CLIP gates still fail closed.
                     if evidence.method == 'curated_editor_reviewed':
-                        raise
-                    print('[FOOTAGE RECOVERY] One source-grounded storyboard '
-                          'revision after failed visual preflight', flush=True)
-                    stage = 'grounded_visual_replan'
-                    with (use_story_scene_target(script_scene_count),
-                          use_evidence(evidence), use_footage_feedback(feedback)):
-                        alternative, alt_pick, alt_writer = studio.draft(
-                            os.environ['VIDEO_TOPIC'], style='facts')
-                    if len(alternative.scenes) != script_scene_count:
-                        raise RuntimeError(
-                            'visual_replan_scene_count_mismatch')
-                    if all(
-                        str(a.visual_search_query).casefold() ==
-                        str(b.visual_search_query).casefold()
-                        for a, b in zip(alternative.scenes, screenplay.scenes)
-                    ):
-                        raise RuntimeError(
-                            'visual_replan_repeated_unavailable_queries')
-                    # A new factual script still needs independent source
-                    # screening. Visual-only repair above never changes speech.
-                    validate_unsourced_quantities(
-                        alternative, os.environ['VIDEO_TOPIC'])
-                    storyboard_audit = audit_storyboard(
-                        os.environ['VIDEO_TOPIC'], alternative, s.language)
-                    stage = 'science_review'
-                    screen_narration(
-                        alternative, evidence, studio.llm,
-                        path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
-                    save_reviewed_script(alternative, s.language, os.environ['VIDEO_TOPIC'])
-                    stage = 'visual_director_preflight'
-                    palette = prepare_verified_palette(
-                        os.environ['VIDEO_TOPIC'], s, storyboard=alternative,
-                        min_scenes=script_scene_count,
-                        max_scenes=script_scene_count,
-                        clip_seconds=10.0)
-                    screenplay, pick, writer = alternative, alt_pick, alt_writer
+                        if not (pacing_enabled() and verified_kind=="volcano_eruption" and script_scene_count==4):
+                            raise
+                        # Fall back to the already proven three-scene exact
+                        # dossier rather than weakening any footage gate.
+                        print("[EDITORIAL PACING] Four-shot plan unavailable; try complete three-shot dossier",flush=True)
+                        from official_draft import approved_dossier_draft
+                        screenplay,pick,writer=approved_dossier_draft(topic,s.language,evidence,scene_count=3)
+                        script_scene_count=3
+                        validate_unsourced_quantities(screenplay,topic)
+                        storyboard_audit=audit_storyboard(topic,screenplay,s.language)
+                        screen_narration(screenplay,evidence,studio.llm,path=os.environ.get('SCIENCE_REPORT','science-report.json'))
+                        save_reviewed_script(screenplay,s.language,topic)
+                        palette=prepare_verified_palette(topic,s,storyboard=screenplay,min_scenes=3,max_scenes=3,clip_seconds=10.0)
+                    else:
+                        print('[FOOTAGE RECOVERY] One source-grounded storyboard '
+                              'revision after failed visual preflight', flush=True)
+                        stage = 'grounded_visual_replan'
+                        with (use_story_scene_target(script_scene_count),
+                              use_evidence(evidence), use_footage_feedback(feedback)):
+                            alternative, alt_pick, alt_writer = studio.draft(
+                                os.environ['VIDEO_TOPIC'], style='facts')
+                        if len(alternative.scenes) != script_scene_count:
+                            raise RuntimeError(
+                                'visual_replan_scene_count_mismatch')
+                        if all(
+                            str(a.visual_search_query).casefold() ==
+                            str(b.visual_search_query).casefold()
+                            for a, b in zip(alternative.scenes, screenplay.scenes)
+                        ):
+                            raise RuntimeError(
+                                'visual_replan_repeated_unavailable_queries')
+                        # A new factual script still needs independent source
+                        # screening. Visual-only repair above never changes speech.
+                        validate_unsourced_quantities(
+                            alternative, os.environ['VIDEO_TOPIC'])
+                        storyboard_audit = audit_storyboard(
+                            os.environ['VIDEO_TOPIC'], alternative, s.language)
+                        stage = 'science_review'
+                        screen_narration(
+                            alternative, evidence, studio.llm,
+                            path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
+                        save_reviewed_script(alternative, s.language, os.environ['VIDEO_TOPIC'])
+                        stage = 'visual_director_preflight'
+                        palette = prepare_verified_palette(
+                            os.environ['VIDEO_TOPIC'], s, storyboard=alternative,
+                            min_scenes=script_scene_count,
+                            max_scenes=script_scene_count,
+                            clip_seconds=10.0)
+                        screenplay, pick, writer = alternative, alt_pick, alt_writer
             validate_narration_timing(palette, screenplay, s.language)
             from retention_storyboard import choose_duration_seconds, save_storyboard_report
             fact_count = len(getattr(evidence, 'sources', []) or [])
