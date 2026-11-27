@@ -27,29 +27,28 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
             raise RuntimeError('MP4 has no narration audio stream')
     voice = str(metadata.get('voice', ''))
     language = str(metadata.get('language') or os.environ.get('LANGUAGE', 'en'))
-    expected_voice = {'en': 'en_US-joe-medium', 'de': 'de_DE-thorsten-medium'}.get(language)
-    if expected_voice is None or voice != 'piper:' + expected_voice:
-        raise RuntimeError('Narrator identity mismatch: fixed Piper Joe/Thorsten required')
-    if metadata.get('timing') != 'aligned':
-        raise RuntimeError('Narration lacks native sample alignment')
-    if voice.startswith('piper:'):
-        if voice_report is None or not voice_report.is_file():
-            raise RuntimeError('Local voice alignment/license report missing')
-        proof = json.loads(voice_report.read_text(encoding='utf-8'))
-        provenance = proof.get('provenance', {})
-        approved = {'en_US-joe-medium': 'CC0', 'de_DE-thorsten-medium': 'CC0-1.0'}
-        model = voice.partition(':')[2]
-        from local_voice import provenance as expected_provenance
-        lang = language
-        expected = expected_provenance(lang)
-        if (model not in approved or proof.get('state') != 'ready' or proof.get('engine') != 'piper'
-                or proof.get('voice') != model or proof.get('timing') != 'aligned'
-                or provenance.get('alignment') != 'native_phoneme_samples'
-                or provenance.get('model') != model
-                or provenance.get('license', {}).get('id') != approved[model]
-                or any(provenance.get(k) != expected[k] for k in ('model_sha256', 'model_revision', 'model_url'))
-                or provenance.get('license', {}).get('url') != expected['license']['url']):
-            raise RuntimeError('Local voice alignment/license provenance invalid')
+    from local_voice import provenance as expected_provenance
+    expected=expected_provenance(language)
+    model=expected["model"]
+    engine=expected["engine"]
+    if voice!=engine+":"+model or metadata.get("timing")!="aligned":
+        raise RuntimeError("Narrator identity or timing mismatch: locked narrator required")
+    if voice_report is None or not voice_report.is_file():
+        raise RuntimeError("Local voice alignment/license report missing")
+    proof=json.loads(voice_report.read_text(encoding="utf-8"))
+    provenance=proof.get("provenance",{})
+    if (proof.get("state")!="ready" or proof.get("engine")!=engine
+            or proof.get("voice")!=model or proof.get("timing")!="aligned"):
+        raise RuntimeError("Local narrator report invalid")
+    if engine=="kokoro":
+        from george_voice import verify_provenance
+        verify_provenance(provenance)
+    elif (provenance.get("alignment")!="native_phoneme_samples"
+          or provenance.get("model")!=model
+          or provenance.get("license",{}).get("id")!=expected["license"]["id"]
+          or provenance.get("license",{}).get("url")!=expected["license"]["url"]
+          or any(provenance.get(k)!=expected[k] for k in ("model_sha256","model_revision","model_url"))):
+        raise RuntimeError("Local voice alignment/license provenance invalid")
     if not captions.is_file() or '-->' not in captions.read_text(encoding='utf-8'):
         raise RuntimeError('Synchronized captions missing')
     report = json.loads(footage_report.read_text(encoding='utf-8'))
