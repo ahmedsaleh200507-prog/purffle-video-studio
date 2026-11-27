@@ -187,3 +187,17 @@ def save_storyboard_report(filename, audit: dict, *, duration_seconds=None):
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return p
+
+
+def validate_short_duration(actual_seconds, planned_seconds=None):
+    """Do not classify an undersized or padded export as a completed Short."""
+    actual=float(actual_seconds)
+    if not math.isfinite(actual) or not 16.0<=actual<=60.0:
+        raise RuntimeError("short_duration_invalid: expected 16–60 seconds of genuine narration and footage")
+    if planned_seconds is not None:
+        planned=float(planned_seconds)
+        if not math.isfinite(planned) or planned<=0:
+            raise ValueError("Invalid editorial duration target")
+        if actual < planned*.75:
+            raise RuntimeError("short_duration_invalid: export below 75 percent of planned duration")
+    return actual
