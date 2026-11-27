@@ -55,7 +55,13 @@ def _voice_key(language):
     return language
 
 
+def george_enabled(language):
+    return language=="en" and os.getenv("PURFFLE_ENGLISH_NARRATOR")=="george"
+
 def provenance(language):
+    if george_enabled(language):
+        from george_voice import provenance as george_provenance
+        return george_provenance()
     key = _voice_key(language)
     if key not in VOICES:
         raise RuntimeError('Local narration supports only de/en')
@@ -431,6 +437,9 @@ def _gap_summary(words,duration):
 
 def synthesize(text, out, settings):
     """Produce an upstream Speech; failures never return silent/estimated audio."""
+    if george_enabled(settings.language):
+        from george_voice import synthesize as george_synthesize
+        return george_synthesize(text,out,settings)
     import numpy as np
     from purffle_shorts.timing import Word, tokenize
     from purffle_shorts.tts import Speech
