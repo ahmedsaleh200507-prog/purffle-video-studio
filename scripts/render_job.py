@@ -235,6 +235,12 @@ def main():
                     storyboard_audit = audit_storyboard(
                         os.environ['VIDEO_TOPIC'], screenplay, s.language)
                     stage = 'science_review'
+                    if os.environ.get('PURFFLE_NARRATION_ONLY') == '1':
+                        write_json(target.with_name('narration.json'), {
+                            'topic': topic, 'language': s.language,
+                            'narration': [str(scene.narration) for scene in screenplay.scenes],
+                            'evidence_method': evidence.method,
+                            'scope': 'candidate; consult quality report for acceptance'})
                     screen_narration(
                         screenplay, evidence, studio.llm,
                         path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
@@ -335,8 +341,11 @@ def main():
                 structure = audit_structure(texts, s.language, mode='short')
                 # Curated factual dossiers skip ordinary model editorial review.
                 # Judge their actual spoken words independently in this audit.
-                from science_sources import review_topic_answer
-                editorial = review_topic_answer(screenplay, evidence, studio.llm)
+                report = json.loads(Path(os.environ.get('SCIENCE_REPORT', 'science-report.json')).read_text())
+                editorial = report.get('topic_review') or {}
+                if editorial.get('state') != 'model_screened_topic_answer':
+                    from science_sources import review_topic_answer
+                    editorial = review_topic_answer(screenplay, evidence, studio.llm)
                 write_json(target.with_name('narration-quality.json'), {
                     'structure': structure, 'editorial': editorial,
                     'scope': 'script only; no audio, footage or audience metrics'})
