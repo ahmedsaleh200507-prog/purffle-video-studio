@@ -1,4 +1,5 @@
 name: Writers room text quality pilot
+# V2: reject the actual v1 textbook-style output and require two independent editor verdicts.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
@@ -11,7 +12,7 @@ jobs:
   text:
     if: github.ref == 'refs/heads/chatgpt/yellow-system-fixes'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -70,6 +71,8 @@ jobs:
           (root/"narration.txt").write_text(result["narration"],encoding="utf-8")
           print("TEXT QUALITY PASS:",result["editorial_pass"])
           print("MODEL TRACE:",json.dumps(result["trace"]))
+          print("FINAL EDITOR VERDICTS:",json.dumps(result["attempts"][-1]["verdicts"],ensure_ascii=False))
+          print("GENERATED NARRATION:",result["narration"])
           if not result["editorial_pass"]:
               raise SystemExit("Editorial rewrite budget exhausted")
           PY
