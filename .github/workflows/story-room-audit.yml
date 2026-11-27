@@ -1,5 +1,5 @@
 name: Writers room text quality pilot
-# V2: reject the actual v1 textbook-style output and require two independent editor verdicts.
+# V3: story planning before writing, competing original drafts and cross-model rewrites.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
@@ -24,6 +24,12 @@ jobs:
           - language: de
             mode: short
             topic: Warum leuchten Polarlichter?
+          - language: en
+            mode: short
+            topic: Why Do Octopuses Have Three Hearts?
+          - language: de
+            mode: short
+            topic: Warum sehen wir Blitze vor dem Donner?
           - language: en
             mode: long
             topic: Why do volcanoes erupt?
@@ -60,7 +66,9 @@ jobs:
           topic,lang,mode=os.environ["TOPIC"],os.environ["LANGUAGE"],os.environ["MODE"]
           # Exact existing source-reviewed text is reference material only.
           # No arbitrary new narration is treated as an approved dossier.
-          base=ground_verified_documentary({},topic,lang,scene_count=4 if lang=="en" else 2)
+          base=ground_verified_documentary({},topic,lang)
+          if not base.get("scenes"):
+              raise RuntimeError("No source-reviewed reference for test topic")
           reference=" ".join(s["narration"] for s in base["scenes"])
           context=("Opening chapter of a longer documentary. Introduce the central question, offer early value, and transition naturally toward the deeper explanation. Do not conclude the entire film." if mode=="long" else "Complete standalone short story.")
           result=StoryRoom().generate(topic,lang,reference,mode=mode,context=context,word_range=(80,130) if mode=="long" else None)
@@ -79,6 +87,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: writers-room-${{ matrix.language }}-${{ matrix.mode }}
+          name: writers-room-${{ matrix.language }}-${{ matrix.mode }}-${{ strategy.job-index }}
           path: story-room-proof/
           retention-days: 7
