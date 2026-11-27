@@ -8,19 +8,13 @@ import re
 from editorial_standard import AUDIENCE_BRIEF, audit_structure, word_tokens
 from cloud_model_router import Router, MODELS, ModelError
 
-VERSION = "story-room-v4-topic-adaptive"
+VERSION = "story-room-v5-simple"
 WRITERS = ("openai/gpt-oss-120b", "gemini-3.6-flash", "gemini-3.1-flash-lite")
 EDITORS = ("gemini-3.6-flash", "openai/gpt-oss-120b", "gemini-3.1-flash-lite")
 CRITERIA = ("hook", "curiosity", "progression", "native_language", "payoff")
 DRAFT_SCHEMA = {"type":"object","properties":{
     "angle":{"type":"string"},"beats":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":6},
     "narration":{"type":"string"}},"required":["angle","beats","narration"],"additionalProperties":False}
-REVIEW_SCHEMA = {"type":"object","properties":{
-    "winner":{"type":"integer","minimum":0,"maximum":1},
-    "scores":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"object",
-        "properties":{k:{"type":"integer","minimum":1,"maximum":10} for k in CRITERIA},
-        "required":list(CRITERIA),"additionalProperties":False}},
-    "feedback":{"type":"string"}},"required":["winner","scores","feedback"],"additionalProperties":False}
 FINAL_SCHEMA = {"type":"object","properties":{
     "scores":{"type":"object","properties":{k:{"type":"integer","minimum":1,"maximum":10} for k in CRITERIA},
         "required":list(CRITERIA),"additionalProperties":False},
@@ -34,7 +28,7 @@ REJECTED_AURORA = (
     "farbiger Tanz, den wir als Polarlichter am Nachthimmel sehen."
 )
 RED_FLAGS = ("textbook_opening", "no_reason_to_continue", "jargon_before_context",
-             "flat_fact_list", "generic_or_unearned_payoff")
+             "flat_fact_list", "generic_or_unearned_payoff", "unsupported_claims")
 RUBRIC = (
     "Judge as an impatient ordinary viewer deciding whether to scroll away, not a science teacher. "
     "Read only the first sentence initially: does it create a concrete reason to hear the second? "
@@ -73,20 +67,6 @@ def check_verdict(verdict, text):
             and quote in opening and weak in text
             and all(v>=8 for v in verdict["scores"].values())
             and not any(verdict["red_flags"].values()))
-
-# The story architect works before any prose is drafted. A real audience
-# question and its supported answer are required, not a list of science facts.
-PLAN_SCHEMA = {"type":"object","properties":{
-    "angles":{"type":"array","minItems":3,"maxItems":3,"items":{"type":"object",
-        "properties":{k:{"type":"string"} for k in
-            ("hook","viewer_question","supported_answer","fact_chain","final_insight","why_interesting")},
-        "required":["hook","viewer_question","supported_answer","fact_chain","final_insight","why_interesting"],
-        "additionalProperties":False}}},
-    "required":["angles"],"additionalProperties":False}
-PLAN_PICK_SCHEMA = {"type":"object","properties":{
-    "winner":{"type":"integer","minimum":0,"maximum":2},
-    "feedback":{"type":"string"}},
-    "required":["winner","feedback"],"additionalProperties":False}
 
 CRAFT_BRIEF = (
     "Write like a skilled documentary storyteller speaking to a curious friend, not like a teacher. "
@@ -157,97 +137,55 @@ class StoryRoom:
             "For a long chapter, follow the whole-story context and do not restart or prematurely conclude the film. "
             f"\nStory context: {context}\nReference material:\n{evidence}")
         common += "\n"+CRAFT_BRIEF
-        plan,architect=self.ask("story_architect",common+
-            "\nDo NOT write the full narration yet. Invent three genuinely different story angles based ONLY on the reference facts. "
-            "For each choose a different narrative form appropriate to the subject, not three variations of a science explainer. Give a specific opening sentence in the requested language, the real question or interest it provokes, "
-            "the supported answer or significance, a connected sequence of evidence, events or discoveries (fact_chain), the final insight, and why an ordinary viewer would care. "
-            "Do not use three paraphrases of the same hook. Do not add a new fact to create tension.",
-            PLAN_SCHEMA,WRITERS,temperature=.65)
-        selection,planner_editor=self.ask("choose_story",common+
-            "\nChoose the strongest source-supported story concept before writing any prose. "
-            "Reject decorative descriptions and technical mechanisms masquerading as a hook. "
-            "Choose for real viewer curiosity and a clear payoff, not for poetic vocabulary. "
-            "Explain specifically how to turn the chosen angle into an irresistible but honest story.\n"+
-            json.dumps(plan["angles"],ensure_ascii=False),PLAN_PICK_SCHEMA,EDITORS,avoid=architect,temperature=.15)
-        chosen=plan["angles"][selection["winner"]]
-        alternative=plan["angles"][(selection["winner"]+1)%3]
-        candidates=[]
-        models=[]
-        for index, story in enumerate((chosen,alternative)):
-            data,model=self.ask("writer_"+str(index+1),common+
-                "\nWrite a complete, original script from this story concept, not a list of its beats. "
-                "You may improve the opening, but keep the genuine puzzle and answer. "
-                "Before returning the script, remove textbook explanations and any sentence that does not move the story forward. "
-                "\nStory concept: "+json.dumps(story,ensure_ascii=False)+
-                "\nStory editor guidance: "+selection["feedback"],
-                DRAFT_SCHEMA,WRITERS,avoid=models[0] if models else None,temperature=.65)
-            candidates.append(data);models.append(model)
-        # Blind comparison decides which completed script deserves review first.
-        # Do not force a rewrite of a good original and never discard an approved text.
-        review,editor=self.ask("compare",common+"\nCompare only the actual narration of these two anonymous scripts. "+
-            RUBRIC+"\nChoose the stronger story; identify exact weak sentences and a concrete way to improve them.\n"+
-            json.dumps([x["narration"] for x in candidates],ensure_ascii=False),
-            REVIEW_SCHEMA,EDITORS,avoid=models[0],temperature=.1)
-        order=[review["winner"],1-review["winner"]]
+        self.trace=[]
+        draft,writer=self.ask("writer",common+
+            "\nChoose the best true detail and story form internally, then write the finished narration. "
+            "Do not output a lesson, a list of facts, or a generic hook. Read it once as an ordinary viewer and improve any dull line before returning.",
+            DRAFT_SCHEMA,WRITERS,temperature=.55)
         attempts=[]
-        feedback=review["feedback"]
-        revised=candidates[order[0]]
-        writer=models[order[0]]
-        # Review the two independent originals, then at most two cross-model rewrites.
-        for attempt in range(4):
-            if attempt<2:
-                revised=candidates[order[attempt]]
-                writer=models[order[attempt]]
-            else:
-                # Select the best prior draft by its weakest score rather than the
-                # latest draft. Change the actual author to escape repeated wording.
-                def merit(a):
-                    vs=a["verdicts"]
-                    scores=[v for d in vs for v in d["scores"].values()]
-                    return (not a["structural_error"],not any(f for d in vs for f in d["red_flags"].values()),
-                            min(scores,default=0),sum(scores)/len(scores) if scores else 0)
-                best=max(attempts,key=merit)
-                revised,writer=self.ask("rewrite_"+str(attempt-1),common+
-                    "\nWrite a NEW version of the strongest draft. Do not simply replace adjectives. "
-                    "Rebuild the story around the subject-specific reason to care and keep only supported claims. "
-                    "For every sentence ask: why would the viewer want to hear the next sentence? "
-                    "Move technical terms behind the intuitive idea; make the final discovery concrete. "
-                    "Do not add a poetic or generic final line.\nOriginal story concept: "+
-                    json.dumps(chosen,ensure_ascii=False)+"\nBest draft: "+best["draft"]["narration"]+
-                    "\nActual critics' feedback on this draft: "+" | ".join(v["feedback"] for v in best["verdicts"])+" "+best["structural_error"],
-                    DRAFT_SCHEMA,WRITERS,avoid=best["writer"],temperature=.55)
-            text=revised["narration"]
+        def structure(text):
             count=len(word_tokens(text))
-            structural_error=opening_problem(text)
+            error=opening_problem(text)
+            if not low<=count<=high:
+                error=error or f"word_count_{count}_outside_{low}_{high}"
             try:
                 audit_structure([text],language,mode=mode)
             except RuntimeError as exc:
-                structural_error=structural_error or str(exc)
+                error=error or str(exc)
+            return count,error
+        for attempt in range(2):
+            text=draft["narration"]
+            count,error=structure(text)
             verdicts=[]
             judges=[]
-            judge_prompt=(f"Topic: {topic}\nLanguage: {language}\nFormat: {mode}\nContext: {context}\n"+
-                RUBRIC+"\nEvaluate only this script. For a long introduction the payoff is a useful partial discovery plus a natural next question. "
-                "Return literal opening_quote and weakest_quote, scores, red flags, "
-                "a specific reason to continue (or say none), and concrete corrective feedback. "
-                "Do not assume good footage or voice.\nSCRIPT:\n"+text)
             try:
-                for i in range(2):
-                    verdict,judge=self.ask("final_editor_"+str(attempt+1)+"_"+str(i+1),
-                        judge_prompt,STRICT_REVIEW_SCHEMA,EDITORS,avoid=[writer,*judges],temperature=.1)
-                    verdicts.append(verdict)
-                    judges.append(judge)
+                verdict,judge=self.ask("editor_"+str(attempt+1),common+
+                    "\nReview the submitted script as an independent demanding native-language editor. "+
+                    RUBRIC+"\nCheck every material claim against the supplied reference; reject unsupported additions, "
+                    "overstatements or misleading wording even if entertaining. This is a reference-consistency screen, not independent factual verification. "
+                    "Give concrete feedback on exactly what to change. Quote the actual opening and weakest phrase. "
+                    "Do not award a pass for adequate textbook prose.\nSCRIPT:\n"+text,
+                    STRICT_REVIEW_SCHEMA,EDITORS,avoid=writer,temperature=.1)
+                verdicts.append(verdict)
+                judges.append(judge)
             except RuntimeError as exc:
-                structural_error=structural_error or str(exc)
-            independent=(len(set(judges))==2 and writer not in judges)
-            accepted=(independent and low<=count<=high and not structural_error
-                      and all(check_verdict(v,text) for v in verdicts))
-            attempts.append({"draft":revised,"verdicts":verdicts,"words":count,
-                "structural_error":structural_error,"writer":writer,"judges":judges,
-                "different_models":independent,"accepted":accepted})
-            if accepted:
+                error=error or str(exc)
+            accepted=bool(verdicts and judges[0]!=writer and not error and check_verdict(verdicts[0],text))
+            attempts.append({"draft":draft,"writer":writer,"judges":judges,"verdicts":verdicts,
+                "words":count,"structural_error":error,"accepted":accepted,
+                "different_models":bool(judges and judges[0]!=writer)})
+            if accepted or attempt==1 or not verdicts:
                 break
-            feedback=" | ".join(v["feedback"] for v in verdicts)+f" Word count {count}, required {low}–{high}. "+structural_error
+            try:
+                draft,writer=self.ask("rewrite",common+
+                    "\nRewrite the actual narration using the editor's concrete feedback. Preserve supported facts; "
+                    "remove dull lines and improve curiosity, progression and payoff.\nDraft:\n"+text+
+                    "\nFeedback:\n"+verdicts[0]["feedback"]+" "+error,
+                    DRAFT_SCHEMA,WRITERS,temperature=.45)
+            except RuntimeError as exc:
+                attempts[-1]["rewrite_error"]=str(exc)
+                break
         return {"version":VERSION,"topic":topic,"language":language,"mode":mode,
-            "story_plan":plan,"plan_selection":selection,"candidates":candidates,"candidate_models":models,"comparison":review,"attempts":attempts,
-            "narration":revised["narration"],"editorial_pass":attempts[-1]["accepted"],
-            "trace":list(self.trace),"scope":"Experimental text only. Model opinion is not factual approval, actual viewer retention or human approval."}
+            "attempts":attempts,"narration":attempts[-1]["draft"]["narration"],
+            "editorial_pass":attempts[-1]["accepted"],"trace":list(self.trace),
+            "scope":"Experimental text only. One independent editorial/reference-consistency screen, not factual approval or measured audience retention."}
