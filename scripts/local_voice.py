@@ -237,7 +237,7 @@ def _token_ids(voice, tokens):
     return ids, spans
 
 
-VOICE_FLOW_VERSION="sentence_context_v1"
+VOICE_FLOW_VERSION="sentence_context_v2"
 
 def flow_enabled():
     return os.getenv("PURFFLE_NATURAL_VOICE")=="1"
@@ -258,43 +258,77 @@ def _sentence_groups(tokens,limit=60):
     if pending:
         yield pending
 
-def _phoneme_words(phonemes):
-    groups=[]
-    for p in phonemes:
-        if p==" ":
-            if groups and groups[-1]:
-                groups.append([])
-        else:
-            if not groups:
-                groups.append([])
-            groups[-1].append(p)
-    return [g for g in groups if g]
+def _context_phonemes(voice,text):
+    """eSpeak may return multiple comma/semicolon clauses for one sentence."""
+    result=[]
+    for clause in voice.phonemize(text):
+        clause=list(clause)
+        if not clause:
+            continue
+        if result and result[-1]!=" " and clause[0]!=" ":
+            result.append(" ")
+        result.extend(clause)
+    return result
 
-def _context_ids(voice,tokens):
-    """Use eSpeak's actual sentence pronunciation, not concatenated word pronunciations.
+# Punctuation and stress remain in the actual synthesized sequence. They
+# are ignored only when comparing the spelling of a contextual word.
+_COMPARE_IGNORED=set("ˈˌ.,!?;:…—–\"'“”‘’()[]")
+_WEAK_EN={
+    "a":{"eɪ","ə","ɐ","a"},
+    "an":{"æn","ən","ɐn"},
+    "the":{"ðə","ði","ðiː","ðɪ","ðɐ"},
+    "to":{"tu","tuː","tə","tʊ","tɐ"},
+    "of":{"ʌv","əv","ɒv","ɑv","ɐv","ə"},
+    "and":{"ænd","ənd","ɐnd","ən","n"},
+    "can":{"kæn","kən","kɐn"},
+    "than":{"ðæn","ðən","ðɐn"},
+    "for":{"fɔɹ","fɔːɹ","fɚ","fəɹ","fɔr","fər","fɔː"},
+    "you":{"ju","juː","jə","jʊ"},
+    "your":{"jɔɹ","jɔːɹ","jɚ","jʊɹ","jəɹ"},
+    "are":{"ɑɹ","ɑːɹ","ɚ","əɹ"},
+    "was":{"wʌz","wɒz","wəz","wɐz"},
+    "at":{"æt","ət","ɐt"},
+    "as":{"æz","əz","ɐz"},
+    "that":{"ðæt","ðət","ðɐt"},
+    "from":{"fɹʌm","fɹəm","fɹɒm","fɹɐm"},
+    "it":{"ɪt","ɪɾ","ɪʔ"},
+}
 
-    Map contextual word groups only when the count and per-token local
-    pronunciation are consistent. Never guess timing for ambiguous expansions.
-    """
-    from difflib import SequenceMatcher
-    sentences=voice.phonemize(" ".join(tokens))
-    if len(sentences)!=1:
-        raise ValueError("ambiguous contextual sentence segmentation")
-    phonemes=list(sentences[0])
-    groups=_phoneme_words(phonemes)
-    expected=[_phoneme_words([p for s in voice.phonemize(t) for p in s]) for t in tokens]
-    if any(not g for g in expected) or sum(map(len,expected))!=len(groups):
-        raise ValueError("ambiguous contextual word grouping")
-    # Preserve original phoneme sequence including spaces and punctuation.
-    # Group indices refer to real phoneme positions, not estimated time.
-    positions=[]
+def _comparison(groups):
+    return "".join(p for g in groups for p in g if p not in _COMPARE_IGNORED)
+
+def _group_positions(phonemes):
+    """Only audible lexical groups count; standalone punctuation belongs
+    to the previous group. Preserve actual positions in the unmodified stream."""
+    ranges=[]
     start=None
-    for i,p in enumerate(phonemes+[" "]):
+    for i,p in enumerate([*phonemes," "]):
         if p!=" " and start is None:
             start=i
         elif p==" " and start is not None:
-            positions.append((start,i))
+            if _comparison([phonemes[start:i]]):
+                ranges.append((start,i))
+            elif ranges:
+                ranges[-1]=(ranges[-1][0],i)
             start=None
+    return ranges
+
+def _context_ids(voice,tokens):
+    """Map real contextual phonemes to original tokens without guessed times.
+
+    Clause boundaries, punctuation, and documented English weak forms are
+    handled explicitly. Unknown or ambiguous word mappings still fail.
+    """
+    from difflib import SequenceMatcher
+    phonemes=_context_phonemes(voice," ".join(tokens))
+    positions=_group_positions(phonemes)
+    groups=[phonemes[a:b] for a,b in positions]
+    expected=[]
+    for token in tokens:
+        local=_context_phonemes(voice,token)
+        expected.append([local[a:b] for a,b in _group_positions(local)])
+    if any(not g for g in expected) or sum(map(len,expected))!=len(groups):
+        raise ValueError("ambiguous contextual word grouping")
     mapping=voice.config.phoneme_id_map
     ids=list(mapping["^"])+list(mapping["_"])
     bounds=[len(ids)]
@@ -305,14 +339,16 @@ def _context_ids(voice,tokens):
         bounds.append(len(ids))
     spans=[]
     cursor=0
-    for local in expected:
+    for token,local in zip(tokens,expected):
         n=len(local)
         actual=groups[cursor:cursor+n]
-        a=[p for g in local for p in g if p not in ("ˈ","ˌ")]
-        b=[p for g in actual for p in g if p not in ("ˈ","ˌ")]
-        # Allow ordinary contextual pronunciation variation; abstain on
-        # unrelated sequences or uncertain token grouping.
-        if a!=b and SequenceMatcher(None,a,b,autojunk=False).ratio()<.60:
+        a,b=_comparison(local),_comparison(actual)
+        weak=_WEAK_EN.get(token.casefold().strip(".,!?;:\"'()[]"),set())
+        # Explicit variants, not a blanket relaxed threshold for short words.
+        related=a==b or (n==1 and a in weak and b in weak)
+        if not related:
+            related=bool(a and b and SequenceMatcher(None,a,b,autojunk=False).ratio()>=.60)
+        if not related:
             raise ValueError("ambiguous contextual token alignment")
         spans.append((bounds[positions[cursor][0]],bounds[positions[cursor+n-1][1]]))
         cursor+=n
@@ -320,6 +356,25 @@ def _context_ids(voice,tokens):
     if len(ids)>8000:
         raise ValueError("context phoneme budget exceeded")
     return ids,spans
+
+def _context_chunks(voice,tokens):
+    """Try full sentence first. Only use a real clause boundary for repair;
+    never revert to word-isolated pronunciation in natural mode."""
+    try:
+        ids,spans=_context_ids(voice,tokens)
+        return [(tokens,ids,spans)]
+    except ValueError as original:
+        cuts=[i+1 for i,t in enumerate(tokens[:-1]) if t.endswith((",", ";", ":"))]
+        if not cuts:
+            raise original
+        chunks=[]
+        start=0
+        for end in [*cuts,len(tokens)]:
+            part=tokens[start:end]
+            ids,spans=_context_ids(voice,part)
+            chunks.append((part,ids,spans))
+            start=end
+        return chunks
 
 def _word_samples(samples, ids, spans, audio_samples):
     """Validate and sum actual model sample counts, with no timing estimates."""
@@ -360,21 +415,27 @@ def synthesize(text, out, settings):
     chunks=list(_sentence_groups(tokens)) if flow else [tokens[i:i+24] for i in range(0,len(tokens),24)]
     contextual,fallback=0,0
     signals=[]
+    repair_splits=0
+    if flow:
+        prepared=[]
+        for chunk in chunks:
+            try:
+                parts=_context_chunks(voice,chunk)
+            except ValueError as exc:
+                raise RuntimeError("natural_voice_alignment_unverified: "+str(exc)) from exc
+            repair_splits+=len(parts)-1
+            prepared.extend(parts)
+        chunks=prepared
+    else:
+        chunks=[(chunk,*_token_ids(voice,chunk)) for chunk in chunks]
     try:
         with wave.open(str(temp), 'wb') as wav:
             wav.setparams((1, 2, sample_rate, 0, 'NONE', 'not compressed'))
             # Bound individual ONNX inference allocations while keeping natural
             # phrase punctuation and a single native timeline for the whole WAV.
-            for chunk_tokens in chunks:
+            for chunk_tokens,ids,spans in chunks:
                 if flow:
-                    try:
-                        ids,spans=_context_ids(voice,chunk_tokens)
-                        contextual+=1
-                    except ValueError:
-                        ids,spans=_token_ids(voice,chunk_tokens)
-                        fallback+=1
-                else:
-                    ids,spans=_token_ids(voice,chunk_tokens)
+                    contextual+=1
                 result = voice.phoneme_ids_to_audio(ids, include_alignments=True)
                 if not isinstance(result, tuple) or len(result) != 2 or result[1] is None:
                     raise RuntimeError('Voice model did not provide native phoneme alignments')
@@ -413,6 +474,7 @@ def synthesize(text, out, settings):
         info.update(method='Sentence-context phonemization with explicit original-token mapping and native sample counts',
                     voice_flow_version=VOICE_FLOW_VERSION,contextual_sentences=contextual,
                     isolated_pronunciation_fallback_sentences=fallback,sentence_chunks=len(chunks),
+                    contextual_clause_repairs=repair_splits,
                     normalization='one_gain_full_narration')
         print(f'[VOICE FLOW] contextual={contextual} fallback={fallback} chunks={len(chunks)}',flush=True)
     speech = Speech(target, words, total_samples/sample_rate, 'piper', info['model'], 'aligned')
