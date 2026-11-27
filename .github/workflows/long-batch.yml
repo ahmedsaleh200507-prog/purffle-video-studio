@@ -92,6 +92,7 @@ jobs:
       PURFFLE_VLM_SHADOW: '1'
       PURFFLE_TIMED_LONG_SCENES: '1'
       PURFFLE_EDITORIAL_STANDARD: '1'
+      PURFFLE_CREATIVE_NARRATION: '1'
       PURFFLE_NATURAL_VOICE: '1'
       PURFFLE_ENGLISH_NARRATOR: george
       PURFFLE_SOURCE_TEXT_GATE: '1'
@@ -134,6 +135,8 @@ jobs:
       - name: Test long documentary languages and slot isolation
         if: steps.selected.outputs.render == 'true'
         continue-on-error: true
+        env:
+          PURFFLE_CREATIVE_NARRATION: '0'
         run: |
           python -m compileall -q scripts
           python scripts/long_video.py --self-test
