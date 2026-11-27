@@ -17,7 +17,7 @@ MODEL_HASH="496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4"
 VOICE_HASH="f1bc812213dc59774769e5c80004b13eeb79bd78130b11b2d7f934542dab811b"
 VOICE="bm_george"
 ALIGNMENT="kokoro_duration_tokens_crosschecked_against_actual_pcm_asr"
-VERSION="george_v2"
+VERSION="george_v3"
 BASE=f"https://huggingface.co/{REPO}/resolve/{REVISION}/"
 
 def provenance():
@@ -104,33 +104,101 @@ def _read_pcm_for_asr(path):
         raise RuntimeError("George empty PCM")
     return np.ascontiguousarray(resample_poly(data,2,3),dtype=np.float32)
 
+def _sentence_ranges(tokens,limit=34):
+    """Use only original sentence/clause boundaries; no mid-word cuts."""
+    n=len(tokens)
+    if not n:
+        return []
+    ends=[i+1 for i,t in enumerate(tokens[:-1])
+          if t.rstrip("\"”’')]").endswith((".", "!", "?"))]
+    if not ends:
+        ends=[i+1 for i,t in enumerate(tokens[:-1]) if t.endswith((",", ";", ":"))]
+    if not ends:
+        return [(0,n)]
+    ranges=[]; start=0
+    for end in [*ends,n]:
+        if end-start>=limit or end==n:
+            candidates=[x for x in ends if start+8<=x<=end and x<n-5]
+            # When the next complete sentence would exceed the preferred
+            # window, use the latest available original sentence boundary.
+            if end-start>limit and candidates:
+                before=[x for x in candidates if x-start<=limit]
+                cut=before[-1] if before else candidates[0]
+                ranges.append((start,cut)); start=cut
+    if start<n:
+        if ranges and n-start<5:
+            ranges[-1]=(ranges[-1][0],n)
+        else:
+            ranges.append((start,n))
+    if len(ranges)==1 and n>=16:
+        candidates=[x for x in ends if 5<=x<=n-5]
+        if candidates:
+            cut=min(candidates,key=lambda x:abs(x-n/2))
+            return [(0,cut),(cut,n)]
+    return ranges
+
+def _recognize(pcm,model):
+    segments,_=_asr(model).transcribe(pcm,language="en",beam_size=5,
+        word_timestamps=True,vad_filter=False,condition_on_previous_text=False)
+    raw=[]
+    for seg in segments:
+        for word in (seg.words or []):
+            if _atoms(word.word):
+                if float(word.probability or 0)<.02:
+                    raise RuntimeError("George ASR low confidence word")
+                raw.append((word.word,word.start,word.end))
+    return raw
+
+def _compare_timing(original,raw,predicted,duration):
+    aligned=_map_tokens(original,raw,duration)
+    deltas=[max(abs(a[1]-b[1]),abs(a[2]-b[2])) for a,b in zip(aligned,predicted)]
+    maximum=max(deltas,default=float("inf"))
+    if maximum>.85 or sorted(deltas)[len(deltas)//2]>.30:
+        raise RuntimeError("George model/ASR timing disagreement")
+    return maximum
+
 def _verify_wav(text,path,original,predicted,duration):
-    # faster-whisper accepts an actual 16 kHz waveform. It no longer invokes
-    # the external audio decoder, whose API changed in PyAV 19.
+    # Use the actual PCM, not a script-prompted recognizer. First keep the
+    # complete natural reading intact. If whole-passage ASR disagrees, check
+    # smaller sentence windows of the SAME audio before considering a rerender.
     pcm=_read_pcm_for_asr(path)
     error=None
     for model in ("base.en","small.en"):
         try:
-            segments,_=_asr(model).transcribe(pcm,language="en",beam_size=5,
-                word_timestamps=True,vad_filter=False,condition_on_previous_text=False)
-            raw=[]
-            for seg in segments:
-                for word in (seg.words or []):
-                    if _atoms(word.word):
-                        if float(word.probability or 0)<.02:
-                            raise RuntimeError("George ASR low confidence word")
-                        raw.append((word.word,word.start,word.end))
-            aligned=_map_tokens(original,raw,duration)
-            deltas=[max(abs(a[1]-b[1]),abs(a[2]-b[2])) for a,b in zip(aligned,predicted)]
-            maximum=max(deltas,default=float("inf"))
-            if maximum>.85 or sorted(deltas)[len(deltas)//2]>.30:
-                raise RuntimeError("George model/ASR timing disagreement")
-            return model,maximum
+            raw=_recognize(pcm,model)
+            return model,_compare_timing(original,raw,predicted,duration)
         except (RuntimeError,ValueError,TypeError) as exc:
+            error=exc
+            print(f"[GEORGE ASR RETRY] model={model} words={len(original)} reason={exc}",flush=True)
+    ranges=_sentence_ranges(original)
+    if 2<=len(ranges)<=8:
+        all_deltas=[]; used=set()
+        try:
+            for a,b in ranges:
+                start=0. if a==0 else (predicted[a-1][2]+predicted[a][1])/2
+                stop=duration if b==len(original) else (predicted[b-1][2]+predicted[b][1])/2
+                lo=max(0,round(start*16000)); hi=min(len(pcm),round(stop*16000))
+                if hi<=lo: raise RuntimeError("George ASR invalid sentence window")
+                shift=lo/16000
+                expected=[(t,x-shift,y-shift) for t,x,y in predicted[a:b]]
+                matched=False
+                for model in ("base.en","small.en"):
+                    try:
+                        raw=_recognize(pcm[lo:hi],model)
+                        delta=_compare_timing(original[a:b],raw,expected,(hi-lo)/16000)
+                        all_deltas.append(delta);used.add(model);matched=True
+                        break
+                    except (RuntimeError,ValueError,TypeError) as exc:
+                        error=exc
+                if not matched:
+                    raise RuntimeError("George sentence window transcript not independently verified")
+            print(f"[GEORGE ASR WINDOW RECOVERY] windows={len(ranges)} same_audio=True",flush=True)
+            return next(iter(used)) if len(used)==1 else "mixed",max(all_deltas)
+        except RuntimeError as exc:
             error=exc
     raise RuntimeError("George actual-audio verification failed: "+str(error))
 
-def synthesize(text,out,settings):
+def _render_verified(text,out,settings):
     if settings.language!="en":
         raise RuntimeError("George is English-only")
     import numpy as np
@@ -194,4 +262,67 @@ def synthesize(text,out,settings):
     speech=Speech(target,words,len(signal)/24000,"kokoro",VOICE,"aligned")
     speech.provenance=proof
     print(f"[GEORGE] words={len(words)} seconds={speech.duration:.3f} ASR={proof['actual_wav_alignment']}",flush=True)
+    return speech
+
+def synthesize(text,out,settings):
+    """Same approved voice at speed 1.0, with bounded natural-boundary rescue.
+
+    A recognition failure can retry shorter complete sentences, never another
+    narrator, estimated timestamps, or silently rewritten narration.
+    """
+    from purffle_shorts.timing import Word,tokenize
+    from purffle_shorts.tts import Speech
+    from tempfile import TemporaryDirectory
+    import numpy as np
+    if settings.language!="en":
+        raise RuntimeError("George is English-only")
+    text=" ".join(str(text).split())
+    original=tokenize(text,"en")
+    out=Path(out);out.mkdir(parents=True,exist_ok=True)
+    try:
+        return _render_verified(text,out,settings)
+    except RuntimeError as exc:
+        if "actual-audio verification failed" not in str(exc):
+            raise
+        ranges=_sentence_ranges(original)
+        if not 2<=len(ranges)<=8:
+            raise
+        print(f"[GEORGE SAME VOICE REGENERATION] sentence_groups={len(ranges)}",flush=True)
+    target=out/"voice-george.wav"
+    temp=out/"voice-george.wav.part"
+    words=[];signals=[];samples=0;models=set();deltas=[]
+    try:
+        with TemporaryDirectory(prefix="george-verified-",dir=out) as work:
+            for i,(a,b) in enumerate(ranges):
+                part=_render_verified(" ".join(original[a:b]),Path(work)/str(i),settings)
+                verify_provenance(part.provenance)
+                if [w.text for w in part.words]!=original[a:b]:
+                    raise RuntimeError("George sentence recovery changed words")
+                with wave.open(str(part.audio),"rb") as w:
+                    if (w.getnchannels(),w.getsampwidth(),w.getframerate())!=(1,2,24000):
+                        raise RuntimeError("George recovery incompatible audio")
+                    audio=np.frombuffer(w.readframes(w.getnframes()),dtype="<i2").copy()
+                offset=samples/24000
+                words.extend(Word(w.text,w.start+offset,w.end+offset) for w in part.words)
+                signals.append(audio);samples+=len(audio)
+                proof=part.provenance["actual_wav_alignment"]
+                models.add(proof["asr_model"]);deltas.append(proof["max_boundary_delta"])
+            if [w.text for w in words]!=original or samples/24000>180:
+                raise RuntimeError("George recovered narration incomplete")
+            with wave.open(str(temp),"wb") as wav:
+                wav.setparams((1,2,24000,0,"NONE","not compressed"))
+                wav.writeframes(np.concatenate(signals).astype("<i2").tobytes())
+            temp.replace(target)
+    finally:
+        temp.unlink(missing_ok=True)
+    proof=provenance()
+    proof.update(actual_wav_alignment={"verified":True,"words":len(words),
+        "asr_model":next(iter(models)) if len(models)==1 else "mixed",
+        "max_boundary_delta":round(max(deltas),4)},
+        sample_rate=24000,audio_samples=samples,word_count=len(words),timing="aligned",
+        verified_sentence_regeneration_groups=len(ranges))
+    verify_provenance(proof)
+    speech=Speech(target,words,samples/24000,"kokoro",VOICE,"aligned")
+    speech.provenance=proof
+    print(f"[GEORGE] recovered_words={len(words)} seconds={speech.duration:.3f} ASR={proof['actual_wav_alignment']}",flush=True)
     return speech
