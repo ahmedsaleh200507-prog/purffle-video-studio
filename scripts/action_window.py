@@ -19,9 +19,11 @@ def select_window(path, duration, need, contract, *, scorer, deadline, inspector
         from visual_director import inspect_action
         inspector=inspect_action
     # Use actual 9:16 centre preview; final chosen crop is rechecked independently.
-    # Limit the search to three intervals and do not run more models here.
-    tail=min(float(duration)-float(need)-.2,30.)
-    offsets=list(dict.fromkeys(round(v,3) for v in (0.,min(3.,tail),min(9.,tail))))
+    # Preserve early fast paths, then look across the available clip. At most
+    # six previews; every extracted window still needs the full validators.
+    tail=max(0.,float(duration)-float(need)-.2)
+    offsets=list(dict.fromkeys(round(v,3) for v in
+        (0.,min(3.,tail),min(9.,tail),tail/2,tail*.75,tail)))
     attempts=[]
     from visual_director import _frame_at
     for offset in offsets:
@@ -39,7 +41,7 @@ def select_window(path, duration, need, contract, *, scorer, deadline, inspector
                         "offset":offset,"attempts":attempts}
         except Exception as exc:
             attempts.append({"offset":offset,"error_type":type(exc).__name__})
-            break
+            continue
     return {"state":"no_verified_later_interval","offset":0.,"attempts":attempts}
 
 def extract_window(path, offset, need, *, deadline):
