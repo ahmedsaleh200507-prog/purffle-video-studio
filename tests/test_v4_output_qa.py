@@ -46,3 +46,14 @@ def test_complete_caption_timing_cannot_hide_missing_sentence(tmp_path):
         validate_timeline(video,captions,expected_size=(160,284),expected_text='Test fixture. Missing sentence.')
     with pytest.raises(RuntimeError,match='narration_duration'):
         validate_timeline(video,captions,expected_size=(160,284),expected_duration=8)
+
+def test_caption_internal_gap_rejected(tmp_path):
+    srt=tmp_path/'gap.srt'
+    srt.write_text('1\n00:00:00,000 --> 00:00:01,000\nFirst\n\n2\n00:00:06,000 --> 00:00:07,000\nLast\n')
+    with pytest.raises(RuntimeError,match='internal_caption_gap'):
+        caption_intervals(srt,7)
+
+def test_audio_stream_ending_early_is_rejected(tmp_path):
+    video,captions=render(tmp_path,audio='sine=frequency=350:sample_rate=16000:duration=1')
+    with pytest.raises(RuntimeError,match='audio_video_timeline_mismatch'):
+        validate_timeline(video,captions,expected_size=(160,284))
