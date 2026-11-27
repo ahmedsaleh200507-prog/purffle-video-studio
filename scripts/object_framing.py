@@ -142,8 +142,8 @@ def propose(path,seconds,subject,source_width,source_height,output_width,output_
             result["group_framing"]=group
             # A group shot must not switch between different people/animals.
             # Prefer the validated static group or retain the existing default.
-            if group["state"]!="insufficient_group_evidence":
-                result.update(state=group["state"],focus_x=group["focus_x"])
+            result.update(state="proposed" if group["state"]=="proposed" else "keep_default",
+                          focus_x=group["focus_x"])
         return result
     except Exception as exc:
         print("[OBJECT FRAMING UNAVAILABLE]",type(exc).__name__,flush=True)
