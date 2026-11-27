@@ -927,7 +927,7 @@ class StrictVisuals:
                         rank=float(match["opening_preflight"]["chosen_score"])
                         if best is None or better_opening(rank,best_rank):
                             best,best_rank=candidate,rank
-                        if best_rank>=68 or extra_attempts>=2 or time.monotonic()+20>=comparison_deadline:
+                        if best_rank>=90 or extra_attempts>=2 or time.monotonic()+20>=comparison_deadline:
                             break
                         if comparison_deadline==phase_deadline:
                             comparison_deadline=min(phase_deadline,time.monotonic()+35)
@@ -1089,6 +1089,17 @@ def strict_prepare_segment(item, seconds, idx, settings, work):
                 "-t", f"{seconds:.3f}", "-an", "-vf", f"{cover},fps={F}{_grade(settings)}",
                 *_encode_args(settings, final=False), "-threads", "2", "-frames:v", str(max(2, round(seconds*F))), str(out)],
                label=f"validated segment {idx}", timeout=240)
+    from editorial_pacing import enabled as pacing_enabled
+    if pacing_enabled():
+        try:
+            measured=subprocess.run(["ffprobe","-v","error","-show_entries","format=duration",
+                "-of","default=noprint_wrappers=1:nokey=1",str(out)],
+                capture_output=True,text=True,check=True,timeout=10)
+            measured_seconds=float(measured.stdout.strip())
+            if math.isfinite(measured_seconds) and measured_seconds>0:
+                item.extra["editorial_segment_seconds"]=measured_seconds
+        except (OSError,ValueError,subprocess.SubprocessError):
+            item.extra["editorial_segment_seconds"]=None
     return out
 
 
