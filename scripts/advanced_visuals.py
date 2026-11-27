@@ -5,8 +5,8 @@ import threading
 import time
 
 _LOCK=threading.Lock()
-_COUNTS={"cuts":0,"tracks":0,"index":0}
-_LIMITS={"cuts":3,"tracks":3,"index":3}
+_COUNTS={"cuts":0,"tracks":0,"index":0,"dense":0}
+_LIMITS={"cuts":3,"tracks":3,"index":3,"dense":2}
 
 def reserve(kind):
     if os.getenv("PURFFLE_ADVANCED_VISUALS")!="1":
@@ -55,7 +55,7 @@ def track_observations(rows,times):
         raise ValueError("Invalid tracking times")
     # The input is already independently corroborated. ByteTrack cannot
     # identify an individual conclusively or restore missing visual evidence.
-    tracker=sv.ByteTrack(track_activation_threshold=.35,lost_track_buffer=3,
+    tracker=sv.ByteTrack(track_activation_threshold=.35,lost_track_buffer=30,
                          frame_rate=max(1,min(30,round((len(times)-1)/(times[-1]-times[0])))),
                          minimum_consecutive_frames=2)
     tracks={}
