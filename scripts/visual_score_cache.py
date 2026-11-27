@@ -9,6 +9,7 @@ class ExactScoreCache:
         self.max_entries=max(1,min(128,int(max_entries)))
         self._rows=OrderedDict()
         self._lock=threading.RLock()
+        self._pending={}
         self.hits=0
         self.misses=0
     def _key(self,images,captions):
@@ -22,19 +23,34 @@ class ExactScoreCache:
         return tuple(keys),tuple(captions)
     def score(self,images,captions,infer):
         key=self._key(images,captions)
-        if key is not None:
+        if key is None:
+            return infer(images,captions)
+        # Coalesce concurrent identical requests without holding the cache
+        # lock during neural inference or blocking unrelated inputs.
+        while True:
             with self._lock:
                 if key in self._rows:
                     self.hits+=1
                     self._rows.move_to_end(key)
                     return [list(row) for row in self._rows[key]]
-                self.misses+=1
-        result=infer(images,captions)
-        if key is not None and len(result)==len(images) and all(
-                len(row)==len(captions) and all(math.isfinite(float(x)) for x in row) for row in result):
+                event=self._pending.get(key)
+                if event is None:
+                    event=threading.Event()
+                    self._pending[key]=event
+                    self.misses+=1
+                    break
+            event.wait()
+        try:
+            result=infer(images,captions)
+            if len(result)==len(images) and all(
+                    len(row)==len(captions) and all(math.isfinite(float(x)) for x in row) for row in result):
+                with self._lock:
+                    self._rows[key]=tuple(tuple(float(x) for x in row) for row in result)
+                    self._rows.move_to_end(key)
+                    while len(self._rows)>self.max_entries:
+                        self._rows.popitem(last=False)
+            return result
+        finally:
             with self._lock:
-                self._rows[key]=tuple(tuple(float(x) for x in row) for row in result)
-                self._rows.move_to_end(key)
-                while len(self._rows)>self.max_entries:
-                    self._rows.popitem(last=False)
-        return result
+                self._pending.pop(key,None)
+                event.set()
