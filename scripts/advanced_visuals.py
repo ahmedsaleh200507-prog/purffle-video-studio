@@ -56,7 +56,8 @@ def track_observations(rows,times):
     # The input is already independently corroborated. ByteTrack cannot
     # identify an individual conclusively or restore missing visual evidence.
     tracker=sv.ByteTrack(track_activation_threshold=.35,lost_track_buffer=3,
-                         frame_rate=30,minimum_consecutive_frames=2)
+                         frame_rate=max(1,min(30,round((len(times)-1)/(times[-1]-times[0])))),
+                         minimum_consecutive_frames=2)
     tracks={}
     for i,(row,t) in enumerate(zip(rows,times)):
         clean=[]
@@ -84,6 +85,36 @@ def track_review(rows,times):
         return track_observations(rows,times)
     except Exception as exc:
         return {"state":"unavailable","error_type":type(exc).__name__}
+
+def tracking_agreement(observation, rows, times, proposal, *, tolerance=.14):
+    """ByteTrack is an independent geometry check, never identity proof.
+
+    Do not promote ambiguous tracks. Only compare complete, unique sampled
+    paths against an existing conservative crop proposal.
+    """
+    if proposal.get("state")!="shadow_proposal":
+        return {"state":"no_geometry_proposal"}
+    if observation.get("state")!="observed":
+        return {"state":"unavailable"}
+    points=proposal.get("keyframes",[])
+    if len(points)!=len(times):
+        return {"state":"unavailable"}
+    matches=[]
+    for key,track in observation.get("tracks",{}).items():
+        if [p["sample"] for p in track]!=list(range(len(times))):
+            continue
+        differences=[]
+        for point,entry in zip(points,track):
+            b=entry["box"]
+            center=(b[0]+b[2])/2
+            differences.append(abs(float(point["focus_x"])-center))
+        if max(differences)<=tolerance:
+            matches.append(key)
+    # Sparse samples or a tracker which has not yet confirmed the first
+    # observation cannot verify a complete path. Keep static crop in that case.
+    return {"state":"agrees" if len(matches)==1 else "inconclusive",
+            "matching_tracks":len(matches),"sample_count":len(times),
+            "scope":"sampled association agreement, not individual identity"}
 
 def rank_vectors(vectors,query):
     import numpy as np
