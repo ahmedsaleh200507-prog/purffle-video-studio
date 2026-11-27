@@ -1,5 +1,5 @@
 name: Bilingual narration only audit
-# Validate B style on both known and newly generated short topics and long documentaries.
+# Recheck the corrected German hook and all six B-style script cases.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
@@ -107,6 +107,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: narration-${{ matrix.language }}-${{ matrix.format }}
+          name: narration-${{ matrix.language }}-${{ matrix.format }}-${{ strategy.job-index }}
           path: narration-proof/
           retention-days: 7
