@@ -15,6 +15,11 @@ class DynamicCropTests(unittest.TestCase):
     def test_invalid_track(self):
         with self.assertRaises(ValueError):
             tracking_filter(180,320,{"state":"ambiguous_identity"},4.)
+    def test_invalid_coverage(self):
+        for field in ("min_tracked_coverage", "tracked_coverage", "fixed_coverage"):
+            for value in (float("nan"), float("inf"), -1, 2):
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    tracking_filter(180,320,{**PROPOSAL, field:value},4.)
     def test_unsafe_speed(self):
         bad={**PROPOSAL,"keyframes":[{"time":.1,"focus_x":.1},{"time":.2,"focus_x":.8},{"time":3.8,"focus_x":.8}]}
         with self.assertRaises(ValueError):
