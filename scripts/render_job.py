@@ -496,6 +496,9 @@ def main():
         from retention_storyboard import validate_short_duration
         validate_short_duration(full_qa['duration'],
             storyboard_audit.get('planned_duration_seconds') if os.environ.get('PURFFLE_MEDIA_FIRST','1')=='1' else None)
+        from editorial_standard import enabled,final_timing
+        if enabled():
+            full_qa["editorial_timing"]=final_timing(folder/"captions.srt",full_qa["duration"],mode="short")
         write_json(target.with_name('output-qa.json'), full_qa)
         result.update(status='ok', stage='complete', mp4=str(video), output_probe=info,
                       footage_report=os.environ['FOOTAGE_REPORT'],
