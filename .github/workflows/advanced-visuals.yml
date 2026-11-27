@@ -97,7 +97,9 @@ jobs:
           Path("tracking-report.json").write_text(json.dumps(report,indent=2))
           assert report["bytetrack_shadow"]["state"]=="observed"
           assert len(report["sample_times"])>=3
-          assert report["bytetrack_shadow"]["tracks"], "No corroborated track association"
+          tracks=report["bytetrack_shadow"]["tracks"]
+          assert any(len(t)>=3 for t in tracks.values()), "No association across at least three verified anchors"
+          print("[TRACK COVERAGE]",json.dumps({"tracks":len(tracks),"longest":max(map(len,tracks.values())),"samples":report["bytetrack_shadow"]["sample_count"],"dense_samples":report["bytetrack_shadow"].get("dense_sample_count",0)}))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
