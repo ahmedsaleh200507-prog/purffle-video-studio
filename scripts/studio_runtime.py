@@ -397,7 +397,53 @@ class StrictVisuals:
                                for item in hits),batches)
             except Exception as exc:
                 scene["verified_library_error"]=type(exc).__name__
+        from editorial_pacing import enabled as pacing_enabled
+        opening_compare=(idx==0 and pacing_enabled() and isinstance(self.matcher,SceneMatcher))
+        def commit_selection(item,source,url_key,digest,actual_digest,path,quality,match,layout,native_scale,license_info,attribution,source_quality,orientation_phase):
+            self.credits.add(attribution)
+            self.used_hashes.add(actual_digest)
+            self._remember(item, url_key, digest)
+            if os.environ.get("PURFFLE_VERIFIED_LIBRARY")=="1":
+                try:
+                    from verified_library import remember as library_remember
+                    match["verified_library_saved"]=library_remember(
+                        Path("media_cache/verified-library/index.json"),item,spec,source_quality)
+                except Exception as exc:
+                    match["verified_library_error"]=type(exc).__name__
+            # Coverr's MP4 link contains a signed access token tied
+            # to the private API key. The renderer already uses the
+            # validated local path: discard the token before emitting
+            # reports, metadata, logs or artifact ZIPs.
+            if source == "coverr-video":
+                item.url = license_info["source_page"]
+            scene.update({"status": "selected", "source": source, "id": item.id,
+                          "director_contract": director_contract,
+                          "source_url": item.url, "downloaded_file": str(path),
+                          "sha256": actual_digest, "original_sha256": digest, "quality": quality, "match": match,
+                          "metadata_text": str(item.text)[:4000],
+                          "portrait_layout": layout,
+                          "recorded_date": item.extra.get("recorded_date",""),
+                          "geography_evidence": item.extra.get("geography_evidence",{}),
+                          "orientation_phase": orientation_phase,
+                          "source_orientation": ("portrait" if quality["height"]>quality["width"] else
+                                                 "landscape" if quality["width"]>quality["height"] else "square"),
+                          "download_evidence":item.extra.get("download_evidence",{}),
+                          "license": license_info,
+                          "crop": {"focus_x": match.get("crop_focus_x", .5),
+                                   "effective_source_width": layout["effective_source_width"],
+                                   "effective_source_height": layout["effective_source_height"],
+                                   "upscaled_after_crop": native_scale>1.0001,
+                                   "crop_scale": round(native_scale, 4)}})
+            self._save()
+            print(f"[SELECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} "
+                  f"actual={item.width}x{item.height} visual_score={match.get('visual_score')} "
+                  f"license={license_info.get('id')}", flush=True)
+            return item
+
         for source, candidates, orientation_phase, phase_deadline in batches:
+            best,best_rank=None,0.
+            comparison_deadline=phase_deadline
+            extra_attempts=0
             print(f"[SOURCE CHECK] {source}: {len(candidates)} candidates scene={idx+1} phase={orientation_phase}", flush=True)
             ranked = []
             for item in candidates:
@@ -538,6 +584,12 @@ class StrictVisuals:
                                           -min(row[1].width, row[1].height)))
             subject_only_attempts = 0
             for score, item, url_key in ranked[:max_candidates]:
+                if best is not None:
+                    if extra_attempts>=2 or time.monotonic()+20>=comparison_deadline:
+                        break
+                    if item.key==best["item"].key or url_key==best["url_key"]:
+                        continue
+                    extra_attempts+=1
                 if item.extra.get("relevance_evidence",{}).get("action_metadata") == "subject_only_visual_check":
                     if subject_only_attempts >= 2:
                         continue
@@ -581,7 +633,7 @@ class StrictVisuals:
                         deferred.append((source,item))
                         continue
                     digest = self.downloader.digest(path)
-                    if digest in self.used_hashes:
+                    if digest in self.used_hashes or (best is not None and digest in (best["digest"],best["actual_digest"])):
                         raise ValueError("duplicate content hash")
                     # Source durations are measured by FFprobe. A 10.060s
                     # genuine clip covers a 10.000s narration scene; the old
@@ -866,52 +918,30 @@ class StrictVisuals:
                     attribution = license_info.get("attribution") or item.credit
                     if not attribution:
                         raise ValueError("Missing license provenance/attribution")
-                    self.credits.add(attribution)
-                    self.used_hashes.add(actual_digest)
-                    self._remember(item, url_key, digest)
-                    if os.environ.get("PURFFLE_VERIFIED_LIBRARY")=="1":
-                        try:
-                            from verified_library import remember as library_remember
-                            match["verified_library_saved"]=library_remember(
-                                Path("media_cache/verified-library/index.json"),item,spec,source_quality)
-                        except Exception as exc:
-                            match["verified_library_error"]=type(exc).__name__
-                    # Coverr's MP4 link contains a signed access token tied
-                    # to the private API key. The renderer already uses the
-                    # validated local path: discard the token before emitting
-                    # reports, metadata, logs or artifact ZIPs.
-                    if source == "coverr-video":
-                        item.url = license_info["source_page"]
-                    scene.update({"status": "selected", "source": source, "id": item.id,
-                                  "director_contract": director_contract,
-                                  "source_url": item.url, "downloaded_file": str(path),
-                                  "sha256": actual_digest, "original_sha256": digest, "quality": quality, "match": match,
-                                  "metadata_text": str(item.text)[:4000],
-                                  "portrait_layout": layout,
-                                  "recorded_date": item.extra.get("recorded_date",""),
-                                  "geography_evidence": item.extra.get("geography_evidence",{}),
-                                  "orientation_phase": orientation_phase,
-                                  "source_orientation": ("portrait" if quality["height"]>quality["width"] else
-                                                         "landscape" if quality["width"]>quality["height"] else "square"),
-                                  "download_evidence":item.extra.get("download_evidence",{}),
-                                  "license": license_info,
-                                  "crop": {"focus_x": match.get("crop_focus_x", .5),
-                                           "effective_source_width": layout["effective_source_width"],
-                                           "effective_source_height": layout["effective_source_height"],
-                                           "upscaled_after_crop": native_scale>1.0001,
-                                           "crop_scale": round(native_scale, 4)}})
-                    self._save()
-                    print(f"[SELECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} "
-                          f"actual={item.width}x{item.height} visual_score={match.get('visual_score')} "
-                          f"license={license_info.get('id')}", flush=True)
-                    return item
+                    candidate=dict(item=item,source=source,url_key=url_key,digest=digest,
+                        actual_digest=actual_digest,path=path,quality=quality,match=match,layout=layout,
+                        native_scale=native_scale,license_info=license_info,attribution=attribution,
+                        source_quality=source_quality,orientation_phase=orientation_phase)
+                    if opening_compare:
+                        from editorial_pacing import better_opening
+                        rank=float(match["opening_preflight"]["chosen_score"])
+                        if best is None or better_opening(rank,best_rank):
+                            best,best_rank=candidate,rank
+                        if best_rank>=68 or extra_attempts>=2 or time.monotonic()+20>=comparison_deadline:
+                            break
+                        if comparison_deadline==phase_deadline:
+                            comparison_deadline=min(phase_deadline,time.monotonic()+35)
+                        continue
+                    return commit_selection(**candidate)
                 except Exception as exc:
                     self._rejected_candidates.add((spec.object, spec.action,
                         json.dumps(director_contract, sort_keys=True), item.key))
                     # A rejected 4K file must not accumulate until it fills the CI disk.
                     # Preserve anything referenced by accepted footage, including a
                     # duplicate hash reached through another URL.
-                    if path is not None and digest is not None and digest not in self.used_hashes:
+                    if (path is not None and digest is not None and digest not in self.used_hashes
+                            and (best is None or (digest not in (best["digest"],best["actual_digest"])
+                                 and Path(path)!=Path(best["path"])))):
                         try:
                             Path(path).unlink(missing_ok=True)
                             Path(path).with_suffix(".json").unlink(missing_ok=True)
@@ -921,6 +951,9 @@ class StrictVisuals:
                     scene["rejections"].append({"source": source, "id": item.id,
                                                 "reason": reason, "stage": "download_quality_or_visual"})
                     print(f"[REJECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} reason={reason}", flush=True)
+            if best is not None:
+                best["match"]["opening_comparison"]={"state":"best_verified_in_bounded_batch","chosen_score":best_rank,"extra_attempts":extra_attempts,"scope":"editorial heuristic; not a views prediction"}
+                return commit_selection(**best)
             self._save()
         scene["status"] = "failed"
         self.report["state"] = "failed"
