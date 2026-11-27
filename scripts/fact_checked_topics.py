@@ -179,8 +179,8 @@ _DOCUMENTARY_FACTS = {
             "Kann Gas leicht entweichen, kann Lava fließen. Bleibt Gas in zähem Magma gefangen, kann der Druck eine Explosion auslösen."
         ],
         "title": {
-            "en": "What Makes a Volcano Suddenly Erupt?",
-            "de": "Warum bricht ein Vulkan plötzlich aus?"
+            "en": "Why Do Volcanoes Erupt?",
+            "de": "Warum brechen Vulkane aus?"
         },
         "description": {
             "en": "USGS explains how gas expansion in rising magma can drive violent volcanic eruptions.",
@@ -584,9 +584,9 @@ _THREE_SCENE_SOURCE_REVIEWED = {
             "If gas escapes easily, lava can flow. Trapped gas in sticky magma can drive an explosive eruption."
         ],
         "de": [
-            "Heiße Lava fließt aus einem Vulkan. Aber warum verlaufen manche Ausbrüche explosionsartig?",
-            "Aufsteigendes Magma enthält gelöste Gase, die sich bei sinkendem Druck ausdehnen.",
-            "Entweichen diese Gase heftig, können sie Magma zerteilen und explosive Ausbrüche antreiben."
+            "Manche Vulkane explodieren. Andere lassen Lava fließen. Der Unterschied entsteht tief unter der Erde.",
+            "Magma steigt durch Auftrieb und Gasdruck auf. Sinkt der Druck, dehnen sich Gasblasen aus.",
+            "Kann Gas leicht entweichen, kann Lava fließen. Gefangenes Gas in zähem Magma kann eine Explosion auslösen."
         ]
     },
     "iceberg_breakup": {
