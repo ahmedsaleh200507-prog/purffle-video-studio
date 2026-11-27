@@ -100,6 +100,8 @@ def crop_proof(path,seconds,subject,query,matcher):
     matching=sum(row[0]>=.22 and row[1]>=.18 and row[0]-max(row[2:])>=.008 for row in scores)
     if matching<2:
         raise ValidationError("Centered 16:9 crop lacks planned subject")
+    from source_overlay import check_source
+    overlay=check_source(path,seconds,landscape=True)
     from siglip_review import observe
-    return {"method":"centered_16_9_clip","matching_moments":matching,"verified":True,
+    return {"source_overlay":overlay,"method":"centered_16_9_clip","matching_moments":matching,"verified":True,
             "siglip_shadow_review":observe(frames,subject,query)}
