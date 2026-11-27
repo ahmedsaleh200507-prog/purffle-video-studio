@@ -95,3 +95,18 @@ def test_topic_and_reference_reach_writer_and_editor():
         room.topic,room.evidence=topic,evidence
         room.generate(topic,lang,evidence,word_range=(32,95))
         assert room.calls==["writer","editor_1"]
+
+def test_v5_falsely_approved_openings_are_blocked():
+    from story_room import obvious_opening_problem
+    en="A diver once saw an octopus’s side pulse twice, then feel a stronger thump as it moved."
+    de="Ein einzelnes Elektron schießt entlang des Erdmagnetfelds bis zu den Polen, wo es mit Sauerstoff- und Stickstoffmolekülen kollidiert."
+    assert obvious_opening_problem(en,"An octopus has three hearts.")=="unsupported_eyewitness_anecdote"
+    assert obvious_opening_problem(de,"Elektronen folgen dem Erdmagnetfeld.")=="technical_mechanism_before_audience_context"
+    assert not obvious_opening_problem("An octopus has three hearts.","An octopus has three hearts.")
+    assert not obvious_opening_problem("A witness once saw the bridge collapse.","A witness once saw the bridge collapse.")
+
+def test_v5_bad_opening_cannot_pass_with_high_scores():
+    room=FakeRoom("A diver once saw an octopus’s side pulse twice. "+GOOD,True)
+    result=room.generate("Octopus hearts","en","An octopus has three hearts.",word_range=(32,95))
+    assert not result["editorial_pass"]
+    assert "unsupported_eyewitness" in result["attempts"][-1]["structural_error"]
