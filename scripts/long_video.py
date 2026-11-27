@@ -424,9 +424,9 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                         credit.update(landscape_crop_proof=crop_check,shot_seconds=chapter_seconds,media_type="video",
                             narration_group=chapter["index"],spoken_text=chapter["narration"],
                             start_frame=chapter["start_frame"],end_frame=chapter["end_frame"])
-                    seen.add(key)
                     chosen.append((path, duration, credit))
                     if single_shot:
+                        seen.add(key)
                         return chosen
                     if len(chosen) >= 4:
                         break
@@ -469,6 +469,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
         import itertools
         for combo in itertools.combinations(items,n):
             if all(exact_span(item,chapter_seconds/n) for item in combo):
+                seen.update((c[2]["source"],str(c[2]["id"])) for c in combo)
                 return list(combo)
         return None
     # Four shots were already screened at their precise equal-share span,
@@ -581,6 +582,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
         print(f"[LONG STOCK SINGLE CLIP] chapter={index+1} "
               f"licensed_clips=1 source_duration={single[1]:.1f}s "
               "subject_verified=True", flush=True)
+        seen.add((single[2]["source"],str(single[2]["id"])))
         single[2]["completion_fallback"] = "one_verified_long_moving_clip"
         return [single]
     raise RuntimeError(
