@@ -8,7 +8,7 @@ from story_room import obvious_opening_problem
 VERSION="curiosity-first-production-1"
 
 def enabled():
-    return os.getenv("PURFFLE_CREATIVE_NARRATION","1")=="1"
+    return os.getenv("PURFFLE_CREATIVE_NARRATION","0")=="1"
 
 def review_reference(bundle, topic, language):
     """Exact dossiers remain exact-approved only. Rewrites use independent excerpt review."""
@@ -96,3 +96,37 @@ def long_instruction():
         "technical vocabulary or filler. Resolve the opening promise in the last chapter. "
         "Do not invent claims or sacrifice accuracy for drama."
     )
+
+def polish_long_opening(topic,language,chapters,outline,*,room=None,word_range=(105,120)):
+    """Two-model hook selection for the actual first long chapter.
+    The existing chapter is unverified draft material, not an independent source.
+    No additional factual claims may be added by this editing step.
+    """
+    room=room or CreativeNarration()
+    first=chapters[0]["narration"]
+    low,high=word_range
+    context=(f"Topic: {topic}\nLanguage: {language}\nFirst chapter title: {chapters[0]['title']}\n"
+             "Existing draft (not verified evidence): "+first+
+             "\nNext chapter begins: "+chapters[1]["narration"][:350]+
+             "\nWhole film: "+" | ".join(x["title"] for x in outline))
+    hooks,writer=room.ask("writer",BRIEF+"\n"+context+
+        "\nWrite five distinctly different short openings based ONLY on facts already stated in the first draft. "
+        "Do not add any factual assertions, invented experiences or unsupported detail.",
+        OPENINGS,WRITERS,temperature=.8)
+    eligible={k:v.strip() for k,v in hooks.items() if v.strip() and
+              len(word_tokens(v))<=30 and not obvious_opening_problem(v,first)}
+    if not eligible:
+        raise RuntimeError("No usable long documentary opening")
+    schema={"type":"object","properties":{"chosen":{"type":"string","enum":list(eligible)},
+        "narration":{"type":"string"}},"required":["chosen","narration"],"additionalProperties":False}
+    final,editor=room.ask("editor_1",BRIEF+"\n"+context+
+        f"\nChoose the strongest opening below and rewrite the first chapter in {low}–{high} spoken words. "
+        "Retain the chosen hook's idea. Use only existing first chapter factual claims, correct or omit doubtful detail, "
+        "and do not change the subject or resolve the entire film. End so the next chapter follows naturally. "
+        "Return the selected letter and complete first chapter.\n"+json.dumps(eligible,ensure_ascii=False),
+        schema,EDITORS,avoid=writer,temperature=.6)
+    text=final["narration"].strip()
+    audit_structure([text],language,mode="long")
+    if not low<=len(word_tokens(text))<=high:
+        raise RuntimeError("Creative long opening outside word range")
+    return [{**chapters[0],"narration":text},*chapters[1:]]
