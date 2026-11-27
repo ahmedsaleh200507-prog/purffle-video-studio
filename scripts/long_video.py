@@ -336,7 +336,11 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     from geography_policy import scene_requirement,scoped_queries,require_geography
     required_regions=(chapter["required_regions"] if single_shot and chapter and "required_regions" in chapter
                       else scene_requirement(chapter,topic))
-    for query in scoped_queries(long_visual_queries(index, topic, chapter),required_regions):
+    queries=list(dict.fromkeys(scoped_queries(long_visual_queries(index,topic,chapter),required_regions)))
+    for query_index,query in enumerate(queries):
+        # Reserve download opportunities for later, broader searches instead of
+        # exhausting the global budget on the first attractive-looking query.
+        query_budget=min(max_per_query,max(1,(max_attempts-attempts)//max(1,len(queries)-query_index)))
         query_attempts = 0
         for provider in LONG_STOCK_PROVIDERS:
             provider_attempts = 0
@@ -364,7 +368,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                              else ("volcan", "lava", "magma", "eruption", "crater"))
                 if not any(term in labels for term in terms):
                     continue
-                if query_attempts >= max_per_query or attempts >= max_attempts:
+                if query_attempts >= query_budget or attempts >= max_attempts:
                     break
                 attempted.add(key)
                 query_attempts += 1
@@ -381,7 +385,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                     if (int(q["width"]) < 1280 or int(q["height"]) < 720
                             or duration * 1.5 < chapter_seconds / 4):
                         continue
-                    visual_span = min(duration, chapter_seconds if single_shot else chapter_seconds / 3)
+                    visual_span = min(duration, chapter_seconds if single_shot else chapter_seconds / 4)
                     if chapter and chapter.get("visual_search_query"):
                         visual = long_visual_verifier(
                             path,candidate.text,visual_span,
@@ -414,6 +418,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                         "visual_role": visual.get("visual_role", "direct_chapter_match"),
                         "download_evidence": candidate.extra.get("download_evidence", {"mode":"full_download"}),
                         "reused": False, "source_offset_seconds": 0.0,
+                        "verified_source_seconds": visual_span,
                     }
                     if single_shot:
                         credit.update(landscape_crop_proof=crop_check,shot_seconds=chapter_seconds,media_type="video",
@@ -424,22 +429,59 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                     if single_shot:
                         return chosen
                     if len(chosen) >= 4:
-                        return chosen
+                        break
                 except Exception as ex:
                     # Include bounded diagnostic reason, not provider tokens/URLs.
                     print("[LONG STOCK REJECT]", type(ex).__name__,
                           str(ex).splitlines()[0][:160], flush=True)
-            if query_attempts >= max_per_query or attempts >= max_attempts:
+            if len(chosen)>=4 or query_attempts >= query_budget or attempts >= max_attempts:
                 break
-        if attempts >= max_attempts:
+        if len(chosen)>=4 or attempts >= max_attempts:
             break
     if single_shot:
         raise RuntimeError("No verified real video for timed group")
+    # Only reserve final choices after verifying the actual visible span.
+    def exact_span(item, wanted):
+        path,duration,credit=item
+        available=duration-float(credit.get("source_offset_seconds",0))
+        need=min(available,wanted)
+        if not math.isfinite(available) or available<=0 or available*1.5<wanted:
+            return False
+        if credit.get("reused"):
+            # Already rechecked independently from its nonzero offset below.
+            return float(credit.get("verified_source_seconds",0))>=need-.001
+        if abs(float(credit.get("verified_source_seconds",0))-need)<=.001:
+            return True
+        try:
+            kw={"expected_subject":expected_subject}
+            if chapter and chapter.get("visual_search_query"):
+                kw["visual_query"]=chapter["visual_search_query"]
+            proof=long_visual_verifier(path,credit["metadata_text"],need,**kw)
+            credit.update(verified_source_seconds=need,visual_check=proof["verification"],
+                visual_score=proof.get("visual_score"),visual_role=proof.get("visual_role","direct_chapter_match"))
+            return True
+        except Exception as exc:
+            print("[LONG EXACT SPAN REJECT]",type(exc).__name__,str(exc).splitlines()[0][:160],flush=True)
+            return False
+    def choose_exact(items,n):
+        if len(items)<n:
+            return None
+        import itertools
+        for combo in itertools.combinations(items,n):
+            if all(exact_span(item,chapter_seconds/n) for item in combo):
+                return list(combo)
+        return None
+    # Four shots were already screened at their precise equal-share span,
+    # including any necessary bounded slowdown.
+    selected=choose_exact(chosen,4)
+    if selected:
+        return selected
     # 3 clips each need enough unique motion for their chapter share.
     usable = [c for c in chosen
               if c[1] * 1.5 >= chapter_seconds / 3]
-    if len(usable) >= 3:
-        return usable[:3]
+    selected=choose_exact(usable,3)
+    if selected:
+        return selected
 
     # The previously validated source bank is restricted to the same visual
     # subject, distinct clips, and UNUSED footage from each original source.
@@ -497,6 +539,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
                 "chapter": index+1, "reused": True,
                 "reused_from_chapter": old_credit["chapter"],
                 "source_offset_seconds": round(offset, 3),
+                "verified_source_seconds":segment_length,
                 "visual_check": proof["verification"],
                 "visual_score": proof.get("visual_score"),
                 "visual_role": proof.get("visual_role", "direct_chapter_match"),
@@ -508,21 +551,23 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
         finally:
             preview.unlink(missing_ok=True)
     if len(usable) + len(recoveries) >= 3:
-        selected = (usable + recoveries)[:3]
-        for item in selected:
-            if item[2].get("reused"):
-                reused.add((item[2]["source"], str(item[2]["id"])))
-        print(f"[LONG STOCK SELECT] chapter={index+1} new="
-              f"{sum(not x[2]['reused'] for x in selected)} "
-              f"verified_unused_spans={sum(x[2]['reused'] for x in selected)} "
-              f"tried={attempts}", flush=True)
-        return selected
+        selected = choose_exact(usable+recoveries,3)
+        if selected:
+            for item in selected:
+                if item[2].get("reused"):
+                    reused.add((item[2]["source"], str(item[2]["id"])))
+            print(f"[LONG STOCK SELECT] chapter={index+1} new="
+                  f"{sum(not x[2]['reused'] for x in selected)} "
+                  f"verified_unused_spans={sum(x[2]['reused'] for x in selected)} "
+                  f"tried={attempts}", flush=True)
+            return selected
 
     # A last alternative is two distinct new sources, but never slow them
     # more than 1.5x and never fill missing footage by freezing frames.
     pairs = [c for c in usable if c[1] * 1.5 >= chapter_seconds / 2]
-    if len(pairs) >= 2:
-        return pairs[:2]
+    selected=choose_exact(pairs,2)
+    if selected:
+        return selected
 
     # Completion-first, still real footage: a single sufficiently LONG
     # independently licensed, HD, moving and CLIP-screened video can cover
@@ -531,7 +576,7 @@ def find_stock(index, chapter_seconds, seen, work, registry=None, topic="",
     # entire ten-minute documentary after a successful real-clip match.
     single = next((c for c in sorted(
         chosen, key=lambda c: c[1], reverse=True)
-        if c[1] * 1.5 >= chapter_seconds), None)
+        if c[1] * 1.5 >= chapter_seconds and exact_span(c,chapter_seconds)), None)
     if single is not None:
         print(f"[LONG STOCK SINGLE CLIP] chapter={index+1} "
               f"licensed_clips=1 source_duration={single[1]:.1f}s "
