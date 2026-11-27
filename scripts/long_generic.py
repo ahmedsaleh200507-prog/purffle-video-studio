@@ -161,8 +161,11 @@ def generate_outline(topic: str, language: str, client, *, sleep=time.sleep):
         f"object with exactly a sections array; each item must have exactly "
         f"title, visual_search_query and visual_subject."
     )
+    from production_narration import enabled as creative_enabled, long_instruction
     if enabled():
         prompt += "\n"+long_brief()
+    if creative_enabled():
+        prompt += "\n"+long_instruction()
     return _retried_json(client, prompt, OUTLINE_SCHEMA,
                          "long_documentary_outline", validate_outline,
                          sleep=sleep, max_tokens=3100)
@@ -200,7 +203,8 @@ def build_multilingual_documentary(topic: str, language: str, client=None,
 
     from production_checkpoint import get_script_part,put_script_part
     from editorial_standard import enabled,VERSION,long_brief,chapter_context
-    version=VERSION if enabled() else "legacy"
+    from production_narration import enabled as creative_enabled, long_instruction, VERSION as CREATIVE_VERSION
+    version=(VERSION if enabled() else "legacy") + (":"+CREATIVE_VERSION if creative_enabled() else "")
     identity=[topic,language,version]
     outline=get_script_part("generic-outline",identity)
     if outline is not None:
@@ -233,7 +237,10 @@ def build_multilingual_documentary(topic: str, language: str, client=None,
         )
         if enabled():
             prompt += "\n"+long_brief()+"\n"+chapter_context(outline,offset,written[-1]["narration"] if written else "")
-        group_identity=[topic,language,current,version, written[-1]["narration"] if enabled() and written else ""]
+        if creative_enabled():
+            from editorial_standard import chapter_context
+            prompt += "\n"+long_instruction()+"\n"+chapter_context(outline,offset,written[-1]["narration"] if written else "")
+        group_identity=[topic,language,current,version, written[-1]["narration"] if (enabled() or creative_enabled()) and written else ""]
         key=f"generic-group-{offset}"
         saved=get_script_part(key,group_identity)
         if saved is not None:
@@ -263,6 +270,10 @@ def build_multilingual_documentary(topic: str, language: str, client=None,
                     if enabled():
                         previous=(valid[-1]["narration"] if valid else written[-1]["narration"] if written else "")
                         single_prompt+="\n"+long_brief()+"\n"+chapter_context(outline,offset+i,previous)
+                    if creative_enabled():
+                        from editorial_standard import chapter_context
+                        previous=(valid[-1]["narration"] if valid else written[-1]["narration"] if written else "")
+                        single_prompt+="\n"+long_instruction()+"\n"+chapter_context(outline,offset+i,previous)
                     valid.extend(_retried_json(
                         client,single_prompt,CHAPTER_SCHEMA,"long_documentary_single",
                         lambda raw: _validate_group(raw,[item["title"]],language),
