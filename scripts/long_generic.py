@@ -278,6 +278,10 @@ def build_multilingual_documentary(topic: str, language: str, client=None,
                         client,single_prompt,CHAPTER_SCHEMA,"long_documentary_single",
                         lambda raw: _validate_group(raw,[item["title"]],language),
                         sleep=sleep,max_tokens=1800))
+            if creative_enabled() and offset == 0:
+                from production_narration import polish_long_opening
+                valid=polish_long_opening(topic,language,valid,outline,word_range=SPOKEN_BOUNDS[language])
+                valid=_validate_group({"chapters":valid},[p["title"] for p in current],language)
             put_script_part(key,group_identity,valid)
         for i, row in enumerate(valid):
             row["title"] = current[i]["title"]
