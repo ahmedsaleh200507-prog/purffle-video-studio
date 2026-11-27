@@ -499,6 +499,13 @@ def main():
         from editorial_standard import enabled,final_timing
         if enabled():
             full_qa["editorial_timing"]=final_timing(folder/"captions.srt",full_qa["duration"],mode="short")
+        from editorial_pacing import enabled as pacing_enabled,pacing_report
+        if pacing_enabled() and os.environ.get('PURFFLE_MEDIA_FIRST','1')=='1':
+            lengths=[item.extra.get("editorial_segment_seconds") for item in palette.items]
+            if lengths and all(v is not None for v in lengths):
+                full_qa["editorial_pacing"]=pacing_report(lengths)
+            else:
+                full_qa["editorial_pacing"]={"state":"segment_measurement_unavailable"}
         write_json(target.with_name('output-qa.json'), full_qa)
         result.update(status='ok', stage='complete', mp4=str(video), output_probe=info,
                       footage_report=os.environ['FOOTAGE_REPORT'],
