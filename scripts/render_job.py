@@ -322,6 +322,28 @@ def main():
 
             from short_recovery import save_reviewed_script
             save_reviewed_script(screenplay, s.language, os.environ['VIDEO_TOPIC'])
+            # Audit only: production writer and factual gates, no footage, voice or video.
+            if os.environ.get('PURFFLE_NARRATION_ONLY') == '1':
+                stage = 'narration_only_editorial_review'
+                if os.environ.get('PURFFLE_EDITORIAL_ANSWER_GATE') != '1' or os.environ.get('PURFFLE_EDITORIAL_STANDARD') != '1':
+                    raise RuntimeError('Narration audit requires both editorial gates')
+                from editorial_standard import audit_structure
+                texts = [str(scene.narration) for scene in screenplay.scenes]
+                write_json(target.with_name('narration.json'), {
+                    'topic': os.environ['VIDEO_TOPIC'], 'language': s.language,
+                    'narration': texts, 'evidence_method': evidence.method})
+                structure = audit_structure(texts, s.language, mode='short')
+                # Curated factual dossiers skip ordinary model editorial review.
+                # Judge their actual spoken words independently in this audit.
+                from science_sources import review_topic_answer
+                editorial = review_topic_answer(screenplay, evidence, studio.llm)
+                write_json(target.with_name('narration-quality.json'), {
+                    'structure': structure, 'editorial': editorial,
+                    'scope': 'script only; no audio, footage or audience metrics'})
+                result.update(status='narration_reviewed', stage='narration_only_complete',
+                              test_result='validated_narration_only')
+                return 0
+
             stage = 'visual_director_preflight'
             # Script comes first, so the required real-video count is exactly
             # the number of actual factual sentences. No empty/duplicated
