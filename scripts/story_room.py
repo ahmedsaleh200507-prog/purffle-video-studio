@@ -146,7 +146,7 @@ class StoryRoom:
             "Score hook, curiosity, progression, native language and payoff on 1–10. 8 means genuinely compelling, "
             "9 exceptional. Do not reward hype or invent audience metrics. Choose the better script. "
             "Give actionable feedback quoting weak phrases and describing exact improvements; never request unsupported facts. "
-            RUBRIC+"\nCandidates:\n"+json.dumps(candidates,ensure_ascii=False))
+            +RUBRIC+"\nCandidates:\n"+json.dumps(candidates,ensure_ascii=False))
         review,editor=self.ask("compare",editor_prompt,REVIEW_SCHEMA,EDITORS,avoid=models[0])
         winner=review["winner"]
         revised=candidates[winner]
