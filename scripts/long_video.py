@@ -173,8 +173,8 @@ def narrate(data,work,language="en",checkpoint=None,scene_groups=None):
     audios, lines, offset=[],[],0.0
     for i,c in enumerate(data):
         text=c["narration"]
-        from local_voice import provenance
-        identity=[text,language,provenance(language)["model_sha256"]]
+        from local_voice import provenance,flow_enabled,VOICE_FLOW_VERSION
+        identity=[text,language,provenance(language)["model_sha256"],VOICE_FLOW_VERSION if flow_enabled() else "legacy"]
         key=f"voice-{i+1:02d}"
         saved=checkpoint.get_file(key,identity,".wav") if checkpoint else None
         if saved:
