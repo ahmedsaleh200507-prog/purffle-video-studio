@@ -12,6 +12,8 @@ on:
       - '.github/workflows/videos.yml'
       - 'scripts/science_*.py'
       - 'scripts/retention_storyboard.py'
+      - 'scripts/editorial_standard.py'
+      - '.github/workflows/long-batch.yml'
       - 'scripts/long_*.py'
       - 'scripts/batch.py'
       - 'scripts/youtube_metadata.py'
