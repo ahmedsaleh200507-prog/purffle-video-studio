@@ -122,6 +122,8 @@ jobs:
       PURFFLE_CLOUD_MODEL_ROUTER: '1'
       PURFFLE_SIGLIP_REVIEW: '1'
       PURFFLE_VLM_SHADOW: '1'
+      PURFFLE_EDITORIAL_ANSWER_GATE: '1'
+      PURFFLE_SOURCE_TEXT_GATE: '1'
       PURFFLE_ADVANCED_VISUALS: '0'  # enabled after optional dependency checks
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -258,6 +260,14 @@ jobs:
             echo 'PURFFLE_ADVANCED_VISUALS=0' >> "$GITHUB_ENV"
             echo '::warning::Optional advanced tools unavailable; existing visual gates remain active'
           fi
+      - name: Install local source text screen
+        if: steps.selected.outputs.render == 'true'
+        run: |
+          if ! command -v tesseract >/dev/null || ! tesseract --list-langs 2>/dev/null | grep -qx deu; then
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y -qq tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu
+          fi
+          tesseract --list-langs
       - name: Restore local model cache
         if: steps.selected.outputs.render == 'true'
         id: model-cache
