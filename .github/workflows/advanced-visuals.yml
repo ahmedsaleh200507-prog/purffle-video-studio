@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'scripts/advanced_visuals.py'
+      - 'scripts/visual_consensus.py'
+      - 'scripts/visual_director.py'
+      - 'scripts/crop_subject_policy.py'
       - 'scripts/action_window.py'
       - 'scripts/object_framing.py'
       - 'scripts/verified_library.py'
@@ -44,10 +47,16 @@ jobs:
           from pathlib import Path
           import json
           from video_contrast_audit import fixture
-          from advanced_visuals import scene_intervals
+          from advanced_visuals import scene_intervals,residual_motion
+          from media_validation import _frame
           path=Path("audit-person.avi")
           fixture(path)
           spans=scene_intervals(path,8)
           assert spans and all(0<=a<b<=8 for a,b in spans)
           print("[REAL SCENES]",json.dumps(spans))
+          pairs=[(_frame(path,t,320,preserve_aspect=True),_frame(path,t+.24,320,preserve_aspect=True)) for t in (.2,1.,2.,3.)]
+          motions=[residual_motion(a,b) for a,b in pairs]
+          assert all(residual_motion(a,a)["localized_motion"] is False for a,b in pairs)
+          assert any(m["state"]=="observed" for m in motions)
+          print("[REAL OPTICAL FLOW]",json.dumps(motions))
           PY
