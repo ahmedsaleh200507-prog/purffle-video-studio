@@ -125,7 +125,7 @@ def _retried_json(client, prompt, schema, name, validator, *,
     for attempt in range(1, 4):
         try:
             return validator(_completion(
-                client, prompt, schema, name,
+                client, prompt + (f"\nPrevious response was rejected: {reason}. Correct that exact issue." if attempt>1 else ""), schema, name,
                 max_tokens=max_tokens, fallback=(attempt == 3)))
         except (ValueError, TypeError, KeyError, IndexError, json.JSONDecodeError) as exc:
             reason = type(exc).__name__ + ":" + str(exc)[:80]
@@ -233,11 +233,30 @@ def build_multilingual_documentary(topic: str, language: str, client=None,
             valid=_validate_group({"chapters":saved},[p["title"] for p in current],language)
             print(f"[SCRIPT RESUME] chapters {offset+1}-{offset+2}",flush=True)
         else:
-            valid = _retried_json(
-                client, prompt, CHAPTER_SCHEMA, "long_documentary_chapters",
-                lambda raw: _validate_group(
-                    raw, [p["title"] for p in current], language),
-                sleep=sleep, max_tokens=3000)
+            try:
+                valid = _retried_json(
+                    client, prompt, CHAPTER_SCHEMA, "long_documentary_chapters",
+                    lambda raw: _validate_group(
+                        raw, [p["title"] for p in current], language),
+                    sleep=sleep, max_tokens=3000)
+            except RuntimeError as exc:
+                if "unverified_after_3_attempts" not in str(exc):
+                    raise
+                # Smaller responses reduce truncation and word-count failures.
+                # Never pad or reuse another chapter's narration.
+                valid=[]
+                for i,item in enumerate(current):
+                    single_prompt=(
+                        f"Write exactly one chapter, section {offset+i+1} of 14, "
+                        f"about {topic!r}, with title {item['title']!r}. "
+                        f"Use only {LANGUAGES[language]} for narration, {low} to {high} spoken words. "
+                        "Use careful factual explanations, complete sentences, no invented claims, "
+                        "no subscribe prompt. Return JSON with chapters containing exactly one "
+                        "object with title and narration.")
+                    valid.extend(_retried_json(
+                        client,single_prompt,CHAPTER_SCHEMA,"long_documentary_single",
+                        lambda raw: _validate_group(raw,[item["title"]],language),
+                        sleep=sleep,max_tokens=1800))
             put_script_part(key,group_identity,valid)
         for i, row in enumerate(valid):
             row["title"] = current[i]["title"]
