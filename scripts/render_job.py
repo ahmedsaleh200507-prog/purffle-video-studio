@@ -161,6 +161,9 @@ def main():
                                      os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                 raise
 
+            from production_narration import enabled as creative_enabled, review_reference, rewrite_short
+            creative = creative_enabled()
+            review_evidence = review_reference(evidence, os.environ['VIDEO_TOPIC'], s.language) if creative else evidence
             stage = 'grounded_script'
             review_feedback_text = ''
             review_scene_target = None
@@ -228,6 +231,10 @@ def main():
                     stage = 'grounded_script'
                     continue
                 try:
+                    if creative:
+                        stage = 'creative_narration'
+                        screenplay, writer = rewrite_short(screenplay, topic, s.language, review_evidence,
+                                                           feedback=review_feedback_text)
                     from science_fact_guard import validate_unsourced_quantities
                     validate_unsourced_quantities(
                         screenplay, os.environ['VIDEO_TOPIC'])
@@ -239,14 +246,14 @@ def main():
                         write_json(target.with_name('narration.json'), {
                             'topic': topic, 'language': s.language,
                             'narration': [str(scene.narration) for scene in screenplay.scenes],
-                            'evidence_method': evidence.method,
+                            'evidence_method': review_evidence.method,
                             'scope': 'candidate; consult quality report for acceptance'})
                     screen_narration(
-                        screenplay, evidence, studio.llm,
+                        screenplay, review_evidence, studio.llm,
                         path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                     break
                 except RuntimeError as script_error:
-                    if evidence.method == 'curated_editor_reviewed':
+                    if evidence.method == 'curated_editor_reviewed' and not creative:
                         # A mismatched predefined statement cannot be fixed
                         # by paying the LLM to invent an alternative: fail
                         # closed and report the dossier integrity error.
@@ -291,6 +298,8 @@ def main():
                         # Fixed internal verdict labels, never arbitrary model instructions.
                         review_feedback_text="EDITORIAL REVISION: Correct the failed narrative criteria: "+str(script_error)[:220]+". Keep every claim source-supported and answer the original topic."
                     if attempt >= 2:
+                        if creative:
+                            raise  # Do not replace rejected creative text with a stale script.
                         # The real V5 #102 proof screened two of four scenes
                         # as true, then discarded them because the other two
                         # contained unsourced assertions. Reuse *only* fully
@@ -316,7 +325,7 @@ def main():
                             os.environ['VIDEO_TOPIC'], salvaged, s.language)
                         stage = 'science_review'
                         screen_narration(
-                            salvaged, evidence, studio.llm,
+                            salvaged, review_evidence, studio.llm,
                             path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                         screenplay = salvaged
                         break
@@ -337,7 +346,7 @@ def main():
                 texts = [str(scene.narration) for scene in screenplay.scenes]
                 write_json(target.with_name('narration.json'), {
                     'topic': os.environ['VIDEO_TOPIC'], 'language': s.language,
-                    'narration': texts, 'evidence_method': evidence.method})
+                    'narration': texts, 'evidence_method': review_evidence.method})
                 structure = audit_structure(texts, s.language, mode='short')
                 # Curated factual dossiers skip ordinary model editorial review.
                 # Judge their actual spoken words independently in this audit.
@@ -345,7 +354,7 @@ def main():
                 editorial = report.get('topic_review') or {}
                 if editorial.get('state') != 'model_screened_topic_answer':
                     from science_sources import review_topic_answer
-                    editorial = review_topic_answer(screenplay, evidence, studio.llm)
+                    editorial = review_topic_answer(screenplay, review_evidence, studio.llm)
                 write_json(target.with_name('narration-quality.json'), {
                     'structure': structure, 'editorial': editorial,
                     'scope': 'script only; no audio, footage or audience metrics'})
@@ -428,6 +437,8 @@ def main():
                 if repaired is not None:
                     screenplay = repaired
                 else:
+                    if creative:
+                        raise  # Visual recovery must not silently replace reviewed creative speech.
                     # An approved fixed-science dossier must not be rewritten
                     # with untrusted model claims merely to obtain footage.
                     # Subject/license/CLIP gates still fail closed.
@@ -442,7 +453,7 @@ def main():
                         script_scene_count=3
                         validate_unsourced_quantities(screenplay,topic)
                         storyboard_audit=audit_storyboard(topic,screenplay,s.language)
-                        screen_narration(screenplay,evidence,studio.llm,path=os.environ.get('SCIENCE_REPORT','science-report.json'))
+                        screen_narration(screenplay,review_evidence,studio.llm,path=os.environ.get('SCIENCE_REPORT','science-report.json'))
                         save_reviewed_script(screenplay,s.language,topic)
                         palette=prepare_verified_palette(topic,s,storyboard=screenplay,min_scenes=3,max_scenes=3,clip_seconds=10.0)
                     else:
@@ -471,7 +482,7 @@ def main():
                             os.environ['VIDEO_TOPIC'], alternative, s.language)
                         stage = 'science_review'
                         screen_narration(
-                            alternative, evidence, studio.llm,
+                            alternative, review_evidence, studio.llm,
                             path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                         save_reviewed_script(alternative, s.language, os.environ['VIDEO_TOPIC'])
                         stage = 'visual_director_preflight'
@@ -508,6 +519,9 @@ def main():
                                   media_map=palette.media_map,
                                   credits=palette.credits)
         else:
+            from production_narration import enabled as creative_enabled
+            if creative_enabled():
+                raise RuntimeError('Creative narration requires the source-reviewed production path')
             made = studio.make(os.environ['VIDEO_TOPIC'], upload=False)
         if not made.ok or not made.video:
             raise RuntimeError(made.error or made.status or 'Upstream production failed')
@@ -564,7 +578,7 @@ def main():
                           'RETENTION_REPORT', str(target.with_name('retention-report.json')))
                           if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1' else None,
                       science_report=os.environ.get('SCIENCE_REPORT', 'science-report.json'),
-                      science_screening=evidence.method if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1' else 'legacy_unreviewed',
+                      science_screening=review_evidence.method if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1' else 'legacy_unreviewed',
                       test_result='validated_output', sources=sorted({x['source'] for x in footage['scenes']}))
     except Exception as exc:
         logging.exception('Video production failed')
