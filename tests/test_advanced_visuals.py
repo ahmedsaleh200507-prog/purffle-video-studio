@@ -82,3 +82,44 @@ def test_consensus_never_claims_identity_or_action():
     assert result["state"]=="secondary_disagreement"
     assert result["evidence"]["florence"]=="observed"
     assert result["evidence"]["event"] is None
+
+
+def test_flow_bridge_uses_actual_pixels_and_only_reports_observed_anchors():
+    from advanced_visuals import bridge_observations,anchor_tracks,track_observations
+    import numpy as np
+    from PIL import Image
+    rng=np.random.default_rng(42)
+    patch=rng.integers(20,255,(48,32),dtype=np.uint8)
+    times=[0.,.6,1.2,1.8,2.4]
+    def reader(t):
+        a=np.zeros((240,320),dtype=np.uint8)
+        x=20+round(t*48)
+        a[80:128,x:x+32]=patch
+        return Image.fromarray(a)
+    rows=[]
+    for t in times:
+        x=20+round(t*48)
+        rows.append([{"box":[x/320,80/240,(x+32)/320,128/240],"score":.92}])
+    dense,ts,anchors=bridge_observations(rows,times,reader,time.monotonic()+90)
+    assert len(dense)>len(rows)
+    assert any(d.get("origin")=="optical_flow" for row in dense for d in row)
+    report=anchor_tracks(track_observations(dense,ts),anchors,times)
+    assert any(len(v)>=3 for v in report["tracks"].values())
+    for track in report["tracks"].values():
+        assert all(entry["time"] in times for entry in track)
+
+def test_anchor_tracks_never_reports_flow_only_paths():
+    from advanced_visuals import anchor_tracks
+    sample=lambda i:{"sample":i,"time":i*.1,"box":[.1,.2,.3,.4]}
+    report={"state":"observed","sample_count":9,
+            "tracks":{"flow":[sample(1),sample(2)],"one":[sample(0),sample(1)],
+                      "two":[sample(0),sample(1),sample(4)]}}
+    result=anchor_tracks(report,{0:0,4:1,8:2},[0.,.4,.8])
+    assert set(result["tracks"])=={"two"}
+    assert [r["sample"] for r in result["tracks"]["two"]]==[0,1]
+
+def test_bridge_stops_if_scene_time_budget_is_exhausted():
+    from advanced_visuals import bridge_observations
+    def reader(t):
+        pytest.fail("Must not decode frames after deadline")
+    assert bridge_observations([[],[],[]],[0.,.6,1.2],reader,time.monotonic()) is None
