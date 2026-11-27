@@ -158,7 +158,8 @@ def propose(path,seconds,subject,source_width,source_height,output_width,output_
                                   for raw,r in zip(raw_rows,evidence)]
         result["tracking_shadow"]=track_focus(rows,times,fraction,default)
         from advanced_visuals import track_review,tracking_agreement
-        result["bytetrack_shadow"]=track_review(rows,times)
+        result["bytetrack_shadow"]=track_review(rows,times,
+            reader=lambda t:_frame(path,t,640,preserve_aspect=True),deadline=deadline)
         result["tracking_agreement"]=tracking_agreement(result["bytetrack_shadow"],rows,times,result["tracking_shadow"])
         if (result["tracking_shadow"].get("state")=="shadow_proposal"
                 and result["bytetrack_shadow"].get("state")=="observed"
