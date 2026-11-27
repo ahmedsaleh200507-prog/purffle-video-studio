@@ -19,6 +19,8 @@ BRIEF=(
     "Find an actual surprising fact, meaningful event, puzzle or consequence in the reference. "
     "Choose an approach unique to the subject. Make the first thought concrete and immediately understandable. "
     "A genuine surprise is better than an adjective or generic question. Never manufacture suspense or facts. "
+    "Aim for the feeling of an absorbing story told by a knowledgeable friend: vivid, effortless, human. "
+    "Prefer an unforgettable detail over exhaustive coverage. Simplify jargon and nonessential precision rather than inventing a claim. "
     "A surprising fact is not automatically the cause of another fact. Never turn an association into a causal explanation."
 )
 
@@ -36,7 +38,7 @@ class CreativeNarration(StoryRoom):
             "\nWrite FIVE distinctly different possible opening lines (a–e), one or two short sentences each. "
             "Each must create a specific curiosity about the exact topic that the reference can answer. "
             "At least three options should start with an unexpected fact in everyday language, not a mechanism or a measurement. "
-            "Each opening must be literally supported, including every qualifier and causal word. "
+            "Make each opening a compelling, immediately intelligible thought, faithful to the material. Avoid nonessential measurements and specialist names. "
             "Prefer striking supported details and ordinary words to technical mechanisms. "
             "Do not repeat the title as a question, use 'did you know', generic scene setting or ungrounded comparisons. "
             "For a long middle chapter, make the opening continue the previous chapter instead of restarting the film. "
@@ -57,11 +59,11 @@ class CreativeNarration(StoryRoom):
             "Make the next sentence a new discovery, not a definition. Build a meaningful chain of two or three revelations. "
             "Answer the exact topic, including the actual mechanism if the question asks why or how. "
             "End with the most satisfying supported insight, not a sweeping claim or generic recap. "
-            "Before returning, privately check every claim: which reference supports it? "
-            "Remove invented causes, reversed causes, precise claims not in the source and false certainty. "
+            "Keep the core facts sound but do not turn narration into a technical report. Omit uncertain or distracting details; never invent or reverse a cause. "
+            "Read the result aloud in your mind. Cut any sentence that does not advance the discovery. "
             "Never imply a surprising side effect explains the origin or purpose of a system unless the source says so. "
             "An observation can be a clue without being an exact measurement. "
-            "Use native spoken rhythm, no lecture. For long chapters advance the larger arc. "
+            "Write as if telling a fascinated friend. Prefer short, varied sentences, concrete verbs and natural transitions. No lecture or glossary. For long chapters advance the larger arc. "
             "Return the selected letter, opening and continuation, not scores.\nOpenings:\n"+
             json.dumps(eligible,ensure_ascii=False),schema,EDITORS,avoid=writer,temperature=.65)
         chosen=final["chosen"]
