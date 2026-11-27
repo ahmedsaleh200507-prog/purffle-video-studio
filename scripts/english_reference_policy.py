@@ -69,7 +69,9 @@ def main():
     parser.add_argument("--topic", required=True)
     args = parser.parse_args()
     enforce_english_reference_only(topic_language(args.topic), strict=True)
-    print("[VOICE POLICY] V4 fixed Piper Joe/Thorsten; no reference secret required")
+    from local_voice import provenance
+    info=provenance(topic_language(args.topic))
+    print(f"[VOICE POLICY] locked {info['engine']}:{info['model']}; no reference secret required")
 
 
 if __name__ == "__main__":
