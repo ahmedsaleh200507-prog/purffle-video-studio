@@ -38,3 +38,30 @@ def test_no_english_voice_fallback(monkeypatch,tmp_path):
     monkeypatch.setattr(g,"synthesize",fail)
     with pytest.raises(RuntimeError,match="George unavailable"):
         local_voice.synthesize("A volcano erupts.",tmp_path,SimpleNamespace(language="en"))
+
+
+def test_pcm_decoder_uses_actual_audio_without_pyav(tmp_path):
+    import numpy as np
+    import wave
+    path=tmp_path/"actual.wav"
+    samples=(np.sin(np.arange(24000)*2*np.pi*440/24000)*16000).astype("<i2")
+    with wave.open(str(path),"wb") as w:
+        w.setparams((1,2,24000,0,"NONE","not compressed"))
+        w.writeframes(samples.tobytes())
+    audio=g._read_pcm_for_asr(path)
+    assert audio.dtype==np.float32 and audio.shape==(16000,)
+    assert .47<float(np.max(np.abs(audio)))<.51
+
+def test_asr_receives_pcm_and_rejects_changed_words(monkeypatch,tmp_path):
+    import numpy as np
+    monkeypatch.setattr(g,"_read_pcm_for_asr",lambda path:np.zeros(16000,dtype=np.float32))
+    class Model:
+        def transcribe(self,audio,**kwargs):
+            assert isinstance(audio,np.ndarray) and audio.shape==(16000,)
+            assert "initial_prompt" not in kwargs
+            return [SimpleNamespace(words=[SimpleNamespace(word="A",start=.1,end=.2,probability=.99),SimpleNamespace(word="volcano",start=.2,end=.8,probability=.99)])],None
+    monkeypatch.setattr(g,"_asr",lambda model:Model())
+    rows=[("A",.1,.2),("volcano.",.2,.8)]
+    assert g._verify_wav("A volcano.",tmp_path/"actual.wav",["A","volcano."],rows,1.)==("base.en",0.)
+    with pytest.raises(RuntimeError,match="actual-audio verification failed"):
+        g._verify_wav("A mountain.",tmp_path/"actual.wav",["A","mountain."],rows,1.)
