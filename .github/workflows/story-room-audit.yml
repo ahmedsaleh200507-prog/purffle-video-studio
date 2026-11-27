@@ -1,5 +1,5 @@
 name: Writers room text quality pilot
-# V3: story planning before writing, competing original drafts and cross-model rewrites.
+# V4: topic-adaptive storytelling across varied source-reviewed subjects.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
@@ -29,13 +29,13 @@ jobs:
             topic: Why Do Octopuses Have Three Hearts?
           - language: de
             mode: short
-            topic: Warum sehen wir Blitze vor dem Donner?
+            topic: Warum beschlägt der Badezimmerspiegel?
           - language: en
             mode: long
-            topic: Why do volcanoes erupt?
+            topic: Why Do Steel Ships Float?
           - language: de
             mode: long
-            topic: Warum leuchten Polarlichter?
+            topic: Warum springen Wale aus dem Meer?
     env:
       PYTHONPATH: scripts
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
