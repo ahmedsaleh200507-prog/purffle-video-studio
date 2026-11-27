@@ -474,6 +474,12 @@ def inspect_action(path, duration, crop_focus, contract, *,
                         adjacent=_frame_at(path,next_t,crop_focus)
                         result["event_nearby_motion"]=motion_pair(frames[best],adjacent)
                         result["event_nearby_motion"]["sample_times"]=[round(t,3),round(next_t,3)]
+                        if os.environ.get("PURFFLE_ADVANCED_VISUALS")=="1":
+                            from advanced_visuals import residual_motion
+                            try:
+                                result["event_residual_motion"]=residual_motion(frames[best],adjacent)
+                            except Exception as exc:
+                                result["event_residual_motion"]={"state":"unavailable","error_type":type(exc).__name__}
                 except Exception as exc:
                     result["event_nearby_motion"]={"state":"unavailable","error_type":type(exc).__name__}
     return result
