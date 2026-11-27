@@ -5,6 +5,8 @@ on:
     branches: [chatgpt/yellow-system-fixes]
     paths:
       - '.github/workflows/story-room-audit.yml'
+      - 'scripts/story_room.py'
+      - 'tests/test_story_room.py'
   workflow_dispatch:
 permissions:
   contents: read
