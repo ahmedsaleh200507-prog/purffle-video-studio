@@ -47,7 +47,6 @@ jobs:
       PURFFLE_ENGLISH_NARRATOR: george
       PURFFLE_NARRATOR_LOCK: '1'
       PURFFLE_NATURAL_VOICE: '1'
-      PURFFLE_STRICT: '1'
       UPLOAD: 'false'
       LANGUAGE: ${{ matrix.language }}
       VIDEO_TOPIC: ${{ matrix.topic }}
@@ -71,6 +70,8 @@ jobs:
           python -m compileall -q scripts
           python -m pytest -q tests/test_root_production.py
       - name: Generate and independently review narration without media
+        env:
+          PURFFLE_STRICT: '1'
         run: |
           mkdir -p narration-proof
           if [ "$FORMAT" = short ]; then
