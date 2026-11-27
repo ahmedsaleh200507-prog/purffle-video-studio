@@ -1,4 +1,5 @@
 name: Bilingual narration only audit
+# Re-run selected B style against the revised production editorial gate.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
