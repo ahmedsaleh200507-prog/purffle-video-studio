@@ -57,7 +57,24 @@ jobs:
                       assert [w["text"] for w in old["words"]]==[w["text"] for w in proof["words"]]
                       assert old["provenance"]["model_sha256"]==proof["provenance"]["model_sha256"]
                       assert speech.provenance["contextual_sentences"]>0
-                      print("[REAL VOICE FLOW]",lang,json.dumps({k:speech.provenance[k] for k in ("contextual_sentences","isolated_pronunciation_fallback_sentences","sentence_chunks")}),flush=True)
+                      assert speech.provenance["isolated_pronunciation_fallback_sentences"]==0
+                      assert speech.provenance["voice_flow_version"]=="sentence_context_v2"
+                      assert all(w["start"]<w["end"]<=speech.duration for w in proof["words"])
+                      print("[REAL VOICE FLOW]",lang,json.dumps({k:speech.provenance[k] for k in ("contextual_sentences","isolated_pronunciation_fallback_sentences","sentence_chunks","contextual_clause_repairs","trimmed_quiet_margin_samples","measured_max_nonpunctuation_gap_seconds","measured_max_word_gap_seconds","spoken_words_per_minute")}),flush=True)
+          # Both modes must also keep the same original word tokens in a
+          # different topic and a complete multi-sentence documentary passage.
+          passages={
+              "en":"A blue whale can be longer than a city bus. It feeds on tiny animals called krill, even though it is the largest animal alive. It opens its enormous mouth, and the water flows back out through special plates. The krill stay inside, so one gulp can collect a great deal of food. When the whale dives, it has to hold its breath. Its body stores oxygen in the blood and muscles, allowing it to spend time beneath the waves. Then it returns to the surface to breathe again.",
+              "de":"Ein Blauwal kann länger als ein Stadtbus sein. Obwohl er das größte lebende Tier ist, ernährt er sich von winzigen Krebstieren. Er öffnet sein riesiges Maul, und das Wasser fließt durch besondere Barten wieder hinaus. Die kleinen Tiere bleiben darin hängen. Wenn der Wal abtaucht, muss er die Luft anhalten. Sein Körper speichert Sauerstoff im Blut und in den Muskeln. So kann er einige Zeit unter der Wasseroberfläche bleiben. Schließlich taucht er wieder auf, um zu atmen."
+          }
+          for lang,passage in passages.items():
+              os.environ["PURFFLE_NATURAL_VOICE"]="1"
+              speech=synthesize(passage,root/f"{lang}-documentary",SimpleNamespace(language=lang))
+              proof={"duration":speech.duration,"words":[{"text":w.text,"start":w.start,"end":w.end} for w in speech.words],"provenance":speech.provenance}
+              (root/f"{lang}-documentary.json").write_text(json.dumps(proof,ensure_ascii=False,indent=2))
+              assert speech.provenance["isolated_pronunciation_fallback_sentences"]==0
+              assert speech.provenance["contextual_sentences"]>=6
+              print("[DOCUMENTARY VOICE FLOW]",lang,json.dumps(speech.provenance),flush=True)
           PY
       - uses: actions/upload-artifact@v4
         if: always()
