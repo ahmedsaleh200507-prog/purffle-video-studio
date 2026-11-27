@@ -83,7 +83,7 @@ def evaluate(model,frames,case,caption_engine=None):
         return {"pass":sum(wins)>=2,"wins":wins,"scores":rows,
                 "scope":"relative positive versus same-context empty background and unrelated category"}
     if model=="dino":
-        from object_framing import detect, track_focus
+        from object_framing import detect, track_focus, group_focus
         from object_region_review import corroborate
         rows=[]
         for frame in frames:
@@ -94,8 +94,11 @@ def evaluate(model,frames,case,caption_engine=None):
             rows.append(entry)
         wins=[bool(r["subject"]["accepted"]) and not r["absent"]["accepted"] for r in rows]
         w,h=frames[0].size
-        tracking=track_focus([r["subject"]["accepted"] for r in rows],case["times"],min(1.,h*9/(w*16)))
-        return {"pass":sum(wins)>=2,"wins":wins,"regions":rows,"tracking":tracking,
+        verified=[r["subject"]["accepted"] for r in rows]
+        fraction=min(1.,h*9/(w*16))
+        tracking=track_focus(verified,case["times"],fraction)
+        group=group_focus(verified,fraction)
+        return {"pass":sum(wins)>=2,"wins":wins,"regions":rows,"tracking":tracking,"group_framing":group,
                 "scope":"independently corroborated boxes; tracking proposal or abstention, no identity ground truth"}
     from visual_language_audit import caption
     processor,engine=caption_engine
