@@ -273,6 +273,8 @@ def _recover_short(topic,language,target):
     try:
         qa=validate_timeline(out,captions,expected_size=(1080,1920),expected_duration=offset,
                              expected_text=" ".join(scene["narration"] for scene in data["scenes"]))
+        from retention_storyboard import validate_short_duration
+        validate_short_duration(qa["duration"])
     except Exception:
         out.unlink(missing_ok=True)
         raise
