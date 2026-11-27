@@ -44,6 +44,38 @@ on:
         description: '10 - en|Topic or de|Thema'
         required: false
         type: string
+  workflow_call:
+    inputs:
+      video_1:
+        type: string
+        required: true
+      video_2:
+        type: string
+        required: false
+      video_3:
+        type: string
+        required: false
+      video_4:
+        type: string
+        required: false
+      video_5:
+        type: string
+        required: false
+      video_6:
+        type: string
+        required: false
+      video_7:
+        type: string
+        required: false
+      video_8:
+        type: string
+        required: false
+      video_9:
+        type: string
+        required: false
+      video_10:
+        type: string
+        required: false
 permissions:
   contents: read
 # No workflow-wide concurrency lock. With a constant group GitHub allows only
@@ -296,7 +328,7 @@ jobs:
         env:
           SLOT_TOPIC: ${{ inputs[matrix.input] }}
           SLOT_INDEX: ${{ matrix.slot }}
-          PURFFLE_LAST_RESORT_GRAPHICS: '1'
+          PURFFLE_LAST_RESORT_GRAPHICS: '0'
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
         run: |
           # A normal successful MP4 is always preferred.
