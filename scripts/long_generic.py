@@ -141,6 +141,7 @@ def _retried_json(client, prompt, schema, name, validator, *,
 
 
 def generate_outline(topic: str, language: str, client, *, sleep=time.sleep):
+    from editorial_standard import enabled, long_brief
     language_name = LANGUAGES[language]
     prompt = (
         f"Build a non-fiction documentary outline about {topic!r} with exactly "
@@ -160,6 +161,8 @@ def generate_outline(topic: str, language: str, client, *, sleep=time.sleep):
         f"object with exactly a sections array; each item must have exactly "
         f"title, visual_search_query and visual_subject."
     )
+    if enabled():
+        prompt += "\n"+long_brief()
     return _retried_json(client, prompt, OUTLINE_SCHEMA,
                          "long_documentary_outline", validate_outline,
                          sleep=sleep, max_tokens=3100)
@@ -196,7 +199,9 @@ def build_multilingual_documentary(topic: str, language: str, client=None,
         client = get_long_client()
 
     from production_checkpoint import get_script_part,put_script_part
-    identity=[topic,language]
+    from editorial_standard import enabled,VERSION,long_brief,chapter_context
+    version=VERSION if enabled() else "legacy"
+    identity=[topic,language,version]
     outline=get_script_part("generic-outline",identity)
     if outline is not None:
         outline=validate_outline({"sections":outline})
@@ -226,7 +231,9 @@ def build_multilingual_documentary(topic: str, language: str, client=None,
             f"Return ONLY JSON with exactly chapters as an array of exactly "
             f"two objects, each with title and narration strings."
         )
-        group_identity=[topic,language,current]
+        if enabled():
+            prompt += "\n"+long_brief()+"\n"+chapter_context(outline,offset,written[-1]["narration"] if written else "")
+        group_identity=[topic,language,current,version, written[-1]["narration"] if enabled() and written else ""]
         key=f"generic-group-{offset}"
         saved=get_script_part(key,group_identity)
         if saved is not None:
@@ -253,6 +260,9 @@ def build_multilingual_documentary(topic: str, language: str, client=None,
                         "Use careful factual explanations, complete sentences, no invented claims, "
                         "no subscribe prompt. Return JSON with chapters containing exactly one "
                         "object with title and narration.")
+                    if enabled():
+                        previous=(valid[-1]["narration"] if valid else written[-1]["narration"] if written else "")
+                        single_prompt+="\n"+long_brief()+"\n"+chapter_context(outline,offset+i,previous)
                     valid.extend(_retried_json(
                         client,single_prompt,CHAPTER_SCHEMA,"long_documentary_single",
                         lambda raw: _validate_group(raw,[item["title"]],language),
