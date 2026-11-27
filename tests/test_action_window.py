@@ -33,3 +33,12 @@ class ActionWindowTests(unittest.TestCase):
         self.assertGreater(result["offset"],65.)
         self.assertLessEqual(len(result["attempts"]),6)
         self.assertEqual(result["attempts"][0]["error_type"],"RuntimeError")
+
+    def test_nonopening_scene_uses_nonopening_contract(self):
+        def inspect(*args,**kwargs):
+            self.assertFalse(kwargs["opening"])
+            return {"verified":True}
+        with patch("visual_director._frame_at",return_value=1):
+            result=select_window("clip",20.,5.,{"event_required":True},
+                scorer=None,deadline=10**12,inspector=inspect,opening=False)
+        self.assertEqual(result["state"],"keep_start")
