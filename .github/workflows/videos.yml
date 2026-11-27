@@ -125,6 +125,7 @@ jobs:
       PURFFLE_EDITORIAL_ANSWER_GATE: '1'
       PURFFLE_EDITORIAL_STANDARD: '1'
       PURFFLE_NATURAL_VOICE: '1'
+      PURFFLE_ENGLISH_NARRATOR: george
       PURFFLE_EDITORIAL_PACING: '1'
       PURFFLE_SOURCE_TEXT_GATE: '1'
       PURFFLE_ADVANCED_VISUALS: '0'  # enabled after optional dependency checks
@@ -145,7 +146,7 @@ jobs:
       # Remaining providers are still checked when the first ones have no
       # verified, relevant HD clip; license and CLIP checks stay unchanged.
       VISUAL_SOURCES: pexels,pixabay,usgs-video,nps-video,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video,vecteezy-video
-      # V4 fixed Piper Joe/Thorsten; no alternate voice or private model setup.
+      # Fixed George/Thorsten; no alternate voice or private model setup.
       PURFFLE_NARRATOR_LOCK: '1'
       TTS_ENGINE: piper
       EDGE_TTS_TIMEOUT_SECONDS: '120'
@@ -215,7 +216,7 @@ jobs:
           language, topic = parse_topic(os.environ["SLOT_TOPIC"])
           print(f"[TOPIC VALIDATED] one {language} topic, {len(topic)} characters")
           PY
-      - name: Verify fixed Piper voice policy before installing video tools
+      - name: Verify fixed narrator policy before installing video tools
         if: steps.selected.outputs.render == 'true'
         env:
           SLOT_TOPIC: ${{ inputs[matrix.input] }}
@@ -254,6 +255,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-dev.txt 'jsonschema>=4.20,<5' 'sentencepiece>=0.2,<1'
+      - name: Install approved George voice only for English
+        if: steps.selected.outputs.render == 'true'
+        env:
+          SLOT_TOPIC: ${{ inputs[matrix.input] }}
+        run: |
+          if [[ "${SLOT_TOPIC,,}" =~ ^[[:space:]]*en[[:space:]\|] ]]; then
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y -qq espeak-ng
+            python -m pip install 'kokoro==0.9.4' 'soundfile==0.13.1' 'faster-whisper==1.2.1'
+          fi
       - name: Enable validated optional CPU vision tools
         if: steps.selected.outputs.render == 'true'
         run: |
@@ -279,7 +290,8 @@ jobs:
           path: |
             .cache/huggingface
             .cache/piper
-          key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/media_validation.py') }}
+            .cache/whisper
+          key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/george_voice.py', 'scripts/media_validation.py') }}
       - name: Restore verified local Qwen download cache
         if: steps.selected.outputs.render == 'true'
         id: qwen-cache
@@ -393,7 +405,8 @@ jobs:
           path: |
             .cache/huggingface
             .cache/piper
-          key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/media_validation.py') }}
+            .cache/whisper
+          key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/george_voice.py', 'scripts/media_validation.py') }}
       - name: Save public-domain verified source index
         if: always() && steps.selected.outputs.render == 'true' && hashFiles('media_cache/verified-library/index.json') != ''
         continue-on-error: true
