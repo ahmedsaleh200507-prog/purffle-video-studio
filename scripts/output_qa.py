@@ -11,6 +11,8 @@ def caption_intervals(path, duration):
     rows = re.findall(r'(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})', text)
     def seconds(s):
         h, m, tail = s.split(':'); sec, ms = tail.split(',')
+        if int(m)>=60 or int(sec)>=60:
+            raise RuntimeError('output_qa_invalid_caption_timestamp')
         return int(h)*3600 + int(m)*60 + int(sec) + int(ms)/1000
     intervals = [(seconds(a), seconds(b)) for a, b in rows]
     if not intervals or any(a < 0 or b <= a or b > duration + .25 for a, b in intervals):
@@ -19,6 +21,8 @@ def caption_intervals(path, duration):
         raise RuntimeError('output_qa_overlapping_captions')
     if intervals[0][0] > 1.5 or duration - intervals[-1][1] > 2.5:
         raise RuntimeError('output_qa_caption_coverage_incomplete')
+    if any(b[0]-a[1] > 4.0 for a,b in zip(intervals, intervals[1:])):
+        raise RuntimeError('output_qa_internal_caption_gap')
     return intervals
 
 
@@ -37,7 +41,21 @@ def validate_timeline(path, captions, *, expected_size, expected_duration=None, 
     if (not a or (v.get('width'),v.get('height')) != tuple(expected_size)
             or abs(fps-30) > .05 or not math.isfinite(duration) or duration <= 0):
         raise RuntimeError('output_qa_invalid_resolution_fps_audio_or_duration')
-    if expected_duration is not None and abs(duration-float(expected_duration)) > max(.5, duration*.01):
+    # Container duration can hide an early-ending narration or picture stream.
+    # ffprobe stream times are independently checked when present.
+    def stream_bounds(stream):
+        try:
+            start=float(stream.get('start_time',0))
+            length=float(stream['duration'])
+        except (KeyError,TypeError,ValueError):
+            return None
+        if not math.isfinite(start) or not math.isfinite(length) or length<=0:
+            raise RuntimeError('output_qa_invalid_stream_duration')
+        return start,start+length
+    vb,ab=stream_bounds(v),stream_bounds(a)
+    if vb and ab and (abs(vb[0]-ab[0])>.5 or abs(vb[1]-ab[1])>.75):
+        raise RuntimeError('output_qa_audio_video_timeline_mismatch')
+    if expected_duration is not None and (not math.isfinite(float(expected_duration)) or float(expected_duration)<=0 or abs(duration-float(expected_duration)) > max(.5, duration*.01)):
         raise RuntimeError('output_qa_narration_duration_mismatch')
     # Detect across the WHOLE output with downscaled video and mono audio;
     # no HD frame buffers or PCM recording need to be retained in Python.
