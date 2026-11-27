@@ -1,5 +1,5 @@
 name: Bilingual real Shorts canary
-# Revision 2: unified four-phase editorial contract, exact-answer and source-text gates.
+# Revision 3: bounded best opening, shorter four-shot volcano story with safe fallback, rendered scene pacing.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
