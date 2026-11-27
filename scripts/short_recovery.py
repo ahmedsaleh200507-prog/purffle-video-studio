@@ -284,6 +284,11 @@ def _recover_short(topic,language,target):
                              expected_text=" ".join(scene["narration"] for scene in data["scenes"]))
         from retention_storyboard import validate_short_duration
         validate_short_duration(qa["duration"])
+        from editorial_standard import enabled,final_timing
+        if enabled():
+            from shorts_final_qa import audit_rendered_opening
+            qa["editorial_timing"]=final_timing(captions,qa["duration"],mode="short")
+            qa["final_opening_qa"]=audit_rendered_opening(out)
     except Exception:
         out.unlink(missing_ok=True)
         raise
