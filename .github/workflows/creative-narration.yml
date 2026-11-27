@@ -2,7 +2,7 @@ name: Creative narration text samples
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
-    paths: ['.github/workflows/creative-narration.yml', 'scripts/creative_narration.py']
+    paths: ['.github/workflows/creative-narration.yml', 'scripts/creative_narration.py', 'scripts/story_references.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install requests jsonschema
-      - name: Generate three drafts and one finished script
+      - name: Generate five openings and one finished script
         run: |
           mkdir -p creative-proof
           python - <<'PY'
