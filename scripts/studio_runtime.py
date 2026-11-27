@@ -593,11 +593,12 @@ class StrictVisuals:
                     # event. Keep original digest for source deduplication.
                     window_review = {"state":"disabled","offset":0.}
                     if (os.environ.get("PURFFLE_ACTION_WINDOW")=="1"
-                            and idx==0 and isinstance(self.matcher,SceneMatcher)
+                            and isinstance(self.matcher,SceneMatcher)
                             and director_contract and director_contract.get("event_required")):
                         from action_window import select_window,extract_window
                         window_review=select_window(path,float(quality["duration"]),float(need),
-                            director_contract,scorer=self.matcher._similarities,deadline=phase_deadline)
+                            director_contract,scorer=self.matcher._similarities,deadline=phase_deadline,
+                            opening=(idx==0))
                         if window_review["offset"]>0:
                             trimmed=None
                             try:
