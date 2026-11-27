@@ -847,11 +847,11 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
         # three filler shots when two source-reviewed scenes cover the cause.
         narration = (
             [
-                "Northern lights glow high in the night sky, especially near the poles.",
-                "Electrons collide with oxygen and nitrogen high in Earth's atmosphere. These gases release the colorful aurora light.",
+                "Those glowing ribbons are light from gases high above Earth. Energetic electrons follow Earth's magnetic field toward the polar regions.",
+                "When those electrons collide with oxygen and nitrogen, they transfer energy to the gases. As the gases release that energy, colorful light spreads across the night sky.",
             ] if language == "en" else [
-                "Polarlichter leuchten hoch am Nachthimmel, besonders in Polargebieten.",
-                "Elektronen stoßen hoch in der Atmosphäre mit Sauerstoff und Stickstoff zusammen. Dabei entsteht das farbige Licht.",
+                "Diese leuchtenden Schleier entstehen hoch über der Erde. Energiereiche Elektronen folgen dem Magnetfeld der Erde in Richtung der Polargebiete.",
+                "Dort stoßen die Elektronen mit Sauerstoff und Stickstoff zusammen und übertragen Energie auf die Gase. Wenn diese Energie als Licht abgegeben wird, leuchtet der Nachthimmel in Farben.",
             ])
     elif scene_count == 2 and kind == "lightning_thunder_delay":
         narration = (
