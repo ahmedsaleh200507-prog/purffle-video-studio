@@ -1,5 +1,5 @@
 name: Bilingual narration only audit
-# Re-run selected B style against the revised production editorial gate.
+# Validate B style on both known and newly generated short topics and long documentaries.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
@@ -27,6 +27,12 @@ jobs:
           - language: de
             format: short
             topic: Warum leuchten Polarlichter?
+          - language: en
+            format: short
+            topic: Why does the Moon have so many craters?
+          - language: de
+            format: short
+            topic: Warum ist der Himmel blau?
           - language: en
             format: long
             topic: Why Do Volcanoes Erupt?
