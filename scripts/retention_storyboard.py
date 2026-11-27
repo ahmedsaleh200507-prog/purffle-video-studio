@@ -105,7 +105,7 @@ def storyboard_writer_brief(scene_count: int, planned_seconds: int | None = None
         f"CURIOSITY — by around {beats[1]['end_seconds']}s give the "
         "first meaningful fact without delaying the answer. "
         f"DEVELOPMENT — until around {beats[2]['end_seconds']}s, "
-        "advance with fresh science and genuinely relevant shots. "
+        "advance the subject-specific story with fresh supported evidence, events, facts or insights and genuinely relevant shots. "
         "PAYOFF — in the remaining final segment, answer clearly and "
         "finish on a meaningful image, with no CTA or fake cliffhanger. "
         f"You have {scene_count} verified shots, not necessarily four beats "
@@ -115,7 +115,7 @@ def storyboard_writer_brief(scene_count: int, planned_seconds: int | None = None
         "later shots advance and resolve the question. "
         "Prefer short natural spoken sentences, simple explanations of technical terms, and meaningful visual changes as the story progresses. When evidence and available footage support it, use three to six distinct shots, normally around three to seven seconds each; allow longer shots for a meaningful continuous event and fewer shots when appropriate. Do not cut merely to satisfy a timer. "
         "Do not loop footage or stretch narration to a specified length. "
-        "Write a UNIQUE source-grounded explanation for THIS topic, "
+        "Write a UNIQUE source-grounded narrative for THIS topic, "
         "avoid interchangeable or repetitive mass-produced shock-bait, "
         "and retain the independent facts and footage review."
     )
