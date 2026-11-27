@@ -975,6 +975,30 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
                 if language == "en" else
                 "Im Auge sinkt Luft ab. Doch nach der Ruhe können gefährliche Winde zurückkehren.",
             ]
+    # B-style pilot: same dossier mechanisms and shot counts, stronger spoken
+    # contrast and a causal payoff. Keep legacy texts when the editorial gate
+    # is disabled; these are test-branch candidates, not audience proof.
+    from editorial_standard import enabled
+    if enabled() and kind == "volcano_eruption" and scene_count == 4:
+        narration = ([
+            "Some volcanoes explode. Others let lava flow. Why the difference?",
+            "It starts underground. Molten rock, called magma, can rise because it is less dense than surrounding rock.",
+            "As magma rises, pressure falls and gas bubbles expand. In runny magma, gas escapes more easily.",
+            "But sticky magma can trap that gas. Pressure builds, and an eruption that might have been a lava flow can turn explosive.",
+        ] if language == "en" else [
+            "Manche Vulkane explodieren. Aus anderen fließt Lava. Warum dieser Unterschied?",
+            "Tief unter der Erde kann geschmolzenes Gestein aufsteigen, weil es eine geringere Dichte hat als das Gestein ringsum. Es heißt Magma.",
+            "Beim Aufsteigen sinkt der Druck, und Gasblasen dehnen sich aus. Aus flüssigerem Magma entweicht Gas leichter.",
+            "Doch zähes Magma kann das Gas einschließen. Steigt der Druck, kann aus einem Lavafluss ein explosiver Ausbruch werden.",
+        ])
+    elif enabled() and kind == "northern_lights_glow" and scene_count == 2:
+        narration = ([
+            "Invisible electrons can light up the night sky. Earth's magnetic field guides these energetic particles toward the poles.",
+            "High above us, they collide with oxygen and nitrogen. The gases absorb energy and release it as light. That is what makes the polar sky glow.",
+        ] if language == "en" else [
+            "Unsichtbare Teilchen bringen den Nachthimmel zum Leuchten. Energiereiche Elektronen folgen dem Magnetfeld der Erde in Richtung der Pole.",
+            "Dort treffen sie auf Sauerstoff und Stickstoff. Die Gase nehmen Energie auf und geben sie als Licht ab. So entstehen die leuchtenden Polarlichter.",
+        ])
     scenes = [{
         "narration": sentence, "speaker": "A", "search_query": "",
         "image_prompt": "", "main_character": "", "object": ("volcano" if kind in ("volcanic_island", "lava_ocean_entry", "volcano_eruption") else
