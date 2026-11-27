@@ -121,7 +121,7 @@ def group_focus(detections,crop_fraction,default=.5):
             "proposed_group_coverage":round(best[0],4),
             "scope":"static group framing, no individual identity or tracking claim"}
 
-def propose(path,seconds,subject,source_width,source_height,output_width,output_height,default=.5):
+def propose(path,seconds,subject,source_width,source_height,output_width,output_height,default=.5,*,deadline=None):
     if not enabled(): return {"state":"disabled","focus_x":default}
     fraction=min(1.,source_height*output_width/(source_width*output_height))
     if fraction>=.98: return {"state":"no_horizontal_crop","focus_x":default}
@@ -133,7 +133,27 @@ def propose(path,seconds,subject,source_width,source_height,output_width,output_
         from object_region_review import corroborate
         evidence=[corroborate(frame,subject,row) for frame,row in zip(frames,raw_rows)]
         rows=[r["accepted"] for r in evidence]
+        import time
+        from advanced_visuals import reserve
+        # Reuse the original three observations. Two extra moments can clarify
+        # a track, but never spend the scene's final verification budget.
+        if (deadline is not None and deadline-time.monotonic()>50
+                and seconds>=2 and any(rows) and reserve("dense")):
+            samples=list(zip(times,raw_rows,evidence))
+            for t in (seconds*.25,seconds*.65):
+                if deadline-time.monotonic()<40 or min(abs(t-v[0]) for v in samples)<.15:
+                    continue
+                try:
+                    frame=_frame(path,t,640,preserve_aspect=True)
+                    raw=detect(frame,subject)
+                    samples.append((t,raw,corroborate(frame,subject,raw)))
+                except Exception:
+                    break
+            samples.sort(key=lambda v:v[0])
+            times,raw_rows,evidence=map(list,zip(*samples))
+            rows=[r["accepted"] for r in evidence]
         result=stable_focus(rows,fraction,default)
+        result["sample_times"]=[round(t,3) for t in times]
         result["region_review"]=[{"raw_count":len(raw),"checks":r["checks"]}
                                   for raw,r in zip(raw_rows,evidence)]
         result["tracking_shadow"]=track_focus(rows,times,fraction,default)
