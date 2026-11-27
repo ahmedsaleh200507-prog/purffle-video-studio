@@ -123,6 +123,7 @@ jobs:
       PURFFLE_SIGLIP_REVIEW: '1'
       PURFFLE_VLM_SHADOW: '1'
       PURFFLE_EDITORIAL_ANSWER_GATE: '1'
+      PURFFLE_EDITORIAL_STANDARD: '1'
       PURFFLE_SOURCE_TEXT_GATE: '1'
       PURFFLE_ADVANCED_VISUALS: '0'  # enabled after optional dependency checks
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
