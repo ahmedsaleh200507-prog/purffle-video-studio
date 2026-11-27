@@ -16,8 +16,8 @@ REVISION="f3ff3571791e39611d31c381e3a41a3af07b4987"
 MODEL_HASH="496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4"
 VOICE_HASH="f1bc812213dc59774769e5c80004b13eeb79bd78130b11b2d7f934542dab811b"
 VOICE="bm_george"
-ALIGNMENT="kokoro_duration_tokens_crosschecked_against_actual_wav_asr"
-VERSION="george_v1"
+ALIGNMENT="kokoro_duration_tokens_crosschecked_against_actual_pcm_asr"
+VERSION="george_v2"
 BASE=f"https://huggingface.co/{REPO}/resolve/{REVISION}/"
 
 def provenance():
@@ -92,21 +92,41 @@ def _asr(model):
     from faster_whisper import WhisperModel
     return WhisperModel(model,device="cpu",compute_type="int8",cpu_threads=2,download_root=os.getenv("PURFFLE_WHISPER_CACHE",".cache/whisper"))
 
+def _read_pcm_for_asr(path):
+    """Decode our own mono PCM without PyAV. Resample real samples to 16 kHz."""
+    import numpy as np
+    from scipy.signal import resample_poly
+    with wave.open(str(path),"rb") as wav:
+        if (wav.getnchannels(),wav.getsampwidth(),wav.getframerate())!=(1,2,24000):
+            raise RuntimeError("George unexpected PCM format")
+        data=np.frombuffer(wav.readframes(wav.getnframes()),dtype="<i2").astype(np.float32)/32768.
+    if not len(data):
+        raise RuntimeError("George empty PCM")
+    return np.ascontiguousarray(resample_poly(data,2,3),dtype=np.float32)
+
 def _verify_wav(text,path,original,predicted,duration):
-    from approved_reference_voice import check_real_word_timing
+    # faster-whisper accepts an actual 16 kHz waveform. It no longer invokes
+    # the external audio decoder, whose API changed in PyAV 19.
+    pcm=_read_pcm_for_asr(path)
     error=None
     for model in ("base.en","small.en"):
         try:
-            raw=check_real_word_timing(text,path,asr_loader=lambda:_asr(model))
+            segments,_=_asr(model).transcribe(pcm,language="en",beam_size=5,
+                word_timestamps=True,vad_filter=False,condition_on_previous_text=False)
+            raw=[]
+            for seg in segments:
+                for word in (seg.words or []):
+                    if _atoms(word.word):
+                        if float(word.probability or 0)<.02:
+                            raise RuntimeError("George ASR low confidence word")
+                        raw.append((word.word,word.start,word.end))
             aligned=_map_tokens(original,raw,duration)
             deltas=[max(abs(a[1]-b[1]),abs(a[2]-b[2])) for a,b in zip(aligned,predicted)]
             maximum=max(deltas,default=float("inf"))
             if maximum>.85 or sorted(deltas)[len(deltas)//2]>.30:
                 raise RuntimeError("George model/ASR timing disagreement")
-            # Keep duration-token timings, which preserve the approved voice's
-            # exact lexical boundaries, but only after the independent check.
             return model,maximum
-        except RuntimeError as exc:
+        except (RuntimeError,ValueError,TypeError) as exc:
             error=exc
     raise RuntimeError("George actual-audio verification failed: "+str(error))
 
