@@ -90,6 +90,7 @@ jobs:
       PURFFLE_CLOUD_MODEL_ROUTER: '1'
       PURFFLE_SIGLIP_REVIEW: '1'
       PURFFLE_VLM_SHADOW: '1'
+      PURFFLE_ADVANCED_VISUALS: '0'  # enabled after optional dependency checks
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
       COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
@@ -216,6 +217,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-dev.txt 'jsonschema>=4.20,<5' 'sentencepiece>=0.2,<1'
+      - name: Enable validated optional CPU vision tools
+        if: steps.selected.outputs.render == 'true'
+        run: |
+          if python -m pip install -r requirements-advanced-visuals.txt && python -c 'import supervision,scenedetect,faiss,cv2'; then
+            echo 'PURFFLE_ADVANCED_VISUALS=1' >> "$GITHUB_ENV"
+          else
+            echo 'PURFFLE_ADVANCED_VISUALS=0' >> "$GITHUB_ENV"
+            echo '::warning::Optional advanced tools unavailable; existing visual gates remain active'
+          fi
       - name: Restore local model cache
         if: steps.selected.outputs.render == 'true'
         id: model-cache
