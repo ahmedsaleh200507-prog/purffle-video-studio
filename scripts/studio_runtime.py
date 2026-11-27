@@ -650,7 +650,7 @@ class StrictVisuals:
                     if smart_crop_enabled() and isinstance(self.matcher,SceneMatcher):
                         subject=" ".join(x for x in (spec.main_character,spec.object) if x)
                         framing=propose(path,float(need),subject,quality["width"],quality["height"],
-                                        required_width,required_height,float(match.get("crop_focus_x",.5)))
+                                        required_width,required_height,float(match.get("crop_focus_x",.5)),deadline=phase_deadline)
                         match["object_framing"]=framing
                         if framing["state"]=="proposed":
                             match["crop_focus_x"]=framing["focus_x"]
