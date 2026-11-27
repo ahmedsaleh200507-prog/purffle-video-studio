@@ -1,0 +1,15 @@
+name: One creative narration video preview
+on:
+  push:
+    branches: [chatgpt/yellow-system-fixes]
+    paths:
+      - '.github/workflows/one-video-narration-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    uses: ./.github/workflows/videos.yml
+    with:
+      video_1: 'de|Warum leuchten Polarlichter?'
+    secrets: inherit
