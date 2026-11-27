@@ -42,3 +42,43 @@ def test_cut_detector_on_known_hard_cut(tmp_path,monkeypatch):
     result=cut_observation(path,4,1,time.monotonic()+60)
     assert result["state"]=="observed"
     assert result["candidate_offsets"]==pytest.approx([0,2],abs=.1)
+
+
+def test_tracking_consensus_abstains_on_ambiguous_paths():
+    from advanced_visuals import tracking_agreement
+    times=[0.,1.,2.]
+    points=[{"time":t,"focus_x":.4} for t in times]
+    track=[{"sample":i,"time":t,"box":[.3,.2,.5,.8]} for i,t in enumerate(times)]
+    observation={"state":"observed","tracks":{"1":track}}
+    proposal={"state":"shadow_proposal","keyframes":points}
+    assert tracking_agreement(observation,[],times,proposal)["state"]=="agrees"
+    observation["tracks"]["2"]=track
+    assert tracking_agreement(observation,[],times,proposal)["state"]=="inconclusive"
+
+def test_optical_flow_distinguishes_pan_from_local_motion():
+    from advanced_visuals import residual_motion
+    import cv2
+    import numpy as np
+    from PIL import Image
+    rng=np.random.default_rng(42)
+    a=rng.integers(0,256,(240,320),dtype=np.uint8)
+    a=cv2.GaussianBlur(a,(3,3),0)
+    pan=cv2.warpAffine(a,np.float32([[1,0,4],[0,1,3]]),(320,240),borderMode=cv2.BORDER_REFLECT)
+    local=a.copy()
+    moved=cv2.warpAffine(a,np.float32([[1,0,8],[0,1,0]]),(320,240),borderMode=cv2.BORDER_REFLECT)
+    local[65:175,70:220]=moved[65:175,70:220]
+    frozen=residual_motion(Image.fromarray(a),Image.fromarray(a))
+    panned=residual_motion(Image.fromarray(a),Image.fromarray(pan))
+    changed=residual_motion(Image.fromarray(a),Image.fromarray(local))
+    assert frozen["localized_motion"] is False
+    assert panned["state"]=="observed" and panned["localized_motion"] is False
+    assert changed["state"]=="observed" and changed["localized_motion"] is True
+
+def test_consensus_never_claims_identity_or_action():
+    from visual_consensus import summarize
+    match={"crop_subject_proof":{"verified":True,"siglip_shadow_review":{"agrees":False},
+                                 "visual_language_review":{"models":{"florence":{"state":"observed"}}}}}
+    result=summarize(match)
+    assert result["state"]=="secondary_disagreement"
+    assert result["evidence"]["florence"]=="observed"
+    assert result["evidence"]["event"] is None
