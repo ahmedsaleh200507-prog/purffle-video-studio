@@ -113,6 +113,7 @@ def storyboard_writer_brief(scene_count: int, planned_seconds: int | None = None
         "A 1-shot preview has all four beats in one shot. "
         "With three shots, hook and curiosity share the first shot; "
         "later shots advance and resolve the question. "
+        "Prefer short natural spoken sentences, simple explanations of technical terms, and meaningful visual changes as the story progresses. When evidence and available footage support it, use three to six distinct shots, normally around three to seven seconds each; allow longer shots for a meaningful continuous event and fewer shots when appropriate. Do not cut merely to satisfy a timer. "
         "Do not loop footage or stretch narration to a specified length. "
         "Write a UNIQUE source-grounded explanation for THIS topic, "
         "avoid interchangeable or repetitive mass-produced shock-bait, "
