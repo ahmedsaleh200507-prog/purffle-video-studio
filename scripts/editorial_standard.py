@@ -3,17 +3,20 @@ import os
 import re
 import math
 
-VERSION="purffle_audience_story_v4"
-ANSWER_GATE_VERSION=2
+VERSION="purffle_audience_story_v5_b"
+ANSWER_GATE_VERSION=3
 AUDIENCE_BRIEF=(
     "Write for a curious viewer hearing the story once, not reading an encyclopedia. "
+    "Lead with a short, speakable, topic-specific contrast, unexpected true consequence or concrete observation, then explain why it happens. "
+    "For example, 'Some volcanoes explode. Others let lava flow. Why the difference?' illustrates a real contrast; do not reuse that formula for unrelated topics. "
+    "Start with the interesting part, not the definition, location, classification or a generic question. "
     "Use a subject-specific hook with an immediate fact or concrete tension; avoid empty promises like you will not believe this. "
     "Within the opening beat, explain what is at stake or why the fact matters. "
     "Give the answer progressively: each beat adds a fresh fact, mechanism, consequence, contrast or evidence that changes understanding. "
     "Use a natural spoken register, clear short clauses, familiar words, and explain any necessary technical term immediately. "
     "Vary sentence length and rhythm; use questions only when they genuinely lead into an answer. "
     "Never manufacture suspense, repeat the topic, tease a reveal without delivering it, or invent drama. "
-    "The ending must reward the exact curiosity raised at the opening with a memorable concrete insight."
+    "The ending must reward the exact curiosity raised at the opening with a memorable concrete insight, not simply restate the topic or repeat the opening. Read the script mentally as speech and cut stiff transitions, redundant definitions and filler."
 )
 PHASES=("hook","curiosity","development","payoff")
 CORE_BRIEF=(
