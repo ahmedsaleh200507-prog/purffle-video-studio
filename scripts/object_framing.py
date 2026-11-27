@@ -137,6 +137,8 @@ def propose(path,seconds,subject,source_width,source_height,output_width,output_
         result["region_review"]=[{"raw_count":len(raw),"checks":r["checks"]}
                                   for raw,r in zip(raw_rows,evidence)]
         result["tracking_shadow"]=track_focus(rows,times,fraction,default)
+        from advanced_visuals import track_review
+        result["bytetrack_shadow"]=track_review(rows,times)
         if result["tracking_shadow"]["state"] in ("ambiguous_identity","lost_identity"):
             group=group_focus(rows,fraction,default)
             result["group_framing"]=group
