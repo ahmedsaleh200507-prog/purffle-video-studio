@@ -1,5 +1,5 @@
 name: Writers room text quality pilot
-# V5: two-call text pilot, one optional rewrite and recheck.
+# Discovery-first: short writing brief and richer research material.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
@@ -7,6 +7,7 @@ on:
       - '.github/workflows/story-room-audit.yml'
       - 'scripts/story_room.py'
       - 'tests/test_story_room.py'
+      - 'scripts/story_references.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -52,14 +53,9 @@ jobs:
           import os,json
           from pathlib import Path
           from story_room import StoryRoom
-          from fact_checked_topics import ground_verified_documentary
+          from story_references import story_reference
           topic,lang,mode=os.environ["TOPIC"],os.environ["LANGUAGE"],os.environ["MODE"]
-          # Exact existing source-reviewed text is reference material only.
-          # No arbitrary new narration is treated as an approved dossier.
-          base=ground_verified_documentary({},topic,lang)
-          if not base.get("scenes"):
-              raise RuntimeError("No source-reviewed reference for test topic")
-          reference=" ".join(s["narration"] for s in base["scenes"])
+          reference=story_reference(topic,lang)
           context=("Opening chapter of a longer documentary. Introduce the central question, offer early value, and transition naturally toward the deeper explanation. Do not conclude the entire film." if mode=="long" else "Complete standalone short story.")
           result=StoryRoom().generate(topic,lang,reference,mode=mode,context=context,word_range=(80,130) if mode=="long" else None)
           result["reference_text"]=reference
