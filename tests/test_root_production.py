@@ -85,7 +85,7 @@ def test_factually_true_but_offtopic_narration_does_not_pass_editor():
         SimpleNamespace(narration="A dormant volcano is not erupting now.")])
     bundle=Evidence("Why Do Volcanoes Erupt?",(),"model_screened_reference")
     with patch("science_sources._strict_science_review_json",return_value={
-        "answers_question":False,"opening_specific":True,"payoff_complete":False,"reason":"Classification, not cause"}):
+        "answers_question":False,"opening_specific":True,"payoff_complete":False,"early_value":True,"coherent_progression":False,"reason":"Classification, not cause"}):
         with pytest.raises(RuntimeError,match="exact topic answer"):
             review_topic_answer(story,bundle,None)
 
