@@ -56,12 +56,17 @@ def _voice_key(language):
 
 
 def george_enabled(language):
-    return language=="en" and os.getenv("PURFFLE_ENGLISH_NARRATOR")=="george"
+    return language=="en"  # Approved identity is not an optional environment switch.
 
 def provenance(language):
     if george_enabled(language):
         from george_voice import provenance as george_provenance
         return george_provenance()
+    return _piper_provenance(language)
+
+
+def _piper_provenance(language):
+    """Historical Piper audit only; English production never calls this."""
     key = _voice_key(language)
     if key not in VOICES:
         raise RuntimeError('Local narration supports only de/en')
@@ -178,7 +183,7 @@ def _download_verified_sidecar(url, target, *, model, role):
 
 
 def _voice_files(language):
-    info = provenance(language)
+    info = _piper_provenance(language)
     voice = VOICES[_voice_key(language)]
     root = (Path(os.environ.get('PURFFLE_PIPER_CACHE', '.cache/piper'))
             / info['model_revision'])
@@ -440,11 +445,16 @@ def synthesize(text, out, settings):
     if george_enabled(settings.language):
         from george_voice import synthesize as george_synthesize
         return george_synthesize(text,out,settings)
+    return _synthesize_piper(text,out,settings,flow=True)
+
+
+def _synthesize_piper(text,out,settings,*,flow=None):
+    """Piper backend for German B, and historical direct unit tests."""
     import numpy as np
     from purffle_shorts.timing import Word, tokenize
     from purffle_shorts.tts import Speech
     language = settings.language
-    info = provenance(language)
+    info = _piper_provenance(language)
     tokens = tokenize(text, language)
     if not tokens or len(tokens) > 400 or len(text) > 6000:
         raise RuntimeError('Local narration requires 1–400 words and at most6000characters')
@@ -455,7 +465,7 @@ def synthesize(text, out, settings):
     target = out / 'voice-piper.wav'
     temp = out / 'voice-piper.wav.part'
     words, total_samples = [], 0
-    flow=flow_enabled()
+    flow=flow_enabled() if flow is None else flow
     chunks=list(_sentence_groups(tokens)) if flow else [tokens[i:i+24] for i in range(0,len(tokens),24)]
     contextual,fallback=0,0
     signals=[]

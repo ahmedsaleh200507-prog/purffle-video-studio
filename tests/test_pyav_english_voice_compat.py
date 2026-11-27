@@ -14,7 +14,9 @@ def test_all_english_production_workflows_pin_compatible_pyav():
     for name in ('videos.yml','long-batch.yml'):
         body=(root/name).read_text()
         assert 'chatterbox-tts' not in body
-        assert 'faster-whisper' not in body
+        assert 'faster-whisper==1.2.1' in body
+        assert 'av==14.2.0' in body
+        assert 'kokoro==0.9.4' in body
         assert 'secrets.PURFFLE_REFERENCE_OPUS_B64' not in body
         assert 'requirements-dev.txt' in body
 

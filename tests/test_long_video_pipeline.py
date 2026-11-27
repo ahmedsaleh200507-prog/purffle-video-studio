@@ -78,10 +78,11 @@ def test_all_fourteen_chapters_preserve_voice_word_contract(tmp_path, monkeypatc
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"test fixture: simulated reference WAV")
         data = fake_speech(duration=43)
-        data.engine='piper'
-        data.voice='en_US-joe-medium'
+        data.engine='kokoro'
+        data.voice='bm_george'
         data.timing='aligned'
         data.provenance=voice.provenance('en')
+        data.provenance['actual_wav_alignment']={'verified':True,'asr_model':'base.en','words':4,'max_boundary_delta':.2}
         data.audio = path
         return data
 

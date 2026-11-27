@@ -1252,8 +1252,7 @@ def _validate_free_speech(speech, engine, language=None):
         if proof.get("alignment") != "native_phoneme_samples":
             raise RuntimeError("Piper narration has no native sample alignment provenance")
         # Exactly the two requested, pinned Piper identities are accepted.
-        approved = {"en": ("en_US-joe-medium", "CC0"),
-                    "de": ("de_DE-thorsten-medium", "CC0-1.0")}
+        approved = {"de": ("de_DE-thorsten-medium", "CC0-1.0")}
         expected = approved.get(language)
         if (expected is None or proof.get("model") != expected[0]
                 or speech.voice != expected[0]):
@@ -1268,7 +1267,7 @@ def _validate_free_speech(speech, engine, language=None):
 
 
 def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_synthesize):
-    """Synthesize only the fixed Piper identity; failures never switch voices."""
+    """Synthesize only the approved George or Thorsten identity; never switch voices."""
     from english_reference_policy import enforce_english_reference_only
     enforce_english_reference_only(settings.language)
     if settings.offline or settings.tts_engine not in ("edge", "piper") or settings.language not in ("de", "en"):

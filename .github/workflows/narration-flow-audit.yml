@@ -1,4 +1,4 @@
-name: Bilingual narration flow audit
+name: Approved German Thorsten B flow audit
 on:
   pull_request:
     branches: [main]
@@ -32,15 +32,14 @@ jobs:
           path: .cache/piper
           key: purffle-voice-flow-model-v1-${{ runner.os }}
       - run: python -m pytest -q tests/test_local_voice.py
-      - name: Render same locked voices before and after
+      - name: Verify the approved German B voice on short and documentary text
         run: |
           python - <<'PY'
           import os,json,shutil
           from pathlib import Path
           from types import SimpleNamespace
-          from local_voice import synthesize
+          from local_voice import _synthesize_piper as synthesize
           texts={
-            "en":"A volcano can blast rock high into the sky. The force starts deep underground. Molten rock is called magma. It can rise because it is less dense than surrounding rock. Near the surface, pressure drops and gas bubbles expand. Runny magma lets gas escape more easily. Sticky magma can trap that expanding gas, building pressure that drives an explosive eruption.",
             "de":"Diese leuchtenden Schleier entstehen hoch über der Erde. Energiereiche Elektronen folgen dem Magnetfeld der Erde in Richtung der Polargebiete. Dort stoßen die Elektronen mit Sauerstoff und Stickstoff zusammen und übertragen Energie auf die Gase. Wenn diese Energie als Licht abgegeben wird, leuchtet der Nachthimmel in Farben."
           }
           root=Path("voice-flow-audit")
@@ -64,7 +63,6 @@ jobs:
           # Both modes must also keep the same original word tokens in a
           # different topic and a complete multi-sentence documentary passage.
           passages={
-              "en":"A blue whale can be longer than a city bus. It feeds on tiny animals called krill, even though it is the largest animal alive. It opens its enormous mouth, and the water flows back out through special plates. The krill stay inside, so one gulp can collect a great deal of food. When the whale dives, it has to hold its breath. Its body stores oxygen in the blood and muscles, allowing it to spend time beneath the waves. Then it returns to the surface to breathe again.",
               "de":"Ein Blauwal kann länger als ein Stadtbus sein. Obwohl er das größte lebende Tier ist, ernährt er sich von winzigen Krebstieren. Er öffnet sein riesiges Maul, und das Wasser fließt durch besondere Barten wieder hinaus. Die kleinen Tiere bleiben darin hängen. Wenn der Wal abtaucht, muss er die Luft anhalten. Sein Körper speichert Sauerstoff im Blut und in den Muskeln. So kann er einige Zeit unter der Wasseroberfläche bleiben. Schließlich taucht er wieder auf, um zu atmen."
           }
           for lang,passage in passages.items():
@@ -79,6 +77,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bilingual-voice-before-after
+          name: approved-german-voice-flow
           path: voice-flow-audit/
           retention-days: 7

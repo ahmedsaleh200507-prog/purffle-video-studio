@@ -29,7 +29,8 @@ def test_only_audited_free_models_are_available():
     assert de['alignment'] == 'native_phoneme_samples'
     assert len(de['model_sha256']) == 64
     assert local_voice.REVISION in de['model_url']
-    assert local_voice.provenance('en')['model'] == 'en_US-joe-medium'
+    assert local_voice.provenance('en')['model'] == 'bm_george'
+    assert local_voice._piper_provenance('en')['model'] == 'en_US-joe-medium'
     with pytest.raises(RuntimeError, match='only de/en'):
         local_voice.provenance('fr')
     de['license']['id'] = 'changed'
@@ -66,7 +67,7 @@ def test_unknown_phoneme_is_rejected_instead_of_dropped():
 
 def test_nonempty_native_speech_has_exact_caption_words(tmp_path, monkeypatch):
     monkeypatch.setattr(local_voice, '_load_voice', lambda lang: fake_voice())
-    speech = local_voice.synthesize('Fish 100 swim.', tmp_path, SimpleNamespace(language='de'))
+    speech = local_voice._synthesize_piper('Fish 100 swim.', tmp_path, SimpleNamespace(language='de'))
     assert speech.engine == 'piper' and speech.timing == 'aligned'
     assert [w.text for w in speech.words] == ['Fish', '100', 'swim.']
     assert speech.words[-1].end < speech.duration
@@ -80,7 +81,7 @@ def test_nonempty_native_speech_has_exact_caption_words(tmp_path, monkeypatch):
 def test_no_alignment_or_silent_audio_never_returns_success(tmp_path, monkeypatch, voice, reason):
     monkeypatch.setattr(local_voice, '_load_voice', lambda lang: voice)
     with pytest.raises(RuntimeError, match=reason):
-        local_voice.synthesize('Fish swim.', tmp_path, SimpleNamespace(language='de'))
+        local_voice._synthesize_piper('Fish swim.', tmp_path, SimpleNamespace(language='de'))
     assert not (tmp_path / 'voice-piper.wav').exists()
     assert not (tmp_path / 'voice-piper.wav.part').exists()
 
@@ -121,7 +122,7 @@ def test_context_ambiguous_expansion_is_not_guessed():
 def test_natural_voice_reports_real_alignment_and_single_gain(tmp_path,monkeypatch):
     monkeypatch.setenv("PURFFLE_NATURAL_VOICE","1")
     monkeypatch.setattr(local_voice,"_load_voice",lambda lang:fake_voice())
-    speech=local_voice.synthesize("Fish swim. Birds fly.",tmp_path,SimpleNamespace(language="en"))
+    speech=local_voice._synthesize_piper("Fish swim. Birds fly.",tmp_path,SimpleNamespace(language="en"))
     assert [w.text for w in speech.words]==["Fish","swim.","Birds","fly."]
     assert speech.provenance["contextual_sentences"]==2
     assert speech.provenance["isolated_pronunciation_fallback_sentences"]==0
@@ -155,7 +156,7 @@ def test_unrelated_context_never_silently_reverts_to_isolated_words(tmp_path,mon
     monkeypatch.setattr(local_voice,"_load_voice",lambda lang:voice)
     monkeypatch.setenv("PURFFLE_NATURAL_VOICE","1")
     with pytest.raises(RuntimeError,match="natural_voice_alignment_unverified"):
-        local_voice.synthesize("Fish swim.",tmp_path,SimpleNamespace(language="en"))
+        local_voice._synthesize_piper("Fish swim.",tmp_path,SimpleNamespace(language="en"))
     assert not (tmp_path/"voice-piper.wav").exists()
 
 def test_quiet_margin_trim_never_touches_word_samples():

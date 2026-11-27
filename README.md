@@ -43,7 +43,7 @@ Kaynak kısa kenarı en az 720 px. Dikey kırpmanın gerçek ölçeği raporlan�
 
 ## Ses ve kalite kontrolü
 
-Üretim iş akışlarında İngilizce için kullanıcı tarafından dinlenip onaylanan Kokoro-82M `bm_george` (Apache-2.0), Almanca için Piper `de_DE-thorsten-medium` (CC0-1.0, cümle bağlamlı B sürümü) sabitlenmiştir. George model ve ses dosyasının tam revision/SHA256 değerleri kilitlidir; kelime zamanları bağımsız gerçek WAV ASR denetiminden geçer. Thorsten yerel fonem örneklerine dayalı hizalamayı korur. Eski Joe yalnız geçmiş A/B regresyon testlerinde kalır. Ses başarısızsa başka kimliğe geçilmez. Eski özel İngilizce referans araçları geçmiş artefaktlar için depodadır; aktif üretim bunları çağırmaz ve özel kayıt Secret'ını gerektirmez.
+Üretimin tüm girişlerinde İngilizce için kullanıcı tarafından dinlenip onaylanan Kokoro-82M `bm_george` (Apache-2.0), Almanca için Piper `de_DE-thorsten-medium` (CC0-1.0, cümle bağlamlı B sürümü) sabitlenmiştir. George model ve ses dosyasının tam revision/SHA256 değerleri kilitlidir; kelime zamanları bağımsız gerçek WAV ASR denetiminden geçer. Thorsten yerel fonem örneklerine dayalı hizalamayı korur. Eski Joe yalnız geçmiş A/B regresyon testlerinde kalır. Ses başarısızsa başka kimliğe geçilmez. Eski özel İngilizce referans araçları geçmiş artefaktlar için depodadır; aktif üretim bunları çağırmaz ve özel kayıt Secret'ını gerektirmez.
 
 FFprobe, boyut/FPS/ses/süre, kaynak hareket/CLIP ve ilk saniyelerin kalite kontrolüne ek olarak **tüm çıktı** decode edilir: siyah sahne ≥0,45 saniye, sessizlik ≥2,5 saniye, altyazı sınırları/sırası/kapsamı ve ses toplam süresi denetlenir. `output-qa.json` teknik sonucu kaydeder. Bunlar ASR veya bilimsel doğruluk kanıtı değildir. Shorts ekranında logo veya Purffle başlığı yoktur.
 

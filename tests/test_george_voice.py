@@ -4,7 +4,7 @@ import george_voice as g
 import local_voice
 
 def test_user_approved_lock(monkeypatch):
-    monkeypatch.setenv("PURFFLE_ENGLISH_NARRATOR","george")
+    monkeypatch.setenv("PURFFLE_ENGLISH_NARRATOR","joe")
     assert local_voice.provenance("en")==g.provenance()
     assert local_voice.provenance("de")["model"]=="de_DE-thorsten-medium"
     assert g.provenance()["model"]=="bm_george"
