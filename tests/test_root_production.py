@@ -166,3 +166,16 @@ def test_photo_text_gate_and_landscape_crop(monkeypatch):
     with patch("source_overlay._read_frame",return_value=b"png") as reader,patch("source_overlay._text",return_value=[]):
         assert check_source("unused",6,landscape=True)["state"]=="screened"
         assert all(call.args[3] is True for call in reader.call_args_list)
+
+
+def test_editorial_title_never_invents_unreviewed_promise(tmp_path,monkeypatch):
+    from youtube_metadata import attach_title_to_video
+    monkeypatch.setenv("PURFFLE_EDITORIAL_STANDARD","1")
+    video=tmp_path/"video.mp4"
+    video.write_bytes(b"test file")
+    (tmp_path/"YouTube_Title.txt").write_text("Volcano Will Destroy the World Tomorrow")
+    with patch("youtube_metadata.make_short_title",side_effect=AssertionError("unreviewed title generation forbidden")):
+        result=attach_title_to_video({"status":"ok","mp4":str(video),
+                                      "topic":"Why Do Volcanoes Erupt?","language":"en"})
+    assert result["youtube_title"].startswith("Why Do Volcanoes Erupt?")
+    assert result["youtube_title_policy"]=="reviewed_script_or_original_topic"
