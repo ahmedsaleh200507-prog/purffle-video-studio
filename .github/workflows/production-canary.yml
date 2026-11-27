@@ -1,5 +1,5 @@
 name: Bilingual real Shorts canary
-# Revision 3: bounded best opening, shorter four-shot volcano story with safe fallback, rendered scene pacing.
+# Revision 4: user-approved fixed George English voice, unchanged Thorsten B and independent actual-audio timing proof.
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
