@@ -77,6 +77,50 @@ def stable_focus(detections,crop_fraction,default=.5):
             "default_box_coverage":round(base[1],4),"proposed_box_coverage":round(best[1],4),
             "model":MODEL,"revision":REVISION,"sampled_boxes":boxes}
 
+def group_focus(detections,crop_fraction,default=.5):
+    """Static group framing when individual identity cannot be established.
+
+    Every corroborated box contributes equally within its sampled frame.
+    Do not pretend to track an individual, or move toward an isolated box.
+    """
+    if not math.isfinite(crop_fraction) or not 0<crop_fraction<=1:
+        raise ValueError("Invalid crop fraction")
+    half=crop_fraction/2
+    clamp=lambda x:max(half,min(1-half,x))
+    default=clamp(default)
+    rows=[]
+    for row in detections:
+        boxes=[]
+        for d in row:
+            try:
+                b=d["box"]
+                confidence=float(d["score"])
+                if (len(b)==4 and all(math.isfinite(v) and 0<=v<=1 for v in b)
+                    and b[0]<b[2] and b[1]<b[3] and .35<=confidence<=1):
+                    boxes.append(b)
+            except (KeyError,TypeError,ValueError):
+                continue
+        rows.append(boxes)
+    if sum(len(r)>=2 for r in rows)<max(2,(len(rows)+1)//2):
+        return {"state":"insufficient_group_evidence","focus_x":default}
+    candidates={default}
+    for b in (b for row in rows for b in row):
+        candidates.update(clamp(v) for v in ((b[0]+b[2])/2,b[0]+half,b[2]-half))
+    def coverage(f,b):
+        return max(0.,min(f+half,b[2])-max(f-half,b[0]))/(b[2]-b[0])
+    def rank(f):
+        # Empty frames count as zero; a dense frame cannot dominate.
+        scores=[sum(coverage(f,b) for b in row)/len(row) if row else 0. for row in rows]
+        return statistics.mean(scores),min(scores),-abs(f-default)
+    chosen=max(sorted(candidates),key=rank)
+    base,best=rank(default),rank(chosen)
+    proposed=best[0]>=base[0]+.10 and best[1]>=base[1]-.05
+    return {"state":"proposed" if proposed else "keep_default",
+            "focus_x":round(chosen if proposed else default,5),
+            "default_group_coverage":round(base[0],4),
+            "proposed_group_coverage":round(best[0],4),
+            "scope":"static group framing, no individual identity or tracking claim"}
+
 def propose(path,seconds,subject,source_width,source_height,output_width,output_height,default=.5):
     if not enabled(): return {"state":"disabled","focus_x":default}
     fraction=min(1.,source_height*output_width/(source_width*output_height))
@@ -93,6 +137,13 @@ def propose(path,seconds,subject,source_width,source_height,output_width,output_
         result["region_review"]=[{"raw_count":len(raw),"checks":r["checks"]}
                                   for raw,r in zip(raw_rows,evidence)]
         result["tracking_shadow"]=track_focus(rows,times,fraction,default)
+        if result["tracking_shadow"]["state"] in ("ambiguous_identity","lost_identity"):
+            group=group_focus(rows,fraction,default)
+            result["group_framing"]=group
+            # A group shot must not switch between different people/animals.
+            # Prefer the validated static group or retain the existing default.
+            if group["state"]!="insufficient_group_evidence":
+                result.update(state=group["state"],focus_x=group["focus_x"])
         return result
     except Exception as exc:
         print("[OBJECT FRAMING UNAVAILABLE]",type(exc).__name__,flush=True)
