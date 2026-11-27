@@ -173,7 +173,7 @@ _DOCUMENTARY_FACTS = {
             "Sticky magma can trap that expanding gas, building pressure that drives an explosive eruption."
         ],
         "de": [
-            "Ein Vulkan kann Gestein hoch in den Himmel schleudern. Die Kraft entsteht tief unter der Erde.",
+            "Bei einem Ausbruch kann ein Vulkan Gestein hoch in den Himmel schleudern. Die Kraft entsteht tief unter der Erde.",
             "Geschmolzenes Gestein heißt Magma. Es kann aufsteigen, weil seine Dichte geringer ist als die des umliegenden Gesteins.",
             "Nahe der Oberfläche sinkt der Druck und Gasblasen dehnen sich aus. Aus dünnflüssigem Magma entweicht Gas leichter.",
             "Zähes Magma kann das Gas einschließen. Der Druck kann einen explosiven Ausbruch antreiben."
