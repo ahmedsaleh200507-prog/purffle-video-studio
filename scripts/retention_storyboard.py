@@ -90,7 +90,9 @@ def storyboard_writer_brief(scene_count: int, planned_seconds: int | None = None
         choose_duration_seconds("educational documentary", scene_count)
         if scene_count >= 2 else 12)
     beats = editorial_phase_windows(proposed)
+    from editorial_standard import CORE_BRIEF
     return (
+        CORE_BRIEF + " " +
         "MANDATORY FLEXIBLE FOUR-PHASE SHORTS STORY STRUCTURE. "
         "The topic and validated facts determine the length: NO mandatory "
         "30-second runtime, and no filler to match a target. "
@@ -149,7 +151,10 @@ def audit_storyboard(topic: str, screenplay, language="en", *, scenes=None, plan
             raise RuntimeError("retention_storyboard_invalid: repeated scene narration")
     if len(_words(texts[-1])) < 7:
         raise RuntimeError("retention_storyboard_invalid: no substantive final answer")
+    from editorial_standard import enabled, audit_structure
+    shared=audit_structure(texts,language,mode="short") if enabled() else None
     return {
+        "shared_editorial_standard":shared,
         "state": "editorial_screen_passed",
         "version": "shorts_four_phase_adaptive_v2",
         "duration_policy": "topic_and_verified_footage_adaptive_not_fixed",
