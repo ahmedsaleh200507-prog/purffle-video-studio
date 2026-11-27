@@ -35,6 +35,8 @@ def report(tmp_path, supported=(True, True, False, False)):
 
 def test_real_proof_2_of_4_source_verified_scenes_can_be_shortened(tmp_path):
     original = draft()
+    original.scenes[0].narration += " In the atmosphere, sunlight interacts with tiny particles and molecules."
+    original.scenes[1].narration += " The scattered light travels in different directions before reaching our eyes."
     concise = salvage_approved_narration(original, report(tmp_path))
     assert concise is not None
     assert concise is not original
@@ -89,3 +91,7 @@ def test_pipeline_tries_salvage_only_after_last_rejection_and_rechecks_source():
     review = source.index("screen_narration(\n                            salvaged")
     assert salvage < review < source.index("stage = 'visual_director_preflight'")
     assert "if attempt >= 2:" in source[:salvage]
+
+
+def test_underlength_salvage_does_not_pass(tmp_path):
+    assert salvage_approved_narration(draft(),report(tmp_path)) is None
