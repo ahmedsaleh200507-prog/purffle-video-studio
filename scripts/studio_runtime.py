@@ -687,6 +687,8 @@ class StrictVisuals:
                                 crop_integrity["reason"])
                         match["portrait_integrity"] = crop_integrity
                         from crop_subject_policy import verify_crop_subject
+                        from source_overlay import check_source
+                        match["source_overlay"]=check_source(path,float(need),crop_focus)
                         match["crop_subject_proof"]=verify_crop_subject(crop_frames,spec,self.matcher)
                         # Production #103: the second whale shot passed CLIP but
                         # independent SigLIP favored alternatives in two frames.
@@ -781,6 +783,7 @@ class StrictVisuals:
                             integrity2=assess_portrait_pillarbox(frames2)
                             if not integrity2["verified"]:
                                 raise ValueError("Dynamic crop border check failed")
+                            m2["source_overlay"]=check_source(derived,float(need),.5)
                             proof2=verify_crop_subject(frames2,spec,self.matcher)
                             second2=proof2.get("siglip_shadow_review",{})
                             if second2.get("state")=="observed" and second2.get("agrees") is False:
