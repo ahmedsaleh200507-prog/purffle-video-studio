@@ -204,7 +204,8 @@ def stills(chapter,index,work,seen,*,size=(1920,1080),limit=4,require_verified=F
     return list(illustrations(chapter,index,directory))
 
 def render_recovery(index,audio,duration,chapter,work,seen,run):
-    photos=stills(chapter,index,work,seen)
+    photos=stills(chapter,index,work,seen,
+                  require_verified=os.environ.get("PURFFLE_VERIFIED_PHOTO_ONLY")=="1")
     directory=work/f"recovery-{index:02d}"
     directory.mkdir(parents=True,exist_ok=True)
     files=[]
