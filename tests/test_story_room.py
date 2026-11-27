@@ -84,3 +84,30 @@ def test_cross_model_rewrite_is_requested_after_both_originals_fail():
     assert result["editorial_pass"]
     assert len(result["attempts"])==3
     assert result["attempts"][-1]["writer"]=="third_writer"
+
+def test_general_story_contract_is_not_a_volcano_template():
+    from editorial_standard import AUDIENCE_BRIEF, long_brief
+    for brief in (AUDIENCE_BRIEF,long_brief()):
+        assert "volcano" not in brief.lower()
+        assert "documented turning point" in brief
+        assert "design tradeoff" in brief
+        assert "distinctive behavior" in brief
+        assert "Do not force a contrast" in brief
+
+def test_topic_and_reference_reach_general_planner_in_both_languages():
+    # Synthetic input for prompt-routing tests, not factual publication examples.
+    cases=[("The invention of a fictional clock","en","A fictional workshop tested two clock designs."),
+           ("Geschichte eines fiktiven Hafens","de","Ein fiktiver Hafen erhielt eine neue Brücke."),
+           ("The behavior of a fictional bird","en","The fictional bird hides its food."),
+           ("Ein erfundener Alltagsgegenstand","de","Ein fiktiver Behälter hat zwei getrennte Fächer.")]
+    class Inspect(FakeRoom):
+        def ask(self,role,prompt,schema,preferred,**kw):
+            if role in ("story_architect","choose_story","writer_1","writer_2"):
+                assert self.topic in prompt and self.evidence in prompt
+                assert "different narrative form" in prompt or "narrative approach appropriate to it" in prompt
+            return super().ask(role,prompt,schema,preferred,**kw)
+    for topic,lang,evidence in cases:
+        room=Inspect(always_high=True)
+        room.topic,room.evidence=topic,evidence
+        room.generate(topic,lang,evidence,word_range=(32,95))
+        assert room.calls[:2]==["story_architect","choose_story"]
