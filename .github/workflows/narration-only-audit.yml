@@ -1,0 +1,104 @@
+name: Bilingual narration only audit
+on:
+  push:
+    branches: [chatgpt/yellow-system-fixes]
+    paths:
+      - '.github/workflows/narration-only-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: narration-only-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  narration:
+    if: github.ref == 'refs/heads/chatgpt/yellow-system-fixes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - language: en
+            format: short
+            topic: Why Do Volcanoes Erupt?
+          - language: de
+            format: short
+            topic: Warum leuchten Polarlichter?
+          - language: en
+            format: long
+            topic: Why Do Volcanoes Erupt?
+          - language: de
+            format: long
+            topic: Warum leuchten Polarlichter?
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      PURFFLE_LOCAL_LLM: '1'
+      PURFFLE_LOCAL_QUALITY: '1'
+      PURFFLE_CLOUD_MODEL_ROUTER: '1'
+      PURFFLE_EDITORIAL_STANDARD: '1'
+      PURFFLE_EDITORIAL_ANSWER_GATE: '1'
+      PURFFLE_EDITORIAL_PACING: '1'
+      PURFFLE_NARRATION_ONLY: '1'
+      PURFFLE_MEDIA_FIRST: '1'
+      PURFFLE_ENGLISH_NARRATOR: george
+      PURFFLE_NARRATOR_LOCK: '1'
+      PURFFLE_NATURAL_VOICE: '1'
+      PURFFLE_STRICT: '1'
+      UPLOAD: 'false'
+      LANGUAGE: ${{ matrix.language }}
+      VIDEO_TOPIC: ${{ matrix.topic }}
+      FORMAT: ${{ matrix.format }}
+      JOB_RESULT: narration-proof/result.json
+      SCIENCE_REPORT: narration-proof/science-report.json
+      PURFFLE_REVIEWED_SCRIPT: narration-proof/reviewed-script.json
+      RESOLUTION: 1080x1920
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install production text dependencies
+        run: |
+          python -m pip install 'torch==2.6.0+cpu' 'torchvision==0.21.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements-dev.txt 'jsonschema>=4.20,<5' 'sentencepiece>=0.2,<1'
+      - name: Compile and test editorial contracts
+        run: |
+          python -m compileall -q scripts
+          python -m pytest -q tests/test_root_production.py
+      - name: Generate and independently review narration without media
+        run: |
+          mkdir -p narration-proof
+          if [ "$FORMAT" = short ]; then
+            python scripts/render_job.py
+          else
+            python - <<'PY'
+          import os
+          from pathlib import Path
+          from batch import write_json
+          from long_generic import build_multilingual_documentary
+          from long_llm import get_long_client
+          from long_quality_gate import verify_narration
+          from editorial_standard import audit_structure, review_long
+          root=Path("narration-proof")
+          topic,language=os.environ["VIDEO_TOPIC"],os.environ["LANGUAGE"]
+          client=get_long_client()
+          chapters=build_multilingual_documentary(topic,language,client)
+          write_json(root/"narration.json",{"topic":topic,"language":language,"chapters":chapters})
+          quality=verify_narration(chapters,language)
+          quality["editorial_structure"]=audit_structure([c["narration"] for c in chapters],language,mode="long")
+          quality["editorial_review"]=review_long(topic,language,chapters,client)
+          quality["scope"]="script only; editorial judgment is not independent factual verification or audience retention"
+          write_json(root/"narration-quality.json",quality)
+          PY
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: narration-${{ matrix.language }}-${{ matrix.format }}
+          path: narration-proof/
+          retention-days: 7
