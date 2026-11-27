@@ -75,6 +75,7 @@ def track_observations(rows,times):
             if track_id is not None and int(track_id)>=0:
                 tracks.setdefault(str(int(track_id)),[]).append(
                     {"sample":i,"time":float(t),"box":(box/1000).tolist()})
+    tracks={key:entries for key,entries in tracks.items() if len(entries)>=2}
     return {"state":"observed","tracks":tracks,"sample_count":len(rows),
             "scope":"sampled ByteTrack associations, not identity proof or render instruction"}
 
@@ -190,7 +191,7 @@ def track_review(rows,times,*,reader=None,deadline=None):
                 if bridge is not None:
                     dense,ts,anchors=bridge
                     report=anchor_tracks(track_observations(dense,ts),anchors,times)
-                    if report["tracks"]:
+                    if any(len(t)>=3 for t in report["tracks"].values()):
                         return report
             except Exception as exc:
                 print("[TRACK BRIDGE UNAVAILABLE]",type(exc).__name__,flush=True)
