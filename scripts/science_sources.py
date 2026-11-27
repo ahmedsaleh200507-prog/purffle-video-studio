@@ -806,8 +806,20 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
                 _report(report, bundle, "failed",
                         error="curated narration differs from official-source-backed dossier")
                 raise RuntimeError("science_claim_unverified: nonapproved curated factual claims")
-        _report(report, bundle, "curated_editor_reviewed",
-                topic_review={"state":"exact_curated_dossier","scope":"approved topic-specific script; not a retention prediction"})
+        topic_review={"state":"exact_curated_dossier","scope":"approved topic-specific script; not a retention prediction"}
+        # B-style pilot dossiers must pass the actual editorial gate too.
+        # Exact factual wording is not proof of an engaging spoken story.
+        if (kind in ("volcano_eruption", "northern_lights_glow")
+                and os.getenv("PURFFLE_EDITORIAL_ANSWER_GATE")=="1"):
+            if llm is None:
+                _report(report,bundle,"failed",error="pilot editorial reviewer unavailable")
+                raise RuntimeError("science_review_unavailable: pilot editorial reviewer missing")
+            try:
+                topic_review=review_topic_answer(script,bundle,llm)
+            except RuntimeError as exc:
+                _report(report,bundle,"failed",error=str(exc)[:250])
+                raise
+        _report(report, bundle, "curated_editor_reviewed",topic_review=topic_review)
         return
     scenes = getattr(script, "scenes", [])
     if not scenes:
