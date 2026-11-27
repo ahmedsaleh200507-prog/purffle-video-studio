@@ -23,8 +23,16 @@ def corroborate(frame, subject, detections, scorer=None):
     crops, candidates = [], []
     w,h=frame.size
     for d in detections[:6]:
+        if not isinstance(d,dict):
+            continue
+        try:
+            confidence=float(d.get("score",0))
+        except (ValueError,TypeError):
+            continue
+        if not math.isfinite(confidence) or not .35<=confidence<=1:
+            continue
         b=d.get("box",[])
-        if len(b)!=4 or not all(math.isfinite(v) and 0<=v<=1 for v in b):
+        if not isinstance(b,(list,tuple)) or len(b)!=4 or not all(isinstance(v,(int,float)) and math.isfinite(v) and 0<=v<=1 for v in b):
             continue
         x0,y0,x1,y1=b
         if x1<=x0 or y1<=y0:
