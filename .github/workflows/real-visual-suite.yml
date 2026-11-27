@@ -12,7 +12,26 @@ concurrency:
   group: real-visual-suite-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests 'Pillow>=10.1,<14'
+      - run: python scripts/real_visual_suite.py --prepare --fixtures shared-fixtures
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shared-visual-fixtures
+          path: shared-fixtures/
+          retention-days: 1
+          if-no-files-found: error
   audit:
+    needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     strategy:
@@ -41,8 +60,12 @@ jobs:
           command -v ffprobe
       - run: pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
       - run: pip install 'transformers==4.57.1' 'Pillow>=10.1,<14' requests 'sentencepiece>=0.2,<1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: shared-visual-fixtures
+          path: shared-fixtures
       - name: Evaluate both real clips
-        run: python scripts/real_visual_suite.py --model ${{ matrix.model }}
+        run: python scripts/real_visual_suite.py --model ${{ matrix.model }} --fixtures shared-fixtures
       - uses: actions/upload-artifact@v4
         if: always()
         with:
