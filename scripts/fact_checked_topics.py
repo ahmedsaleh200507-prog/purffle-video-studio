@@ -986,7 +986,7 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
             "As magma rises, pressure falls and gas bubbles expand. In runny magma, gas escapes more easily.",
             "But sticky magma can trap that gas. Pressure builds, and an eruption that might have been a lava flow can turn explosive.",
         ] if language == "en" else [
-            "Ein Vulkanausbruch kann Gestein in den Himmel schleudern. Warum ist das nicht bei jedem Ausbruch so?",
+            "Bei einem Ausbruch kann ein Vulkan Gestein in den Himmel schleudern. Warum geschieht das nicht bei jedem Vulkan?",
             "Tief unter der Erde kann geschmolzenes Gestein aufsteigen, weil es eine geringere Dichte hat als das Gestein ringsum. Es heißt Magma.",
             "Beim Aufsteigen sinkt der Druck, und Gasblasen dehnen sich aus. Aus flüssigerem Magma entweicht Gas leichter.",
             "Doch zähes Magma kann das Gas einschließen. Steigt der Druck, kann aus einem Lavafluss ein explosiver Ausbruch werden.",
