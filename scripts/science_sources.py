@@ -499,6 +499,7 @@ def evidence_prompt(bundle: Evidence) -> str:
         "supported by this text. DO NOT invent an anecdote, person, study, "
         "historical case, measurement, causal explanation, quote, or conclusion.",
         "Do not present source descriptions as direct video observations.",
+        "Answer the exact topic question, not a neighboring encyclopedia topic. For WHY/HOW, include the actual mechanism, not definitions or examples alone. Open with a vivid true contrast or consequence; deliver the answer promptly. Never invent a sensational claim to attract clicks.",
         "OUTPUT REQUIREMENT: Narrate without digits, numerical measurements, "
         "precise heights, distances, speeds, dates, percentages or other quantities. "
         "Use qualitative wording even when a reference has exact figures. "
@@ -737,6 +738,24 @@ def _review_scenes_individually(llm, system, source_text, scenes):
     return output
 
 
+def review_topic_answer(script,bundle,llm):
+    """Separate editorial relevance from claim-by-claim source support."""
+    schema={"type":"object","properties":{
+        "answers_question":{"type":"boolean"},"opening_specific":{"type":"boolean"},
+        "payoff_complete":{"type":"boolean"},"reason":{"type":"string"}},
+        "required":["answers_question","opening_specific","payoff_complete","reason"],
+        "additionalProperties":False}
+    narration="\n".join(f"Scene {i}: {s.narration}" for i,s in enumerate(script.scenes,1))
+    result=_strict_science_review_json(llm,
+        "You are an independent bilingual documentary editor. A why/how question must explain the cause or mechanism; a classification, example or related fact alone does not answer it. A what-if must distinguish premise from consequences. Judge whether the first spoken line is concrete and relevant (not necessarily sensational) and whether the whole narrative delivers the exact promised answer. Never require an invented statistic or a shocking claim. Return JSON only.",
+        "Exact requested topic: "+bundle.topic+"\nTitle: "+str(getattr(script,"title",""))+"\nNarration:\n"+narration,schema)
+    if not isinstance(result,dict) or any(type(result.get(k)) is not bool for k in
+            ("answers_question","opening_specific","payoff_complete")):
+        raise RuntimeError("science_review_unavailable: invalid_topic_review")
+    if not all(result[k] for k in ("answers_question","opening_specific","payoff_complete")):
+        raise RuntimeError("retention_storyboard_invalid: exact topic answer, specific hook or payoff missing")
+    return {"state":"model_screened_topic_answer","scope":"editorial judgment, not viewer retention prediction"}
+
 def screen_narration(script, bundle: Evidence, llm, *, path=None):
     """Check a cited passage per scene; a missing/mismatched quote blocks TTS.
 
@@ -830,6 +849,12 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
             _report(report, bundle, "failed", checks=accepted,
                     error="source passage cannot substantiate all scene claims")
             raise RuntimeError("science_claim_unverified: unsupported narration scene")
+        if os.getenv("PURFFLE_EDITORIAL_ANSWER_GATE")=="1":
+            try:
+                review_topic_answer(script,bundle,llm)
+            except RuntimeError as exc:
+                _report(report,bundle,"failed",checks=accepted,error=str(exc)[:150])
+                raise
         _report(report, bundle, "model_screened_reference", checks=accepted)
     except RuntimeError as exc:
         if str(exc).startswith("science_review_unavailable:"):
