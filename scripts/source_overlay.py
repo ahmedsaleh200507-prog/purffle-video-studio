@@ -25,9 +25,10 @@ def line_evidence(tsv):
             continue
     return [len(v) for v in lines.values() if len(v)>=3]
 
-def _read_frame(path,t,focus):
-    vf=("scale=540:960:force_original_aspect_ratio=increase,"
-        f"crop=540:960:x='max(0,min(iw-ow,iw*{focus:.5f}-ow/2))':y='(ih-oh)/2'")
+def _read_frame(path,t,focus,landscape=False):
+    w,h=(960,540) if landscape else (540,960)
+    vf=(f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+        f"crop={w}:{h}:x='max(0,min(iw-ow,iw*{focus:.5f}-ow/2))':y='(ih-oh)/2'")
     p=subprocess.run(["ffmpeg","-hide_banner","-nostdin","-v","error","-threads","2",
         "-ss",str(t),"-i",str(path),"-vf",vf,"-frames:v","1","-f","image2pipe",
         "-vcodec","png","-"],capture_output=True,check=True,timeout=8)
@@ -41,7 +42,7 @@ def _text(png):
         env={**os.environ,"OMP_THREAD_LIMIT":"1"})
     return line_evidence(p.stdout.decode("utf8",errors="replace"))
 
-def check_source(path,seconds,focus=.5):
+def check_source(path,seconds,focus=.5,*,landscape=False):
     if os.getenv("PURFFLE_SOURCE_TEXT_GATE")!="1":
         return {"state":"disabled"}
     seconds,focus=float(seconds),float(focus)
@@ -49,10 +50,25 @@ def check_source(path,seconds,focus=.5):
         raise ValueError("Invalid source interval")
     try:
         times=[seconds*.1,seconds*.45,seconds*.8]
-        evidence=[_text(_read_frame(path,t,focus)) for t in times]
+        evidence=[_text(_read_frame(path,t,focus,landscape)) for t in times]
     except (OSError,ValueError,subprocess.SubprocessError) as exc:
         raise RuntimeError("source_overlay_check_unavailable") from exc
     if sum(bool(row) for row in evidence)>=2:
         raise ValueError("source_overlay_text_detected: existing multi-word text in source frames")
     return {"state":"screened","text_frames":sum(bool(row) for row in evidence),
             "samples":len(evidence),"scope":"sampled English/German text, not guaranteed overlay absence"}
+
+def check_photo(frame):
+    if os.getenv("PURFFLE_SOURCE_TEXT_GATE")!="1":
+        return {"state":"disabled"}
+    buffer=io.BytesIO()
+    frame=frame.copy()
+    frame.thumbnail((960,960))
+    frame.save(buffer,format="PNG")
+    try:
+        evidence=_text(buffer.getvalue())
+    except (OSError,ValueError,subprocess.SubprocessError) as exc:
+        raise RuntimeError("source_overlay_check_unavailable") from exc
+    if evidence:
+        raise ValueError("source_overlay_text_detected: existing text in source photo")
+    return {"state":"screened","scope":"sampled English/German text heuristic"}
