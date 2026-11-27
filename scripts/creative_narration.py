@@ -1,7 +1,7 @@
 """Curiosity-first narration: five openings, one selected and developed.
 
 Two logical model calls using existing Gemini/Groq credentials.
-The selected opening is preserved in code, not merely requested in a prompt.
+The selected hook is retained, with factual corrections permitted.
 Candidate text only; no publication or factual approval.
 """
 import json
@@ -9,7 +9,7 @@ from story_room import StoryRoom, obvious_opening_problem
 from editorial_standard import word_tokens
 
 WRITERS=("gemini-3.6-flash","openai/gpt-oss-120b","qwen/qwen3.8-27b","gemini-3.1-flash-lite")
-EDITORS=("gemini-3.6-flash","qwen/qwen3.8-27b","openai/gpt-oss-120b","gemini-3.1-flash-lite")
+EDITORS=("gemini-3.6-flash","openai/gpt-oss-120b","qwen/qwen3.8-27b","gemini-3.1-flash-lite")
 LETTERS=("a","b","c","d","e")
 OPENINGS={"type":"object","properties":{k:{"type":"string"} for k in LETTERS},
         "required":list(LETTERS),"additionalProperties":False}
@@ -18,7 +18,8 @@ BRIEF=(
     "The audience comes to discover something they did not know, not to hear a definition. "
     "Find an actual surprising fact, meaningful event, puzzle or consequence in the reference. "
     "Choose an approach unique to the subject. Make the first thought concrete and immediately understandable. "
-    "A genuine surprise is better than an adjective or generic question. Never manufacture suspense or facts."
+    "A genuine surprise is better than an adjective or generic question. Never manufacture suspense or facts. "
+    "A surprising fact is not automatically the cause of another fact. Never turn an association into a causal explanation."
 )
 
 class CreativeNarration(StoryRoom):
@@ -34,6 +35,8 @@ class CreativeNarration(StoryRoom):
         openings,writer=self.ask("writer",BRIEF+"\n"+material+
             "\nWrite FIVE distinctly different possible opening lines (a–e), one or two short sentences each. "
             "Each must create a specific curiosity about the exact topic that the reference can answer. "
+            "At least three options should start with an unexpected fact in everyday language, not a mechanism or a measurement. "
+            "Each opening must be literally supported, including every qualifier and causal word. "
             "Prefer striking supported details and ordinary words to technical mechanisms. "
             "Do not repeat the title as a question, use 'did you know', generic scene setting or ungrounded comparisons. "
             "For a long middle chapter, make the opening continue the previous chapter instead of restarting the film. "
@@ -45,28 +48,36 @@ class CreativeNarration(StoryRoom):
         if not eligible:
             raise RuntimeError("No usable opening returned")
         schema={"type":"object","properties":{"chosen":{"type":"string","enum":list(eligible)},
-            "continuation":{"type":"string"}},"required":["chosen","continuation"],"additionalProperties":False}
+            "opening":{"type":"string"},"continuation":{"type":"string"}},
+            "required":["chosen","opening","continuation"],"additionalProperties":False}
         final,editor=self.ask("editor_1",BRIEF+"\n"+material+
-            "\nSelect the opening with the most compelling genuine curiosity and strongest factual support. "
-            "Write ONLY the continuation after that exact opening, which will be prepended automatically. "
-            "Do not repeat or paraphrase the opening in the continuation. "
-            "The next sentence must move the discovery forward, not switch to a generic explanation. "
-            "Keep the strongest information early, reveal connected discoveries in natural spoken rhythm, "
-            "and end with a specific insight that answers the original curiosity. "
-            "For a long chapter advance the overall arc. Use no unsupported causal claims or invented anecdotes. "
-            "Return the selected letter and continuation, not scores.\nOpenings:\n"+
+            "\nChoose the most surprising opening that the evidence actually supports. "
+            "Keep its intriguing idea and wording; only correct factual errors or simplify unfamiliar terms. "
+            "Return that opening in the opening field, then write its continuation separately. "
+            "Make the next sentence a new discovery, not a definition. Build a meaningful chain of two or three revelations. "
+            "Answer the exact topic, including the actual mechanism if the question asks why or how. "
+            "End with the most satisfying supported insight, not a sweeping claim or generic recap. "
+            "Before returning, privately check every claim: which reference supports it? "
+            "Remove invented causes, reversed causes, precise claims not in the source and false certainty. "
+            "Never imply a surprising side effect explains the origin or purpose of a system unless the source says so. "
+            "An observation can be a clue without being an exact measurement. "
+            "Use native spoken rhythm, no lecture. For long chapters advance the larger arc. "
+            "Return the selected letter, opening and continuation, not scores.\nOpenings:\n"+
             json.dumps(eligible,ensure_ascii=False),schema,EDITORS,avoid=writer,temperature=.65)
         chosen=final["chosen"]
         continuation=final["continuation"].strip()
         if not continuation:
             raise RuntimeError("Empty continuation")
-        opening=eligible[chosen]
+        opening=final["opening"].strip()
+        if not opening:
+            raise RuntimeError("Empty selected opening")
         narration=opening+" "+continuation
         count=len(word_tokens(narration))
         warning=obvious_opening_problem(narration,evidence)
         if not low<=count<=high:
             warning=warning or f"word_count_{count}_outside_{low}_{high}"
         return {"topic":topic,"language":language,"mode":mode,"openings":openings,"writer":writer,
-                "editor":editor,"chosen":chosen,"selected_opening":opening,"narration":narration,
+                "editor":editor,"chosen":chosen,"original_opening":eligible[chosen],
+                "selected_opening":opening,"narration":narration,
                 "words":count,"warning":warning,"trace":list(self.trace),
                 "scope":"Creative candidate only; factual and human editorial approval still required."}
