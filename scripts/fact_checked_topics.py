@@ -167,13 +167,13 @@ _DOCUMENTARY_FACTS = {
     },
     "volcano_eruption": {
         "en": [
-            "Some volcanoes explode. Others pour out rivers of lava. The difference starts underground.",
+            "A volcano can blast rock into the sky. The force starts deep underground.",
             "Molten rock called magma rises because it is buoyant and gases exert pressure.",
             "As magma approaches the surface, pressure drops and dissolved gases form expanding bubbles.",
             "If gas escapes easily, lava can flow. If gas is trapped in sticky magma, pressure can drive a violent eruption."
         ],
         "de": [
-            "Manche Vulkane explodieren. Andere lassen Lava fließen. Der Unterschied entsteht tief unter der Erde.",
+            "Ein Vulkan kann explosionsartig Gestein in den Himmel schleudern. Die Kraft entsteht tief unter der Erde.",
             "Geschmolzenes Gestein, das Magma, steigt durch Auftrieb und Gasdruck nach oben.",
             "Dabei sinkt der Druck. Gelöste Gase bilden Blasen, die sich ausdehnen.",
             "Kann Gas leicht entweichen, kann Lava fließen. Bleibt Gas in zähem Magma gefangen, kann der Druck eine Explosion auslösen."
@@ -579,14 +579,14 @@ _DOCUMENTARY_FACTS = {
 _THREE_SCENE_SOURCE_REVIEWED = {
     "volcano_eruption": {
         "en": [
-            "Some volcanoes explode. Others pour out rivers of lava. The difference starts underground.",
-            "Magma rises through buoyancy and gas pressure. As pressure drops, gas bubbles expand.",
-            "If gas escapes easily, lava can flow. Trapped gas in sticky magma can drive an explosive eruption."
+            "A volcano can blast rock into the sky. The force starts deep underground.",
+            "Molten rock, called magma, rises through buoyancy and gas pressure. Near the surface, the falling pressure makes gas bubbles expand.",
+            "Runny magma lets gas escape more easily. Sticky magma can trap gas until pressure drives a violent eruption."
         ],
         "de": [
-            "Manche Vulkane explodieren. Andere lassen Lava fließen. Der Unterschied entsteht tief unter der Erde.",
-            "Magma steigt durch Auftrieb und Gasdruck auf. Sinkt der Druck, dehnen sich Gasblasen aus.",
-            "Kann Gas leicht entweichen, kann Lava fließen. Gefangenes Gas in zähem Magma kann eine Explosion auslösen."
+            "Ein Vulkan kann explosionsartig Gestein in den Himmel schleudern. Die Kraft entsteht tief unter der Erde.",
+            "Geschmolzenes Gestein, das Magma, steigt durch Auftrieb und Gasdruck auf. Nahe der Oberfläche sinkt der Druck und Gasblasen dehnen sich aus.",
+            "Aus dünnflüssigem Magma entweicht Gas leichter. Zähes Magma kann Gas einschließen, bis der Druck einen explosiven Ausbruch antreibt."
         ]
     },
     "iceberg_breakup": {
