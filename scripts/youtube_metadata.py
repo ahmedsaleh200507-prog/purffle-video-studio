@@ -58,7 +58,7 @@ def _fallback_title(topic: str, language: str) -> str:
 
 def _title_related(candidate: str, topic: str) -> bool:
     """Guard against an unrelated AI hook; never certify disputed claims."""
-    common = set("what when where why how does do is are the a an can of in on it your its who to and with for was were really this that the most".split())
+    common = set("what when where why how does do is are the a an can of in on it your its who to and with for was were really this that the most self aware suddenly became become happens happen warum wieso welche welchen wirklich passiert werden wurde".split())
     tokens = lambda text: {t for t in re.findall(r"[a-zÀ-ÿ]{4,}", text.lower()) if t not in common}
     wanted = tokens(topic)
     return not wanted or bool(wanted & tokens(candidate))
