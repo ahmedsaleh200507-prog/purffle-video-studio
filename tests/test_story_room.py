@@ -68,7 +68,7 @@ def test_unavailable_editor_preserves_draft_without_approval():
             if role.startswith("editor"):
                 raise RuntimeError("independent_story_model_unavailable")
             return super().ask(role,*args,**kw)
-    result=Unavailable().generate("Why do volcanoes erupt?","en","Reference")
+    result=Unavailable().generate("Why do volcanoes erupt?","en","Reference",word_range=(32,95))
     assert not result["editorial_pass"]
     assert result["narration"]==GOOD
     assert "unavailable" in result["attempts"][0]["structural_error"]
