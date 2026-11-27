@@ -130,7 +130,7 @@ def attach_title_to_video(result: dict) -> dict:
     if title_file.is_file():
         current = _clean(title_file.read_text(encoding="utf-8", errors="replace"))
         # Resume should preserve the original, already prepared title.
-        if current:
+        if current and _title_related(current,result.get("topic","")):
             result.update(youtube_title=current, youtube_title_file=str(title_file))
             return result
     title = make_short_title(result.get("topic", ""), result.get("language", "en"), existing_title)
