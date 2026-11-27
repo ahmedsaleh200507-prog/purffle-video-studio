@@ -18,4 +18,18 @@ class ActionWindowTests(unittest.TestCase):
             result=select_window("clip",20.,5.,{"event_required":True},scorer=None,
                 deadline=10**12,inspector=lambda *a,**k:{"verified":False})
         self.assertEqual(result["offset"],0)
-        self.assertEqual(len(result["attempts"]),3)
+        self.assertEqual(len(result["attempts"]),6)
+
+    def test_late_action_and_bad_preview(self):
+        def frame(path,t,focus):
+            if t < 1: raise RuntimeError("bad first frame")
+            return t
+        def inspect(path,need,focus,contract,**kwargs):
+            return {"verified":kwargs["frames"][0]>65,"best_action_margin":.05}
+        with patch("visual_director._frame_at", side_effect=frame):
+            result=select_window("clip",100.,5.,{"event_required":True},
+                scorer=None,deadline=10**12,inspector=inspect)
+        self.assertEqual(result["state"],"later_interval_proposed")
+        self.assertGreater(result["offset"],65.)
+        self.assertLessEqual(len(result["attempts"]),6)
+        self.assertEqual(result["attempts"][0]["error_type"],"RuntimeError")
