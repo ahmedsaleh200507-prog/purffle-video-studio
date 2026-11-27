@@ -15,6 +15,7 @@ def summarize(match):
         "qwen":(vlm.get("models",{}).get("qwen") or {}).get("state","not_observed"),
         "event":event.get("verified") if event.get("event_required") else None,
         "motion":(event.get("event_nearby_motion") or {}).get("localized_change_observed"),
+        "residual_motion":(event.get("event_residual_motion") or {}).get("localized_motion"),
         "scene_boundaries":((match.get("action_window") or {}).get("scene_boundaries") or {}).get("state","not_observed"),
     }
     state="secondary_disagreement" if evidence["siglip"]=="disagrees" else (
