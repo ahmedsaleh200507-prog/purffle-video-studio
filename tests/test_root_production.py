@@ -113,3 +113,56 @@ def test_source_overlay_rejects_multiple_text_frames(monkeypatch):
             check_source("unused",6)
     with patch("source_overlay._read_frame",return_value=b"png"),patch("source_overlay._text",side_effect=[[],[],[]]):
         assert check_source("unused",6)["state"]=="screened"
+
+
+def test_shared_editorial_rejects_short_and_nonadjacent_repeat(monkeypatch):
+    from editorial_standard import audit_structure
+    with pytest.raises(RuntimeError,match="under_32"):
+        audit_structure(["The sky glows.","Light comes from gases."],"en",mode="short")
+    repeated="The magnetic field guides energetic electrons toward the polar atmosphere."
+    with pytest.raises(RuntimeError,match="repeated_sentence"):
+        audit_structure([repeated,"Gases absorb energy and release it as visible light in the sky.",repeated],"en",mode="short")
+    with pytest.raises(RuntimeError,match="generic_opening"):
+        audit_structure(["Hallo zusammen, heute sehen wir die Natur."],"de",mode="long")
+
+def test_long_chapter_context_preserves_entire_arc():
+    from editorial_standard import chapter_context,chapter_phase
+    outline=[{"title":f"Section {i}"} for i in range(1,15)]
+    context=chapter_context(outline,8,"The previous chapter explains the real physical mechanism.")
+    assert "1 [hook]" in context and "3 [curiosity]" in context
+    assert "12 [development]" in context and "14 [payoff]" in context
+    assert "Current section starts at 9" in context and "previous chapter" in context
+
+def test_editorial_final_timing_rejects_late_caption(tmp_path):
+    from editorial_standard import final_timing
+    path=tmp_path/"captions.srt"
+    path.write_text("1\n00:00:01,100 --> 00:00:03,000\nFirst words\n\n2\n00:00:03,000 --> 00:00:04,900\nFinal words\n")
+    with pytest.raises(RuntimeError,match="late_first_caption"):
+        final_timing(path,5,mode="short")
+    path.write_text("1\n00:00:00,200 --> 00:00:03,000\nFirst words\n\n2\n00:00:03,000 --> 00:00:04,900\nFinal words\n")
+    assert final_timing(path,5,mode="short")["state"]=="timing_screened"
+
+def test_independent_long_editor_requires_every_verdict():
+    from editorial_standard import review_long
+    keys=["answers_topic","specific_opening","early_value","coherent_progression","complete_payoff"]
+    data={**dict.fromkeys(keys,True),"reason":"coherent"}
+    story=[{"title":str(i),"narration":"Sample chapter"} for i in range(14)]
+    def fake(client,prompt,schema,name,validator,**kwargs):
+        assert "14. 13" in prompt
+        return validator(data)
+    with patch("long_generic._retried_json",side_effect=fake):
+        assert review_long("Polar lights","de",story,None)["state"]=="model_screened_editorial"
+        data["complete_payoff"]=False
+        with pytest.raises(RuntimeError,match="complete_payoff"):
+            review_long("Polar lights","de",story,None)
+
+def test_photo_text_gate_and_landscape_crop(monkeypatch):
+    from source_overlay import check_photo,check_source
+    from PIL import Image
+    monkeypatch.setenv("PURFFLE_SOURCE_TEXT_GATE","1")
+    with patch("source_overlay._text",return_value=[4]):
+        with pytest.raises(ValueError,match="source_overlay_text_detected"):
+            check_photo(Image.new("RGB",(100,100)))
+    with patch("source_overlay._read_frame",return_value=b"png") as reader,patch("source_overlay._text",return_value=[]):
+        assert check_source("unused",6,landscape=True)["state"]=="screened"
+        assert all(call.args[3] is True for call in reader.call_args_list)
