@@ -60,3 +60,56 @@ def test_failed_pair_repairs_individual_chapters(monkeypatch):
     data=build_multilingual_documentary("Warum bewegen sich die Wellen?","de",client=object(),sleep=lambda _:None)
     assert len(data)==14 and calls.count("long_documentary_single")==14
     assert data[-1]["title"]==outline[-1]["title"]
+
+
+def test_generic_volcano_mechanism_routes_to_exact_official_dossier():
+    from fact_checked_topics import verified_documentary_kind,ground_verified_documentary
+    from science_sources import discover_evidence
+    from retention_storyboard import audit_storyboard
+    for topic,lang in [("Why Do Volcanoes Erupt?","en"),("Warum brechen Vulkane aus?","de")]:
+        assert verified_documentary_kind(topic)=="volcano_eruption"
+        assert discover_evidence(topic,lang).method=="curated_editor_reviewed"
+        story=ground_verified_documentary({},topic,lang,scene_count=3)
+        spoken=" ".join(s["narration"] for s in story["scenes"]).casefold()
+        assert "magma" in spoken
+        assert ("pressure" if lang=="en" else "druck") in spoken
+        assert "dormant" not in spoken and "extinct" not in spoken
+        assert audit_storyboard(topic,None,lang,scenes=story["scenes"])["state"]=="editorial_screen_passed"
+    assert verified_documentary_kind("Why did Mount St Helens erupt in 1980?")!="volcano_eruption"
+    assert verified_documentary_kind("Why do underwater volcanoes erupt?")!="volcano_eruption"
+
+def test_factually_true_but_offtopic_narration_does_not_pass_editor():
+    from types import SimpleNamespace
+    from science_sources import review_topic_answer,Evidence
+    story=SimpleNamespace(title="Why Do Volcanoes Erupt?",scenes=[
+        SimpleNamespace(narration="A dormant volcano is not erupting now.")])
+    bundle=Evidence("Why Do Volcanoes Erupt?",(),"model_screened_reference")
+    with patch("science_sources._strict_science_review_json",return_value={
+        "answers_question":False,"opening_specific":True,"payoff_complete":False,"reason":"Classification, not cause"}):
+        with pytest.raises(RuntimeError,match="exact topic answer"):
+            review_topic_answer(story,bundle,None)
+
+def test_quiet_volcano_never_demands_active_lava():
+    from visual_director import build_contract,metadata_allows,visual_scores
+    scene={"narration":"A dormant volcano is not erupting now, but may erupt later.",
+           "object":"volcano","action":"ambient","visual_search_query":"volcanic mountain"}
+    contract=build_contract(scene,"What are dormant volcanoes?",1)
+    assert contract["family"]=="quiet_volcanic_context"
+    assert not metadata_allows(contract,"volcano erupting lava fountain")
+    assert metadata_allows(contract,"quiet volcanic crater landscape")
+    assert not visual_scores(contract,[[.3,.1],[.1,.3],[.3,.1]])["verified"]
+
+def test_source_overlay_only_counts_confident_multiword_lines():
+    from source_overlay import line_evidence
+    header="block_num\tpar_num\tline_num\tconf\ttext\n"
+    assert line_evidence(header+"1\t1\t1\t93\tVolcano\n1\t1\t1\t92\teruption\n1\t1\t1\t96\ttoday\n")==[3]
+    assert line_evidence(header+"1\t1\t1\t93\tVolcano\n1\t1\t1\t12\teruption\n1\t1\t2\t96\ttoday\n")==[]
+
+def test_source_overlay_rejects_multiple_text_frames(monkeypatch):
+    from source_overlay import check_source
+    monkeypatch.setenv("PURFFLE_SOURCE_TEXT_GATE","1")
+    with patch("source_overlay._read_frame",return_value=b"png"),patch("source_overlay._text",side_effect=[[4],[],[3]]):
+        with pytest.raises(ValueError,match="source_overlay_text_detected"):
+            check_source("unused",6)
+    with patch("source_overlay._read_frame",return_value=b"png"),patch("source_overlay._text",side_effect=[[],[],[]]):
+        assert check_source("unused",6)["state"]=="screened"
