@@ -167,16 +167,16 @@ _DOCUMENTARY_FACTS = {
     },
     "volcano_eruption": {
         "en": [
-            "A volcano can blast rock into the sky. The force starts deep underground.",
-            "Molten rock called magma rises because it is buoyant and gases exert pressure.",
-            "As magma approaches the surface, pressure drops and dissolved gases form expanding bubbles.",
-            "If gas escapes easily, lava can flow. If gas is trapped in sticky magma, pressure can drive a violent eruption."
+            "A volcano can blast rock high into the sky. The force starts deep underground.",
+            "Molten rock is called magma. It can rise because it is less dense than surrounding rock.",
+            "Near the surface, pressure drops and gas bubbles expand. Runny magma lets gas escape more easily.",
+            "Sticky magma can trap that expanding gas, building pressure that drives an explosive eruption."
         ],
         "de": [
-            "Ein Vulkan kann explosionsartig Gestein in den Himmel schleudern. Die Kraft entsteht tief unter der Erde.",
-            "Geschmolzenes Gestein, das Magma, steigt durch Auftrieb und Gasdruck nach oben.",
-            "Dabei sinkt der Druck. Gelöste Gase bilden Blasen, die sich ausdehnen.",
-            "Kann Gas leicht entweichen, kann Lava fließen. Bleibt Gas in zähem Magma gefangen, kann der Druck eine Explosion auslösen."
+            "Ein Vulkan kann Gestein hoch in den Himmel schleudern. Die Kraft entsteht tief unter der Erde.",
+            "Geschmolzenes Gestein heißt Magma. Es kann aufsteigen, weil seine Dichte geringer ist als die des umliegenden Gesteins.",
+            "Nahe der Oberfläche sinkt der Druck und Gasblasen dehnen sich aus. Aus dünnflüssigem Magma entweicht Gas leichter.",
+            "Zähes Magma kann das Gas einschließen. Der Druck kann einen explosiven Ausbruch antreiben."
         ],
         "title": {
             "en": "Why Do Volcanoes Erupt?",
@@ -1008,6 +1008,9 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
                                    "aurora borealis"),
         "emphasis": [], "emoji": "",
     } for sentence in narration]
+    if kind=="volcano_eruption" and len(scenes)==4:
+        for scene,query in zip(scenes,("volcano explosive eruption","volcano molten lava close up","volcano bubbling lava","volcano eruption lava fountain")):
+            scene["visual_search_query"]=query
     if scene_count == 2 and kind in _TWO_SCENE_VISUAL_QUERIES:
         for scene, query in zip(scenes, _TWO_SCENE_VISUAL_QUERIES[kind]):
             scene["visual_search_query"] = query
