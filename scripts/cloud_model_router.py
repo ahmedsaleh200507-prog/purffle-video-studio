@@ -62,7 +62,7 @@ class Router:
         self.events.append({"model":model,"status":status})
         print("[TEXT MODEL]",model,status,flush=True)
 
-    def request(self,provider,model,*,messages,schema=None,max_tokens=4000,temperature=.2):
+    def request(self,provider,model,*,messages,schema=None,max_tokens=4000,temperature=.2,reasoning_effort="low"):
         import requests
         if not self.keys[provider]:
             raise ModelError(401)
@@ -77,7 +77,7 @@ class Router:
             payload["response_format"]={"type":"json_object"}
         # Low hidden reasoning helps preserve JSON output space under free TPM.
         if provider=="groq":
-            payload["reasoning_effort"]="low"
+            payload["reasoning_effort"]=reasoning_effort if model in ("openai/gpt-oss-120b","openai/gpt-oss-20b") else "low"
         sender=self.post or requests.post
         try:
             response=sender(URLS[provider],headers={"Authorization":"Bearer "+self.keys[provider],
