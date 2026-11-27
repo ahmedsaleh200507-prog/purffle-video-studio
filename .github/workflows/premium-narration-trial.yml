@@ -1,50 +1,11 @@
-name: Premium narration trial
+name: Premium narration trial (disabled)
+# Paid narration is explicitly prohibited for this project.
 on:
-  push:
-    branches: [chatgpt/yellow-system-fixes]
-    paths: ['.github/workflows/premium-narration-trial.yml']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  text:
-    if: github.ref == 'refs/heads/chatgpt/yellow-system-fixes'
+  disabled:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
-    env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      PYTHONPATH: scripts
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Check credential without revealing it
-        run: |
-          if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::error::OPENAI_API_KEY missing; no paid API request made"
-            exit 1
-          fi
-      - run: pip install requests
-      - name: Generate two real narration samples
-        run: |
-          mkdir -p premium-proof
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          from premium_narration import write_narration
-          from story_references import story_reference
-          for topic,lang in [
-              ("Why Do Octopuses Have Three Hearts?","en"),
-              ("Warum leuchten Polarlichter?","de")]:
-              result=write_narration(topic,lang,story_reference(topic,lang))
-              Path(f"premium-proof/{lang}.json").write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
-              print(f"GENERATED NARRATION {lang}: {result['narration']}",flush=True)
-              print("MODEL:",result["model"],"USAGE:",json.dumps(result["usage"]),flush=True)
-          PY
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: premium-narration
-          path: premium-proof/
-          retention-days: 7
+      - run: echo "Paid API narration is disabled. No API requests are made."
