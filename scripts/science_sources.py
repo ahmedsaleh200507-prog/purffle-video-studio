@@ -506,6 +506,10 @@ def evidence_prompt(bundle: Evidence) -> str:
         "Every factual assertion must be supported by the provided excerpts.",
         "If uncertain, give a simpler statement directly supported by the excerpts.",
     ]
+    if bundle.method == "creative_dossier_reference":
+        lines = ["REFERENCE NOTES FOR CREATIVE NARRATION REVIEW: reviewed factual dossier text and "
+                 "research summaries, not verbatim external source quotations. Check the actual claims "
+                 "against these notes; use exact excerpts from the notes for review anchors."]
     cards = source_fact_cards(bundle)
     if cards:
         lines.extend([
