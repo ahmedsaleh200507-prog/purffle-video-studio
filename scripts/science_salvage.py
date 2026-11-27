@@ -57,6 +57,10 @@ def salvage_approved_narration(screenplay, science_report, *, min_scenes=2):
         passed.append(original[index - 1])
     if not min_scenes <= len(passed) < len(original):
         return None
+    # Prevent a few isolated approved sentences from becoming an 8-second
+    # 'finished' video. No filler or new unreviewed claims are introduced.
+    if sum(len(re.findall(r"\b[\w'-]+\b",str(s.narration))) for s in passed)<32:
+        return None
     salvaged = deepcopy(screenplay)
     salvaged.scenes = deepcopy(passed)
     return salvaged
