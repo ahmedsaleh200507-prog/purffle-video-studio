@@ -1,0 +1,67 @@
+name: Bilingual narration flow audit
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/local_voice.py'
+      - 'tests/test_local_voice.py'
+      - '.github/workflows/narration-flow-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: voice-flow-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  voice:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: scripts
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          pip install --no-deps 'purffle-shorts @ git+https://github.com/Chamanrajragu/purffle-shorts.git@514fd2547227b98d951dfc1489fc8c7ce72f1b68'
+          pip install 'piper-tts[alignment]==1.8.0' 'pytest>=8,<10' numpy 'pydantic>=2,<3' 'pydantic-settings>=2,<3' requests Pillow 'edge-tts==7.3.1' groq python-dotenv httpx rich
+      - uses: actions/cache@v4
+        with:
+          path: .cache/piper
+          key: purffle-voice-flow-model-v1-${{ runner.os }}
+      - run: python -m pytest -q tests/test_local_voice.py
+      - name: Render same locked voices before and after
+        run: |
+          python - <<'PY'
+          import os,json,shutil
+          from pathlib import Path
+          from types import SimpleNamespace
+          from local_voice import synthesize
+          texts={
+            "en":"A volcano can blast rock high into the sky. The force starts deep underground. Molten rock is called magma. It can rise because it is less dense than surrounding rock. Near the surface, pressure drops and gas bubbles expand. Runny magma lets gas escape more easily. Sticky magma can trap that expanding gas, building pressure that drives an explosive eruption.",
+            "de":"Diese leuchtenden Schleier entstehen hoch über der Erde. Energiereiche Elektronen folgen dem Magnetfeld der Erde in Richtung der Polargebiete. Dort stoßen die Elektronen mit Sauerstoff und Stickstoff zusammen und übertragen Energie auf die Gase. Wenn diese Energie als Licht abgegeben wird, leuchtet der Nachthimmel in Farben."
+          }
+          root=Path("voice-flow-audit")
+          root.mkdir()
+          for lang,text in texts.items():
+              old=None
+              for mode in ("legacy","sentence"):
+                  os.environ["PURFFLE_NATURAL_VOICE"]="1" if mode=="sentence" else "0"
+                  speech=synthesize(text,root/f"{lang}-{mode}",SimpleNamespace(language=lang))
+                  proof={"duration":speech.duration,"words":[{"text":w.text,"start":w.start,"end":w.end} for w in speech.words],"provenance":speech.provenance}
+                  (root/f"{lang}-{mode}.json").write_text(json.dumps(proof,ensure_ascii=False,indent=2))
+                  if old is None: old=proof
+                  else:
+                      assert [w["text"] for w in old["words"]]==[w["text"] for w in proof["words"]]
+                      assert old["provenance"]["model_sha256"]==proof["provenance"]["model_sha256"]
+                      assert speech.provenance["contextual_sentences"]>0
+                      print("[REAL VOICE FLOW]",lang,json.dumps({k:speech.provenance[k] for k in ("contextual_sentences","isolated_pronunciation_fallback_sentences","sentence_chunks")}),flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bilingual-voice-before-after
+          path: voice-flow-audit/
+          retention-days: 7
