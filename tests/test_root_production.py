@@ -85,7 +85,7 @@ def test_factually_true_but_offtopic_narration_does_not_pass_editor():
         SimpleNamespace(narration="A dormant volcano is not erupting now.")])
     bundle=Evidence("Why Do Volcanoes Erupt?",(),"model_screened_reference")
     with patch("science_sources._strict_science_review_json",return_value={
-        "answers_question":False,"opening_specific":True,"payoff_complete":False,"early_value":True,"coherent_progression":False,"reason":"Classification, not cause"}):
+        "answers_question":False,"opening_specific":True,"payoff_complete":False,"early_value":True,"coherent_progression":False,"natural_spoken_language":True,"sustained_specific_interest":False,"reason":"Classification, not cause"}):
         with pytest.raises(RuntimeError,match="exact topic answer"):
             review_topic_answer(story,bundle,None)
 
@@ -144,7 +144,7 @@ def test_editorial_final_timing_rejects_late_caption(tmp_path):
 
 def test_independent_long_editor_requires_every_verdict():
     from editorial_standard import review_long
-    keys=["answers_topic","specific_opening","early_value","coherent_progression","complete_payoff"]
+    keys=["answers_topic","specific_opening","early_value","coherent_progression","complete_payoff","natural_spoken_language","sustained_specific_interest"]
     data={**dict.fromkeys(keys,True),"reason":"coherent"}
     story=[{"title":str(i),"narration":"Sample chapter"} for i in range(14)]
     def fake(client,prompt,schema,name,validator,**kwargs):
@@ -204,3 +204,24 @@ def test_four_scene_volcano_plan_preserves_complete_mechanism_and_distinct_queri
         assert audit_storyboard(topic,None,language,scenes=story["scenes"])["narration_word_count"]>=45
         assert build_contract(story["scenes"][0],topic,1)["family"]=="eruption"
         assert len(ground_verified_documentary({},topic,language,scene_count=3)["scenes"])==3
+
+def test_audience_standard_blocks_empty_clickbait():
+    from editorial_standard import audit_structure
+    for lang,opening in [("en","You will not believe what happens next."),("de","Du wirst es nicht glauben, was dann passiert.")]:
+        with pytest.raises(RuntimeError,match="editorial_empty_clickbait"):
+            audit_structure([opening,"A substantive explanation follows with a concrete observation and consequence."],lang,mode="long")
+
+def test_editor_refuses_stiff_or_uninteresting_correct_script():
+    from types import SimpleNamespace
+    from science_sources import review_topic_answer,Evidence
+    story=SimpleNamespace(title="Why do whales dive?",scenes=[SimpleNamespace(narration="Whales dive to feed.")])
+    bundle=Evidence("Why do whales dive?",(),"model_screened_reference")
+    keys=("answers_question","opening_specific","payoff_complete","early_value","coherent_progression","natural_spoken_language","sustained_specific_interest")
+    data={**dict.fromkeys(keys,True),"reason":"editorial test"}
+    with patch("science_sources._strict_science_review_json",return_value=data):
+        assert review_topic_answer(story,bundle,None)["sustained_specific_interest"]
+        for key in ("natural_spoken_language","sustained_specific_interest"):
+            data[key]=False
+            with pytest.raises(RuntimeError,match=key):
+                review_topic_answer(story,bundle,None)
+            data[key]=True

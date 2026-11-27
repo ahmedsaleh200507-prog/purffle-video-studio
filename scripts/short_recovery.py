@@ -12,13 +12,14 @@ def save_reviewed_script(screenplay,language,topic,destination=None):
     if not dest:
         return
     from production_checkpoint import write
+    from editorial_standard import ANSWER_GATE_VERSION
     scenes=[]
     for scene in screenplay.scenes:
         plan={k:str(getattr(scene,k,"") or "") for k in
               ("main_character","object","action","location","time","visual_search_query")}
         scenes.append({**plan,"narration":str(scene.narration),"visual_subject":plan["object"]})
     write(Path(dest),{"topic":topic,"language":language,"scenes":scenes,"reviewed":True,
-                      "answer_gate_version":1 if os.environ.get("PURFFLE_EDITORIAL_ANSWER_GATE")=="1" else 0})
+                      "answer_gate_version":ANSWER_GATE_VERSION if os.environ.get("PURFFLE_EDITORIAL_ANSWER_GATE")=="1" else 0})
 
 def recover_approved_dossier(topic,language,target):
     """Zero text API calls for exact, previously source-reviewed subjects only."""
@@ -96,7 +97,8 @@ def _recover_short(topic,language,target):
             or data.get("language")!=language or not 2<=len(data.get("scenes",[]))<=6):
         raise RuntimeError("No matching source-reviewed narration available")
     if os.environ.get("PURFFLE_EDITORIAL_ANSWER_GATE")=="1":
-        if data.get("answer_gate_version")!=1:
+        from editorial_standard import ANSWER_GATE_VERSION
+        if data.get("answer_gate_version")!=ANSWER_GATE_VERSION:
             raise RuntimeError("Recovery script predates exact-question editorial check")
         from retention_storyboard import audit_storyboard
         audit_storyboard(topic,None,language,scenes=data["scenes"])

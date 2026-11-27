@@ -3,7 +3,18 @@ import os
 import re
 import math
 
-VERSION="purffle_four_phase_v3"
+VERSION="purffle_audience_story_v4"
+ANSWER_GATE_VERSION=2
+AUDIENCE_BRIEF=(
+    "Write for a curious viewer hearing the story once, not reading an encyclopedia. "
+    "Use a subject-specific hook with an immediate fact or concrete tension; avoid empty promises like you will not believe this. "
+    "Within the opening beat, explain what is at stake or why the fact matters. "
+    "Give the answer progressively: each beat adds a fresh fact, mechanism, consequence, contrast or evidence that changes understanding. "
+    "Use a natural spoken register, clear short clauses, familiar words, and explain any necessary technical term immediately. "
+    "Vary sentence length and rhythm; use questions only when they genuinely lead into an answer. "
+    "Never manufacture suspense, repeat the topic, tease a reveal without delivering it, or invent drama. "
+    "The ending must reward the exact curiosity raised at the opening with a memorable concrete insight."
+)
 PHASES=("hook","curiosity","development","payoff")
 CORE_BRIEF=(
     "Tell one coherent story that answers the EXACT requested topic. "
@@ -14,7 +25,8 @@ CORE_BRIEF=(
     "prefer concrete examples, understandable cause and effect, and natural spoken language. "
     "PAYOFF: resolve the promise, do not end with an unrelated fact, CTA or fake cliffhanger. "
     "Use accurate native-language speech, filmable real visuals and honest illustrative B-roll. "
-    "No invented quotes, fictional documentary events, repetition, padding or misleading titles."
+    "No invented quotes, fictional documentary events, repetition, padding or misleading titles. "
+    + AUDIENCE_BRIEF
 )
 
 def enabled():
@@ -34,7 +46,9 @@ def long_brief():
         "chapters 2–3 establish the stakes and useful context, chapters 4–12 "
         "develop new evidence and mechanisms in logical order, chapters 13–14 "
         "resolve the question and explain its significance. Each chapter must add "
-        "something new, with a natural transition, not restart the story."
+        "something new, with a natural transition, not restart the story. "
+        "Each chapter opens on a new specific insight or connected question, answers it, and moves naturally to the next chapter. "
+        "Do not use fourteen standalone mini introductions or repeated cliffhangers. Use an occasional new source-supported surprise, comparison, or consequence to renew interest."
     )
 
 def chapter_context(outline,offset,previous):
@@ -52,6 +66,10 @@ def audit_structure(texts,language,*,mode):
     intros=_DE_INTROS if language=="de" else _EN_INTROS
     if any(first.startswith(" ".join(word_tokens(x))) for x in intros):
         raise RuntimeError("editorial_generic_opening")
+    clickbait=("you won t believe","you will not believe","wait until the end","what happens next will shock you","the shocking truth they don t want you to know","du wirst es nicht glauben","das wirst du nicht glauben","warte bis zum ende","was dann passiert wird dich schockieren")
+    first_normal=" ".join(words[0][:30])
+    if any(term in first_normal for term in clickbait):
+        raise RuntimeError("editorial_empty_clickbait")
     all_text=" ".join(" ".join(x) for x in words)
     if any(" ".join(word_tokens(x)) in all_text for x in _BAD_ENDINGS):
         raise RuntimeError("editorial_generic_engagement_prompt")
@@ -88,7 +106,7 @@ def final_timing(captions,duration,*,mode):
 def review_long(topic,language,chapters,client):
     """One separate editor request over the entire story, not a fact-check oracle."""
     from long_generic import _retried_json
-    keys=("answers_topic","specific_opening","early_value","coherent_progression","complete_payoff")
+    keys=("answers_topic","specific_opening","early_value","coherent_progression","complete_payoff","natural_spoken_language","sustained_specific_interest")
     schema={"type":"object","properties":{**{key:{"type":"boolean"} for key in keys},
         "reason":{"type":"string"}},"required":[*keys,"reason"],"additionalProperties":False}
     def validate(data):
@@ -100,7 +118,7 @@ def review_long(topic,language,chapters,client):
         "not popularity or factual proof. "+long_brief()+"\nExact topic: "+topic+
         "\nLanguage: "+language+"\nFull script:\n"+"\n".join(
             f"{i+1}. {row['title']}\n{row['narration']}" for i,row in enumerate(chapters))+
-        "\nReturn the requested boolean verdicts and short reason. Be strict about topic drift, repetition and missing conclusion.")
+        "\nReturn the requested boolean verdicts and short reason. Be strict about topic drift, repetition and missing conclusion. natural_spoken_language requires idiomatic, clear spoken prose rather than stiff encyclopedic writing. sustained_specific_interest requires recurring fresh subject-specific insights and meaningful transitions rather than interchangeable facts, empty suspense, or repeated intros. Judge the actual words, not an imagined voice or footage.")
     verdict=_retried_json(client,prompt,schema,"long_editorial_review",validate,sleep=time.sleep,max_tokens=1800)
     if not all(verdict[k] for k in keys):
         raise RuntimeError("long_editorial_rejected: "+",".join(k for k in keys if not verdict[k]))

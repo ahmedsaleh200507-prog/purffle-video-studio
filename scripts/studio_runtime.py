@@ -1517,8 +1517,8 @@ exact suitable footage cannot be verified; never weaken the scene to hide that f
         source_feedback = review_feedback()
         if source_feedback:
             user += (
-                "\n\nSOURCE-REVIEW REDRAFT (ONE bounded revision): The previous "
-                "draft contained the unsupported claim(s) below. Never repeat "
+                "\n\nSOURCE/EDITORIAL REDRAFT (bounded revision): Correct the "
+                "previous draft problems below. Never repeat "
                 "those claims unless a supplied independent source excerpt "
                 "explicitly supports them. Replace them with different, "
                 "simple, source-supported scientific facts, keep the full "

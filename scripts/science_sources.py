@@ -741,22 +741,32 @@ def _review_scenes_individually(llm, system, source_text, scenes):
 
 
 def review_topic_answer(script,bundle,llm):
-    """Separate editorial relevance from claim-by-claim source support."""
-    schema={"type":"object","properties":{
-        "answers_question":{"type":"boolean"},"opening_specific":{"type":"boolean"},
-        "payoff_complete":{"type":"boolean"},"early_value":{"type":"boolean"},"coherent_progression":{"type":"boolean"},"reason":{"type":"string"}},
-        "required":["answers_question","opening_specific","payoff_complete","early_value","coherent_progression","reason"],
-        "additionalProperties":False}
+    """Independent editorial gate; does not replace factual source screening."""
+    from editorial_standard import AUDIENCE_BRIEF, VERSION
+    keys=("answers_question","opening_specific","payoff_complete","early_value",
+          "coherent_progression","natural_spoken_language","sustained_specific_interest")
+    schema={"type":"object","properties":{**{k:{"type":"boolean"} for k in keys},
+        "reason":{"type":"string"}},"required":[*keys,"reason"],"additionalProperties":False}
     narration="\n".join(f"Scene {i}: {s.narration}" for i,s in enumerate(script.scenes,1))
     result=_strict_science_review_json(llm,
-        "You are an independent bilingual documentary editor. A why/how question must explain the cause or mechanism; a classification, example or related fact alone does not answer it. A what-if must distinguish premise from consequences. Judge whether the first spoken line is concrete and relevant (not necessarily sensational) and whether the whole narrative delivers the exact promised answer. The opening must give useful information early; subsequent scenes must add distinct, logically connected facts, not delay an answer with empty suspense. Never require an invented statistic or a shocking claim. Return JSON only.",
+        "You are an independent bilingual documentary editor, not the writer. "
+        "A why/how question must explain the actual cause or mechanism; classifications or examples alone do not answer it. "
+        "A what-if must distinguish premise from consequences. "+AUDIENCE_BRIEF+
+        " Judge the actual spoken words. natural_spoken_language requires clear idiomatic narration; "
+        "sustained_specific_interest requires real new subject-specific insight at each beat, not generic suspense or list-like facts. "
+        "Do not claim to predict audience retention or demand sensationalism. Return JSON only.",
         "Exact requested topic: "+bundle.topic+"\nTitle: "+str(getattr(script,"title",""))+"\nNarration:\n"+narration,schema)
-    if not isinstance(result,dict) or any(type(result.get(k)) is not bool for k in
-            ("answers_question","opening_specific","payoff_complete","early_value","coherent_progression")):
+    if (not isinstance(result,dict) or set(result)!=set(keys)|{"reason"}
+            or any(type(result.get(k)) is not bool for k in keys)
+            or not isinstance(result["reason"],str)):
         raise RuntimeError("science_review_unavailable: invalid_topic_review")
-    if not all(result[k] for k in ("answers_question","opening_specific","payoff_complete","early_value","coherent_progression")):
-        raise RuntimeError("retention_storyboard_invalid: exact topic answer, specific hook, early value, progression or payoff missing")
-    return {"state":"model_screened_topic_answer","scope":"editorial judgment, not viewer retention prediction"}
+    failed=[k for k in keys if not result[k]]
+    if failed:
+        raise RuntimeError("retention_storyboard_invalid: exact topic answer/editorial gate failed: "+",".join(failed))
+    return {"state":"model_screened_topic_answer","version":VERSION,
+            **{k:result[k] for k in keys},
+            "scope":"editorial judgment, not viewer retention prediction"}
+
 
 def screen_narration(script, bundle: Evidence, llm, *, path=None):
     """Check a cited passage per scene; a missing/mismatched quote blocks TTS.

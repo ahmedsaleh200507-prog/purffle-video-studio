@@ -281,6 +281,9 @@ def main():
                                 snapshot.write_bytes(source_report.read_bytes())
                         except OSError:
                             pass  # Diagnostic archival never bypasses QA.
+                    if str(script_error).startswith(('retention_storyboard_invalid:', 'editorial_')):
+                        # Fixed internal verdict labels, never arbitrary model instructions.
+                        review_feedback_text="EDITORIAL REVISION: Correct the failed narrative criteria: "+str(script_error)[:220]+". Keep every claim source-supported and answer the original topic."
                     if attempt >= 2:
                         # The real V5 #102 proof screened two of four scenes
                         # as true, then discarded them because the other two
