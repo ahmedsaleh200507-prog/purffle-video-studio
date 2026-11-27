@@ -82,7 +82,7 @@ def observe(frames, subject, query):
                 samples = [{"frame_index": i, "caption": str(a)[:1000]}
                            for i, a in zip(indices, answers)]
                 result["models"][key] = {"state": "observed",
-                    "caption": samples[0]["caption"], "samples": samples,
+                    "caption": samples[0]["caption"], "caption_frame_index": indices[0], "samples": samples,
                     "sample_indices": indices,
                     "seconds": round(time.monotonic()-t, 2)}
             except Exception as exc:
