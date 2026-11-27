@@ -127,3 +127,44 @@ def test_natural_voice_reports_real_alignment_and_single_gain(tmp_path,monkeypat
     assert speech.provenance["isolated_pronunciation_fallback_sentences"]==0
     assert speech.provenance["normalization"]=="one_gain_full_narration"
     assert speech.provenance["audio_samples"]==round(speech.duration*22050)
+
+
+def test_weak_english_articles_keep_actual_context_phonemes():
+    voice=fake_voice()
+    voice.config.phoneme_id_map.update({c:[100+i] for i,c in enumerate("eɪɐænðəˈ")})
+    utterances={"A":"ˈeɪ","an":"ˈæn","the":"ðˈə","A an the":"ɐ ɐn ðə"}
+    voice.phonemize=lambda text:[list(utterances[text])]
+    ids,spans=local_voice._context_ids(voice,["A","an","the"])
+    assert len(spans)==3
+    assert voice.config.phoneme_id_map["ɐ"][0] in ids
+    assert voice.config.phoneme_id_map["æ"][0] not in ids
+
+def test_multi_clause_context_preserves_punctuation_and_word_order():
+    voice=fake_voice()
+    voice.config.phoneme_id_map[","]=[200]
+    original=voice.phonemize
+    voice.phonemize=lambda text: [list("fish ,"),list("birds fly.")] if text=="fish, birds fly." else original(text)
+    ids,spans=local_voice._context_ids(voice,["fish,","birds","fly."])
+    assert len(spans)==3 and 200 in ids
+    assert spans[0][1]<spans[1][0]
+
+def test_unrelated_context_never_silently_reverts_to_isolated_words(tmp_path,monkeypatch):
+    voice=fake_voice()
+    original=voice.phonemize
+    voice.phonemize=lambda text:[list("wrong word.")] if text=="Fish swim." else original(text)
+    monkeypatch.setattr(local_voice,"_load_voice",lambda lang:voice)
+    monkeypatch.setenv("PURFFLE_NATURAL_VOICE","1")
+    with pytest.raises(RuntimeError,match="natural_voice_alignment_unverified"):
+        local_voice.synthesize("Fish swim.",tmp_path,SimpleNamespace(language="en"))
+    assert not (tmp_path/"voice-piper.wav").exists()
+
+def test_quiet_margin_trim_never_touches_word_samples():
+    audio=np.zeros(2000,dtype=np.float32)
+    audio[500:1500]=.5
+    trimmed,timings,removed=local_voice._trim_quiet_margins(audio,[(500,1500)],1000)
+    assert removed==740 and len(trimmed)==1260
+    assert timings==[(100,1100)]
+    assert np.array_equal(trimmed[100:1100],audio[500:1500])
+    audio[0:50]=.5
+    trimmed,timings,removed=local_voice._trim_quiet_margins(audio,[(500,1500)],1000)
+    assert removed==340 and timings==[(500,1500)]
