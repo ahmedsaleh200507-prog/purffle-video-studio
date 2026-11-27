@@ -179,3 +179,28 @@ def test_editorial_title_never_invents_unreviewed_promise(tmp_path,monkeypatch):
                                       "topic":"Why Do Volcanoes Erupt?","language":"en"})
     assert result["youtube_title"].startswith("Why Do Volcanoes Erupt?")
     assert result["youtube_title_policy"]=="reviewed_script_or_original_topic"
+
+
+def test_pacing_prefers_only_meaningful_verified_opening_gain():
+    from editorial_pacing import better_opening,pacing_report
+    assert better_opening(89,81)
+    assert not better_opening(83,81)
+    assert not better_opening(60,81)
+    assert not better_opening(float("nan"),81)
+    proof=pacing_report([3.9,8.1,4.2])
+    assert proof["scene_count"]==3 and proof["scenes_over_six_seconds"]==[2]
+    assert proof["longest_scene_seconds"]==8.1
+    with pytest.raises(ValueError):
+        pacing_report([4,float("inf")])
+
+def test_four_scene_volcano_plan_preserves_complete_mechanism_and_distinct_queries():
+    from fact_checked_topics import ground_verified_documentary
+    from retention_storyboard import audit_storyboard
+    from visual_director import build_contract
+    for topic,language in [("Why Do Volcanoes Erupt?","en"),("Warum brechen Vulkane aus?","de")]:
+        story=ground_verified_documentary({},topic,language,scene_count=4)
+        assert len(story["scenes"])==4
+        assert len({scene["visual_search_query"] for scene in story["scenes"]})==4
+        assert audit_storyboard(topic,None,language,scenes=story["scenes"])["narration_word_count"]>=45
+        assert build_contract(story["scenes"][0],topic,1)["family"]=="eruption"
+        assert len(ground_verified_documentary({},topic,language,scene_count=3)["scenes"])==3
