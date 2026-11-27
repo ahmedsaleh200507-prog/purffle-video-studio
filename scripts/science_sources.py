@@ -744,18 +744,18 @@ def review_topic_answer(script,bundle,llm):
     """Separate editorial relevance from claim-by-claim source support."""
     schema={"type":"object","properties":{
         "answers_question":{"type":"boolean"},"opening_specific":{"type":"boolean"},
-        "payoff_complete":{"type":"boolean"},"reason":{"type":"string"}},
-        "required":["answers_question","opening_specific","payoff_complete","reason"],
+        "payoff_complete":{"type":"boolean"},"early_value":{"type":"boolean"},"coherent_progression":{"type":"boolean"},"reason":{"type":"string"}},
+        "required":["answers_question","opening_specific","payoff_complete","early_value","coherent_progression","reason"],
         "additionalProperties":False}
     narration="\n".join(f"Scene {i}: {s.narration}" for i,s in enumerate(script.scenes,1))
     result=_strict_science_review_json(llm,
-        "You are an independent bilingual documentary editor. A why/how question must explain the cause or mechanism; a classification, example or related fact alone does not answer it. A what-if must distinguish premise from consequences. Judge whether the first spoken line is concrete and relevant (not necessarily sensational) and whether the whole narrative delivers the exact promised answer. Never require an invented statistic or a shocking claim. Return JSON only.",
+        "You are an independent bilingual documentary editor. A why/how question must explain the cause or mechanism; a classification, example or related fact alone does not answer it. A what-if must distinguish premise from consequences. Judge whether the first spoken line is concrete and relevant (not necessarily sensational) and whether the whole narrative delivers the exact promised answer. The opening must give useful information early; subsequent scenes must add distinct, logically connected facts, not delay an answer with empty suspense. Never require an invented statistic or a shocking claim. Return JSON only.",
         "Exact requested topic: "+bundle.topic+"\nTitle: "+str(getattr(script,"title",""))+"\nNarration:\n"+narration,schema)
     if not isinstance(result,dict) or any(type(result.get(k)) is not bool for k in
-            ("answers_question","opening_specific","payoff_complete")):
+            ("answers_question","opening_specific","payoff_complete","early_value","coherent_progression")):
         raise RuntimeError("science_review_unavailable: invalid_topic_review")
-    if not all(result[k] for k in ("answers_question","opening_specific","payoff_complete")):
-        raise RuntimeError("retention_storyboard_invalid: exact topic answer, specific hook or payoff missing")
+    if not all(result[k] for k in ("answers_question","opening_specific","payoff_complete","early_value","coherent_progression")):
+        raise RuntimeError("retention_storyboard_invalid: exact topic answer, specific hook, early value, progression or payoff missing")
     return {"state":"model_screened_topic_answer","scope":"editorial judgment, not viewer retention prediction"}
 
 def screen_narration(script, bundle: Evidence, llm, *, path=None):
