@@ -13,12 +13,14 @@ def save_reviewed_script(screenplay,language,topic,destination=None):
         return
     from production_checkpoint import write
     from editorial_standard import ANSWER_GATE_VERSION
+    from production_narration import enabled as creative_enabled, VERSION as CREATIVE_VERSION
     scenes=[]
     for scene in screenplay.scenes:
         plan={k:str(getattr(scene,k,"") or "") for k in
               ("main_character","object","action","location","time","visual_search_query")}
         scenes.append({**plan,"narration":str(scene.narration),"visual_subject":plan["object"]})
     write(Path(dest),{"topic":topic,"language":language,"scenes":scenes,"reviewed":True,
+                      "creative_version":CREATIVE_VERSION if creative_enabled() else None,
                       "answer_gate_version":ANSWER_GATE_VERSION if os.environ.get("PURFFLE_EDITORIAL_ANSWER_GATE")=="1" else 0})
 
 def recover_approved_dossier(topic,language,target):
@@ -90,12 +92,18 @@ def _recover_short(topic,language,target):
     from output_qa import validate_timeline
     target=Path(target).resolve()
     from fact_checked_topics import verified_documentary_kind
-    if verified_documentary_kind(topic) or not (target/"reviewed-script.json").is_file():
+    from production_narration import enabled as creative_enabled, VERSION as CREATIVE_VERSION
+    if creative_enabled():
+        if not (target/"reviewed-script.json").is_file():
+            raise RuntimeError("No reviewed creative narration available for recovery")
+    elif verified_documentary_kind(topic) or not (target/"reviewed-script.json").is_file():
         recover_approved_dossier(topic,language,target)
     data=json.loads((target/"reviewed-script.json").read_text(encoding="utf8"))
     if (data.get("reviewed") is not True or data.get("topic")!=topic
             or data.get("language")!=language or not 2<=len(data.get("scenes",[]))<=6):
         raise RuntimeError("No matching source-reviewed narration available")
+    if creative_enabled() and data.get("creative_version")!=CREATIVE_VERSION:
+        raise RuntimeError("Recovery narration predates creative writer")
     if os.environ.get("PURFFLE_EDITORIAL_ANSWER_GATE")=="1":
         from editorial_standard import ANSWER_GATE_VERSION
         if data.get("answer_gate_version")!=ANSWER_GATE_VERSION:
