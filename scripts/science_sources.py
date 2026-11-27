@@ -529,7 +529,7 @@ def _normalize_quote(text):
     return re.sub(r"\s+", " ", str(text).strip()).casefold()
 
 
-def _report(path: Path, bundle: Evidence | None, state: str, *, checks=(), error=""):
+def _report(path: Path, bundle: Evidence | None, state: str, *, checks=(), error="", topic_review=None):
     payload = {
         "state": state,
         "method": bundle.method if bundle else "none",
@@ -539,6 +539,8 @@ def _report(path: Path, bundle: Evidence | None, state: str, *, checks=(), error
                     for item in bundle.sources] if bundle else [],
         "scene_checks": list(checks),
     }
+    if topic_review is not None:
+        payload["topic_review"] = topic_review
     if error:
         payload["error"] = error[:400]
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -794,7 +796,8 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
                 _report(report, bundle, "failed",
                         error="curated narration differs from official-source-backed dossier")
                 raise RuntimeError("science_claim_unverified: nonapproved curated factual claims")
-        _report(report, bundle, "curated_editor_reviewed")
+        _report(report, bundle, "curated_editor_reviewed",
+                topic_review={"state":"exact_curated_dossier","scope":"approved topic-specific script; not a retention prediction"})
         return
     scenes = getattr(script, "scenes", [])
     if not scenes:
@@ -849,13 +852,14 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
             _report(report, bundle, "failed", checks=accepted,
                     error="source passage cannot substantiate all scene claims")
             raise RuntimeError("science_claim_unverified: unsupported narration scene")
+        topic_review=None
         if os.getenv("PURFFLE_EDITORIAL_ANSWER_GATE")=="1":
             try:
-                review_topic_answer(script,bundle,llm)
+                topic_review=review_topic_answer(script,bundle,llm)
             except RuntimeError as exc:
                 _report(report,bundle,"failed",checks=accepted,error=str(exc)[:150])
                 raise
-        _report(report, bundle, "model_screened_reference", checks=accepted)
+        _report(report, bundle, "model_screened_reference", checks=accepted,topic_review=topic_review)
     except RuntimeError as exc:
         if str(exc).startswith("science_review_unavailable:"):
             _report(report, bundle, "failed",
