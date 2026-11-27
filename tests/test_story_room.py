@@ -19,73 +19,61 @@ class FakeRoom(StoryRoom):
         self.always_high=always_high
     def ask(self,role,prompt,schema,preferred,**kw):
         self.calls.append(role)
-        if role=="story_architect":
-            return {"angles":[dict(hook="A volcano can blast rock.",viewer_question="Why?",
-                supported_answer="Trapped gas",fact_chain="Pressure falls; bubbles expand",
-                final_insight="Gas pressure drives explosions",why_interesting="Different eruptions")
-                for _ in range(3)]},"architect"
-        if role=="choose_story":
-            return {"winner":0,"feedback":"Explain the contrast."},"planner_editor"
-        if role=="compare":
-            return {"winner":0,"scores":[dict.fromkeys(CRITERIA,7),dict.fromkeys(CRITERIA,6)],
-                    "feedback":"Open with a concrete observation."},"editor"
-        if role.startswith("final_editor"):
-            score=10 if self.always_high else (7 if role=="final_editor_1_2" else 8)
-            return verdict(self.text,score),"judge_"+role[-1]
-        return {"angle":"contrast","beats":["start","cause","result"],"narration":self.text},("writer_b" if role=="writer_2" or role.startswith("rewrite") else "writer_a")
+        if role.startswith("editor"):
+            assert kw["avoid"]=="writer"
+            return verdict(self.text,10 if self.always_high else (7 if role=="editor_1" else 8)),"editor"
+        return {"angle":"contrast","beats":["start","cause","result"],"narration":self.text},"writer"
 
-def test_rewrite_after_one_editor_rejects():
-    result=FakeRoom().generate("Why do volcanoes erupt?","en","Reference",word_range=(32,95))
+def test_good_draft_needs_only_two_calls():
+    room=FakeRoom(always_high=True)
+    result=room.generate("Why do volcanoes erupt?","en","Reference",word_range=(32,95))
     assert result["editorial_pass"]
-    assert len(result["attempts"])==2
+    assert room.calls==["writer","editor_1"]
+
+def test_one_rewrite_then_independent_review():
+    room=FakeRoom()
+    result=room.generate("Why do volcanoes erupt?","en","Reference",word_range=(32,95))
+    assert result["editorial_pass"]
+    assert room.calls==["writer","editor_1","rewrite","editor_2"]
     assert not result["attempts"][0]["accepted"]
     assert result["attempts"][1]["different_models"]
 
 def test_real_rejected_aurora_cannot_pass_even_with_perfect_scores():
     assert opening_problem(REJECTED_AURORA)
-    result=FakeRoom(REJECTED_AURORA,True).generate("Warum leuchten Polarlichter?","de","Reference")
-    assert not result["editorial_pass"]
-    assert len(result["attempts"])==4
+    room=FakeRoom(REJECTED_AURORA,True)
+    assert not room.generate("Warum leuchten Polarlichter?","de","Reference")["editorial_pass"]
+    assert len(room.calls)==4
 
 def test_editor_red_flag_overrides_score():
     assert not check_verdict(verdict(GOOD,10,True),GOOD)
+    v=verdict(GOOD,10)
+    v["red_flags"]["unsupported_claims"]=True
+    assert not check_verdict(v,GOOD)
 
 def test_editor_must_quote_actual_script():
     v=verdict(GOOD,10)
     v["opening_quote"]="Made up"
     assert not check_verdict(v,GOOD)
 
-def test_same_model_cannot_be_both_editors():
+def test_same_model_cannot_approve():
     class Same(FakeRoom):
         def ask(self,role,*args,**kw):
             data,model=super().ask(role,*args,**kw)
-            return data,("same_judge" if role.startswith("final_editor") else model)
-    assert not Same(always_high=True).generate("Why do volcanoes erupt?","en","Reference")["editorial_pass"]
+            return data,"writer"
+    assert not Same(always_high=True).generate("Why do volcanoes erupt?","en","Reference",word_range=(32,95))["editorial_pass"]
 
-def test_good_original_is_not_needlessly_rewritten():
-    room=FakeRoom(always_high=True)
-    result=room.generate("Why do volcanoes erupt?","en","Reference",word_range=(32,95))
-    assert result["editorial_pass"]
-    assert len(result["attempts"])==1
-    assert not any(x.startswith("rewrite") for x in room.calls)
-    assert room.calls[:2]==["story_architect","choose_story"]
+def test_unavailable_editor_preserves_draft_without_approval():
+    class Unavailable(FakeRoom):
+        def ask(self,role,*args,**kw):
+            if role.startswith("editor"):
+                raise RuntimeError("independent_story_model_unavailable")
+            return super().ask(role,*args,**kw)
+    result=Unavailable().generate("Why do volcanoes erupt?","en","Reference")
+    assert not result["editorial_pass"]
+    assert result["narration"]==GOOD
+    assert "unavailable" in result["attempts"][0]["structural_error"]
 
-def test_cross_model_rewrite_is_requested_after_both_originals_fail():
-    class RejectFirstTwo(FakeRoom):
-        def ask(self,role,prompt,schema,preferred,**kw):
-            data,model=super().ask(role,prompt,schema,preferred,**kw)
-            if role.startswith("final_editor_1_") or role.startswith("final_editor_2_"):
-                data["scores"]=dict.fromkeys(CRITERIA,7)
-            if role.startswith("rewrite"):
-                assert kw["avoid"] in ("writer_a","writer_b")
-                model="third_writer"
-            return data,model
-    result=RejectFirstTwo(always_high=True).generate("Why do volcanoes erupt?","en","Reference",word_range=(32,95))
-    assert result["editorial_pass"]
-    assert len(result["attempts"])==3
-    assert result["attempts"][-1]["writer"]=="third_writer"
-
-def test_general_story_contract_is_not_a_volcano_template():
+def test_shared_contract_adapts_to_subject():
     from editorial_standard import AUDIENCE_BRIEF, long_brief
     for brief in (AUDIENCE_BRIEF,long_brief()):
         assert "volcano" not in brief.lower()
@@ -94,20 +82,16 @@ def test_general_story_contract_is_not_a_volcano_template():
         assert "distinctive behavior" in brief
         assert "Do not force a contrast" in brief
 
-def test_topic_and_reference_reach_general_planner_in_both_languages():
-    # Synthetic input for prompt-routing tests, not factual publication examples.
-    cases=[("The invention of a fictional clock","en","A fictional workshop tested two clock designs."),
-           ("Geschichte eines fiktiven Hafens","de","Ein fiktiver Hafen erhielt eine neue Brücke."),
-           ("The behavior of a fictional bird","en","The fictional bird hides its food."),
-           ("Ein erfundener Alltagsgegenstand","de","Ein fiktiver Behälter hat zwei getrennte Fächer.")]
+def test_topic_and_reference_reach_writer_and_editor():
     class Inspect(FakeRoom):
         def ask(self,role,prompt,schema,preferred,**kw):
-            if role in ("story_architect","choose_story","writer_1","writer_2"):
-                assert self.topic in prompt and self.evidence in prompt
-                assert "different narrative form" in prompt or "narrative approach appropriate to it" in prompt
+            assert self.topic in prompt and self.evidence in prompt
+            assert "narrative approach appropriate to it" in prompt
             return super().ask(role,prompt,schema,preferred,**kw)
-    for topic,lang,evidence in cases:
+    for topic,lang,evidence in [
+        ("A fictional clock","en","A fictional workshop tests two clock designs."),
+        ("Ein fiktiver Hafen","de","Ein fiktiver Hafen erhält eine neue Brücke.")]:
         room=Inspect(always_high=True)
         room.topic,room.evidence=topic,evidence
         room.generate(topic,lang,evidence,word_range=(32,95))
-        assert room.calls[:2]==["story_architect","choose_story"]
+        assert room.calls==["writer","editor_1"]
