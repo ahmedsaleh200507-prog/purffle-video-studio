@@ -127,6 +127,28 @@ def attach_title_to_video(result: dict) -> dict:
         except (OSError, ValueError, TypeError):
             pass
     title_file = video.parent / "YouTube_Title.txt"
+    from editorial_standard import enabled
+    if enabled():
+        # Do not create a second, unreviewed AI promise after story review.
+        # Preserve the already reviewed script title only when it actually
+        # matches the generated metadata and the science report passed.
+        title=_fallback_title(result.get("topic",""),result.get("language","en"))
+        try:
+            report=json.loads(Path(result["science_report"]).read_text(encoding="utf8"))
+            script_path=Path(metadata_name).with_name("script.json")
+            script=json.loads(script_path.read_text(encoding="utf8"))
+            approved=_clean(script.get("title",""))
+            editorial=report.get("topic_review",{}).get("state") in (
+                "model_screened_topic_answer","exact_curated_dossier")
+            if (editorial and approved and approved==_clean(existing_title)
+                    and _title_related(approved,result.get("topic",""))):
+                title=approved
+        except (OSError,ValueError,KeyError,TypeError,AttributeError):
+            pass
+        title_file.write_text(title+"\n",encoding="utf8")
+        result.update(youtube_title=title,youtube_title_file=str(title_file),
+                      youtube_title_policy="reviewed_script_or_original_topic")
+        return result
     if title_file.is_file():
         current = _clean(title_file.read_text(encoding="utf-8", errors="replace"))
         # Resume should preserve the original, already prepared title.
