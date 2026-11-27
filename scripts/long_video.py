@@ -174,7 +174,8 @@ def narrate(data,work,language="en",checkpoint=None,scene_groups=None):
     for i,c in enumerate(data):
         text=c["narration"]
         from local_voice import provenance,flow_enabled,VOICE_FLOW_VERSION
-        identity=[text,language,provenance(language)["model_sha256"],VOICE_FLOW_VERSION if flow_enabled() else "legacy"]
+        narrator=provenance(language)
+        identity=[text,language,narrator["engine"],narrator["model_sha256"],narrator.get("voice_sha256"),narrator.get("voice_flow_version",VOICE_FLOW_VERSION if flow_enabled() else "legacy")]
         key=f"voice-{i+1:02d}"
         saved=checkpoint.get_file(key,identity,".wav") if checkpoint else None
         if saved:
@@ -187,6 +188,12 @@ def narrate(data,work,language="en",checkpoint=None,scene_groups=None):
                     saved=None
             except (OSError,ValueError,KeyError,wave.Error,EOFError):
                 saved=None
+        if saved and narrator["engine"]=="kokoro":
+            try:
+                from george_voice import verify_provenance
+                verify_provenance(info.get("voice_provenance",{}))
+            except (RuntimeError,ValueError,TypeError):
+                saved=None
         if saved and scene_groups is not None and not info.get("groups"):
             saved=None
         if saved:
@@ -197,7 +204,7 @@ def narrate(data,work,language="en",checkpoint=None,scene_groups=None):
         else:
             speech=piper_synthesize(text,work/f"voice-{i+1}",SimpleNamespace(language=language))
             from studio_runtime import _validate_free_speech
-            _validate_free_speech(speech, "piper", language)
+            _validate_free_speech(speech, narrator["engine"], language)
             if (not Path(speech.audio).is_file() or not speech.words
                     or not 20<=speech.duration<=110):
                 raise RuntimeError(f"Chapter {i+1} {language} voice invalid")
@@ -213,7 +220,7 @@ def narrate(data,work,language="en",checkpoint=None,scene_groups=None):
                     print("[TIMED ALIGNMENT UNAVAILABLE]",i+1,str(exc),flush=True)
                 scene_groups[i]=groups
             if checkpoint:
-                path=checkpoint.store_file(key,identity,path,{"duration":duration,"captions":captions,"groups":groups})
+                path=checkpoint.store_file(key,identity,path,{"duration":duration,"captions":captions,"groups":groups,"voice_provenance":speech.provenance})
         audios.append((path,duration))
         lines.extend((offset+a,offset+b,line) for a,b,line in captions)
         offset+=duration
