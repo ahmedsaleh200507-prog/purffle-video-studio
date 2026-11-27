@@ -283,6 +283,10 @@ def _fallback_search_queries(topic: str, language: str) -> tuple[str, ...]:
                     if language == "en" else
                     ["Rayleigh-Streuung", "Himmelsblau", "Atmosphärische Optik"])
     if language == "en":
+        if re.search(r"\bsharks?\b",text):
+            queries += ["shark", "ram ventilation", "fish respiration"]
+        if "lightning" in text and re.search(r"\b(ocean|sea|water)\b",text):
+            queries += ["lightning", "lightning strike"]
         if "octopus" in text or "octopuses" in text:
             queries += ["octopus", "octopus anatomy"]
         if "humpback" in text or "whale" in text:
@@ -294,6 +298,10 @@ def _fallback_search_queries(topic: str, language: str) -> tuple[str, ...]:
                 "smoke" in text or "cloud" in text or "plume" in text):
             queries += ["Rocket engine", "Rocket exhaust", "Water deluge system"]
     else:
+        if re.search(r"\bhai(?:e|en)?\b",text):
+            queries += ["Haie", "Kiemenatmung"]
+        if "blitz" in text and re.search(r"\b(meer|ozean|wasser)\b",text):
+            queries += ["Blitz", "Gewitter"]
         if "nilkrokodil" in text or "salzwasserkrokodil" in text:
             queries += ["Nilkrokodil", "Leistenkrokodil", "Krokodile"]
         if "bergzieg" in text:
