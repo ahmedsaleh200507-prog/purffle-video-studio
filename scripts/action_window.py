@@ -10,7 +10,7 @@ import tempfile
 import time
 from pathlib import Path
 
-def select_window(path, duration, need, contract, *, scorer, deadline, inspector=None):
+def select_window(path, duration, need, contract, *, scorer, deadline, inspector=None, opening=True):
     if not contract or not contract.get("event_required"):
         return {"state":"not_required","offset":0.}
     if not all(math.isfinite(float(v)) for v in (duration,need)) or need<1 or duration<need+2:
@@ -33,7 +33,7 @@ def select_window(path, duration, need, contract, *, scorer, deadline, inspector
             # Frame timestamps exactly mirror the final opening check.
             times=[offset+min(.4,need*.1),offset+min(1.7,need*.35),offset+need*.66]
             frames=[_frame_at(path,t,.5) for t in times]
-            result=inspector(path,need,.5,contract,scorer=scorer,frames=frames,opening=True)
+            result=inspector(path,need,.5,contract,scorer=scorer,frames=frames,opening=opening)
             attempts.append({"offset":offset,"verified":bool(result.get("verified")),
                              "margin":result.get("best_action_margin")})
             if result.get("verified"):
