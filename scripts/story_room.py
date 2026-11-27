@@ -8,9 +8,9 @@ import re
 from editorial_standard import AUDIENCE_BRIEF, audit_structure, word_tokens
 from cloud_model_router import Router, MODELS, ModelError
 
-VERSION = "story-room-v5-simple"
+VERSION = "story-room-v6-reader-first"
 WRITERS = ("openai/gpt-oss-120b", "gemini-3.6-flash", "gemini-3.1-flash-lite")
-EDITORS = ("gemini-3.6-flash", "openai/gpt-oss-120b", "gemini-3.1-flash-lite")
+EDITORS = ("gemini-3.6-flash", "qwen/qwen3.8-27b", "openai/gpt-oss-120b", "gemini-3.1-flash-lite")
 CRITERIA = ("hook", "curiosity", "progression", "native_language", "payoff")
 DRAFT_SCHEMA = {"type":"object","properties":{
     "angle":{"type":"string"},"beats":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":6},
@@ -69,21 +69,46 @@ def check_verdict(verdict, text):
             and not any(verdict["red_flags"].values()))
 
 CRAFT_BRIEF = (
-    "Write like a skilled documentary storyteller speaking to a curious friend, not like a teacher. "
-    "The hook is a short, specific true detail, event, discovery, decision or observation appropriate to the subject; not a greeting, title, "
-    "scenic description, generic question, or a promise of a surprise. "
-    "Put the most interesting supported fact before definitions or scientific terminology. "
-    "In the next sentence introduce the real puzzle or an early part of its answer, without a filler transition. "
-    "Make each sentence cause the next one: a new fact changes what the listener understands. "
-    "Do not recite the source facts in source order; select and rearrange them around the audience question. "
-    "Where needed, explain technical or unfamiliar terms through everyday concrete language. "
-    "Use ordinary native phrasing, varied short sentences, active verbs, and no decorative metaphors. "
-    "End on the subject-specific insight, consequence or resolution that rewards the opening, not on generic beauty, wonder, or a summary. "
-    "For a long introduction give a meaningful partial answer and leave a specific next question; "
-    "do not use a Short stretched with extra sentences or conclude the entire film. "
-    "Never invent facts, quantities, physical comparisons presented as facts, fake suspense or danger. "
-    "The interest must come from the subject itself. Write the narration in the requested language."
+    "Write the words a talented documentary narrator would actually say to a curious person. "
+    "The first sentence must be instantly understandable WITHOUT knowing the topic's technical vocabulary. "
+    "Start with a real, concrete, surprising fact or meaningful event from the reference. "
+    "In the next beat make clear what is unusual, what is at stake, or what the listener is about to understand. "
+    "Do not give a definition or start inside the mechanism before the viewer knows why it matters. "
+    "Use the subject's own distinctive interest, not forced suspense, invented anecdotes or decorative poetry. "
+    "One thought per sentence where natural; vary rhythm, use familiar words, explain only necessary terms. "
+    "Build a discovery rather than reciting facts in their original order. "
+    "End with a specific insight that makes the opening more meaningful. "
+    "For a long chapter, advance the film's arc without repeating introductions or concluding early. "
+    "Do not pad sparse reference material: a shorter excellent script is better than a longer dull one. "
+    "Never invent a witness, scene, quote, measurement, motive, comparison or causal claim. "
+    "Only use factual statements supported by the supplied reference. Native English or native German."
 )
+
+# Contrast between writing approaches, not reusable script templates.
+# Fictional training input, never part of the published facts.
+CALIBRATION = (
+    "Calibration on an unrelated fictional example: reference says a box has two compartments, "
+    "one keeps wet objects separate from dry ones. "
+    "Weak opening: 'The container incorporates a dual-compartment separation system.' "
+    "Stronger approach: begin with the useful surprise that wet and dry objects can share one box "
+    "without touching, then explain how. Do not copy that language or structure for the actual subject. "
+    "A technical mechanism first is not a hook merely because it involves movement. "
+    "A made-up witness, e.g. 'A customer once discovered...', is a factual failure even if it sounds vivid."
+)
+
+def obvious_opening_problem(text, evidence):
+    first=re.split(r"(?<=[.!?])\s+",text.strip(),maxsplit=1)[0]
+    # Catch invented eyewitness anecdotes, including the failed real v5 example.
+    anecdote=r"\b(?:once (?:saw|noticed|discovered|felt|watched)|einmal (?:sah|bemerkte|entdeckte|spürte)|beobachtete einst)\b"
+    if re.search(anecdote,first,re.I) and not re.search(anecdote,evidence,re.I):
+        return "unsupported_eyewitness_anecdote"
+    # Narrow guard for the recurring technical-first failure; not a general ban on
+    # scientific words. Two specialist terms in an opening without prior context.
+    jargon=r"\b(?:elektron\w*|electron\w*|magnetfeld\w*|magnetic field|molek\w*|molecul\w*|ionisier\w*|ioniz\w*)\b"
+    if len(re.findall(jargon,first,re.I))>=2:
+        return "technical_mechanism_before_audience_context"
+    return ""
+
 
 class StoryRoom:
     def __init__(self, router=None):
@@ -103,7 +128,7 @@ class StoryRoom:
                 continue
             try:
                 raw=self.router.request(provider,model,messages=messages,schema=schema,
-                                        max_tokens=4500,temperature=temperature)
+                                        max_tokens=1600,temperature=temperature)
                 self.trace.append({"role":role,"model":model,"status":"accepted_json"})
                 return json.loads(raw),model
             except ModelError as exc:
@@ -118,7 +143,7 @@ class StoryRoom:
                     self.router.cooldown[model]=self.router.clock()+30
         if excluded:
             raise RuntimeError("independent_story_model_unavailable: "+role)
-        raw=self.router.complete(messages,schema=schema,max_tokens=4500,temperature=temperature)
+        raw=self.router.complete(messages,schema=schema,max_tokens=1600,temperature=temperature)
         model=self.router.events[-1]["model"]
         self.trace.append({"role":role,"model":model,"status":"accepted_json"})
         return json.loads(raw),model
@@ -126,7 +151,7 @@ class StoryRoom:
     def generate(self, topic, language, evidence, *, mode="short", context="", word_range=None):
         if language not in ("en","de") or mode not in ("short","long"):
             raise ValueError("Unsupported story mode or language")
-        low, high = word_range or ((45,95) if mode=="short" else (100,170))
+        low, high = word_range or ((32,80) if mode=="short" else (80,170))
         common = (f"Topic: {topic}\nLanguage: {language} (native idiomatic prose). "
             f"Write {low}–{high} spoken words for this {mode} narrative unit. "
             "Find the most compelling true aspect of the exact topic and choose a narrative approach appropriate to it. Open with a specific detail or meaningful development in natural spoken language. Give the viewer a reason to continue. Each new beat must change the viewer’s understanding. For a short, end with a concrete insight or resolution that earns the opening. "
@@ -136,16 +161,16 @@ class StoryRoom:
             "Narration is continuous prose, no headings or camera directions. "
             "For a long chapter, follow the whole-story context and do not restart or prematurely conclude the film. "
             f"\nStory context: {context}\nReference material:\n{evidence}")
-        common += "\n"+CRAFT_BRIEF
+        common += "\n"+CRAFT_BRIEF+"\n"+CALIBRATION
         self.trace=[]
         draft,writer=self.ask("writer",common+
             "\nChoose the best true detail and story form internally, then write the finished narration. "
-            "Do not output a lesson, a list of facts, or a generic hook. Read it once as an ordinary viewer and improve any dull line before returning.",
+            "Internally try three different first lines, choose the one an ordinary listener understands immediately, then write the script. Do not output the alternatives. Read the opening aloud mentally: if it begins with technical explanation, replace it with the real interesting fact. If the reference is sparse, use fewer words, never invent a story.",
             DRAFT_SCHEMA,WRITERS,temperature=.55)
         attempts=[]
         def structure(text):
             count=len(word_tokens(text))
-            error=opening_problem(text)
+            error=opening_problem(text) or obvious_opening_problem(text,evidence)
             if not low<=count<=high:
                 error=error or f"word_count_{count}_outside_{low}_{high}"
             try:
@@ -161,7 +186,7 @@ class StoryRoom:
             try:
                 verdict,judge=self.ask("editor_"+str(attempt+1),common+
                     "\nReview the submitted script as an independent demanding native-language editor. "+
-                    RUBRIC+"\nCheck every material claim against the supplied reference; reject unsupported additions, "
+                    RUBRIC+"\nBefore scoring, actively try to falsify the opening: if the listener cannot say why this matters in everyday words, mark no_reason_to_continue. A scientific process is not itself a reason to continue. A score of 8 requires a specific supported audience-facing surprise, not merely clear facts. If the first sentence is a witness anecdote, require it to be documented in the reference. Check every material claim against the supplied reference; reject unsupported additions, "
                     "overstatements or misleading wording even if entertaining. This is a reference-consistency screen, not independent factual verification. "
                     "Give concrete feedback on exactly what to change. Quote the actual opening and weakest phrase. "
                     "Do not award a pass for adequate textbook prose.\nSCRIPT:\n"+text,
@@ -179,7 +204,7 @@ class StoryRoom:
             try:
                 draft,writer=self.ask("rewrite",common+
                     "\nRewrite the actual narration using the editor's concrete feedback. Preserve supported facts; "
-                    "remove dull lines and improve curiosity, progression and payoff.\nDraft:\n"+text+
+                    "remove dull lines and improve curiosity, progression and payoff. If the opening is technical or invented, discard it entirely and begin with a real source-supported fact in ordinary language.\nDraft:\n"+text+
                     "\nFeedback:\n"+verdicts[0]["feedback"]+" "+error,
                     DRAFT_SCHEMA,WRITERS,temperature=.45)
             except RuntimeError as exc:
