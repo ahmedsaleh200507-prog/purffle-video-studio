@@ -394,6 +394,41 @@ def _word_samples(samples, ids, spans, audio_samples):
     return words
 
 
+def _trim_quiet_margins(audio,timings,sample_rate,*,first=False,last=False):
+    """Shorten excess quiet ONLY outside all measured word spans.
+
+    Never time-stretch, remove spoken samples or shift captions by an estimate.
+    Keep a natural pause and refuse to trim if the proposed edge is audible.
+    """
+    import numpy as np
+    n=len(audio)
+    if not timings or n==0:
+        return audio,timings,0
+    # Leave breathing room between complete clauses/sentences.
+    head=max(0,timings[0][0]-round(sample_rate*(.16 if first else .10)))
+    tail=max(0,n-timings[-1][1]-round(sample_rate*(.20 if last else .16)))
+    peak=float(np.max(np.abs(audio)))
+    def quiet(part):
+        return (not len(part) or
+                (float(np.max(np.abs(part)))<=max(1e-6,.018*peak)
+                 and float(np.sqrt(np.mean(part*part)))<=max(1e-7,.006*peak)))
+    if head and not quiet(audio[:head]):
+        head=0
+    if tail and not quiet(audio[n-tail:]):
+        tail=0
+    if not head and not tail:
+        return audio,timings,0
+    end=n-tail
+    return audio[head:end],[(a-head,b-head) for a,b in timings],head+tail
+
+def _gap_summary(words,duration):
+    gaps=[max(0.,b.start-a.end) for a,b in zip(words,words[1:])]
+    internal=[g for g,a in zip(gaps,words) if not a.text.rstrip("\"”’')]").endswith((".", "!", "?", ",", ";", ":"))]
+    return {"measured_max_word_gap_seconds":round(max(gaps,default=0.),3),
+            "measured_max_nonpunctuation_gap_seconds":round(max(internal,default=0.),3),
+            "measured_gaps_over_half_second":sum(g>.5 for g in gaps),
+            "spoken_words_per_minute":round(60*len(words)/duration,1)}
+
 def synthesize(text, out, settings):
     """Produce an upstream Speech; failures never return silent/estimated audio."""
     import numpy as np
@@ -416,6 +451,7 @@ def synthesize(text, out, settings):
     contextual,fallback=0,0
     signals=[]
     repair_splits=0
+    trimmed_samples=0
     if flow:
         prepared=[]
         for chunk in chunks:
@@ -433,7 +469,7 @@ def synthesize(text, out, settings):
             wav.setparams((1, 2, sample_rate, 0, 'NONE', 'not compressed'))
             # Bound individual ONNX inference allocations while keeping natural
             # phrase punctuation and a single native timeline for the whole WAV.
-            for chunk_tokens,ids,spans in chunks:
+            for chunk_index,(chunk_tokens,ids,spans) in enumerate(chunks):
                 if flow:
                     contextual+=1
                 result = voice.phoneme_ids_to_audio(ids, include_alignments=True)
@@ -448,6 +484,9 @@ def synthesize(text, out, settings):
                 if not math.isfinite(peak) or peak < 1e-5 or float(np.sqrt(np.mean(audio*audio))) < 1e-5:
                     raise RuntimeError('Local voice returned silent audio')
                 if flow:
+                    audio,timings,removed=_trim_quiet_margins(audio,timings,sample_rate,
+                        first=chunk_index==0,last=chunk_index==len(chunks)-1)
+                    trimmed_samples+=removed
                     signals.append(audio)
                 else:
                     audio = np.clip(audio / peak * .95, -1, 1)
@@ -475,7 +514,9 @@ def synthesize(text, out, settings):
                     voice_flow_version=VOICE_FLOW_VERSION,contextual_sentences=contextual,
                     isolated_pronunciation_fallback_sentences=fallback,sentence_chunks=len(chunks),
                     contextual_clause_repairs=repair_splits,
-                    normalization='one_gain_full_narration')
+                    normalization='one_gain_full_narration',
+                    trimmed_quiet_margin_samples=trimmed_samples,
+                    **_gap_summary(words,total_samples/sample_rate))
         print(f'[VOICE FLOW] contextual={contextual} fallback={fallback} chunks={len(chunks)}',flush=True)
     speech = Speech(target, words, total_samples/sample_rate, 'piper', info['model'], 'aligned')
     speech.provenance = info
