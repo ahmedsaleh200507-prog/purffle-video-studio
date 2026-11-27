@@ -4,6 +4,7 @@ Experimental until real positive/negative footage evaluation passes.
 Do not treat raw logits as calibrated probabilities or prove an event.
 """
 import os
+import math
 import threading
 MODEL="google/siglip2-base-patch16-224"
 REVISION="02c35f2c035e0ed4a367fb10a892c1fe2a3f364e"
@@ -48,9 +49,13 @@ def check(frames,subject,query):
     negative=["An empty unrelated background without the requested subject.",
               "A drawing, cartoon or animation.",*contrast_prompts(subject,query)]
     rows=score(frames,positive+negative)
+    if not frames or len(rows)!=len(frames) or any(
+            len(row)!=len(positive)+len(negative) or
+            not all(math.isfinite(float(v)) for v in row) for row in rows):
+        raise ValueError("Invalid SigLIP contrast matrix")
     matches=sum(min(r[:2])>max(r[2:]) for r in rows)
     return {"model":MODEL,"revision":REVISION,"matching_frames":matches,
-            "sampled_frames":len(rows),"agrees":matches>=max(1,(len(rows)+1)//2),
+            "sampled_frames":len(rows),"agrees":matches>len(rows)/2,
             "method":"independent_uncalibrated_logit_ranking"}
 
 def observe(frames,subject,query):
