@@ -167,16 +167,16 @@ _DOCUMENTARY_FACTS = {
     },
     "volcano_eruption": {
         "en": [
-            "Hot lava flows from a volcano. But why do some eruptions explode?",
-            "Deep underground, molten rock called magma contains dissolved gases under pressure.",
-            "As magma rises, surrounding pressure drops and gas bubbles expand.",
-            "When gases escape violently, they can fragment magma and drive an explosive eruption."
+            "Some volcanoes explode. Others pour out rivers of lava. The difference starts underground.",
+            "Molten rock called magma rises because it is buoyant and gases exert pressure.",
+            "As magma approaches the surface, pressure drops and dissolved gases form expanding bubbles.",
+            "If gas escapes easily, lava can flow. If gas is trapped in sticky magma, pressure can drive a violent eruption."
         ],
         "de": [
-            "Heiße Lava fließt aus einem Vulkan. Aber warum verlaufen manche Ausbrüche explosionsartig?",
-            "Tief unter der Erde enthält geschmolzenes Gestein, das Magma, gelöste Gase.",
-            "Wenn Magma aufsteigt, sinkt der Druck und Gasblasen dehnen sich aus.",
-            "Entweichen die Gase heftig, können sie Magma zerreißen und explosive Ausbrüche auslösen."
+            "Manche Vulkane explodieren. Andere lassen Lava fließen. Der Unterschied entsteht tief unter der Erde.",
+            "Geschmolzenes Gestein, das Magma, steigt durch Auftrieb und Gasdruck nach oben.",
+            "Dabei sinkt der Druck. Gelöste Gase bilden Blasen, die sich ausdehnen.",
+            "Kann Gas leicht entweichen, kann Lava fließen. Bleibt Gas in zähem Magma gefangen, kann der Druck eine Explosion auslösen."
         ],
         "title": {
             "en": "What Makes a Volcano Suddenly Erupt?",
@@ -579,9 +579,9 @@ _DOCUMENTARY_FACTS = {
 _THREE_SCENE_SOURCE_REVIEWED = {
     "volcano_eruption": {
         "en": [
-            "Hot lava flows from a volcano. But why do some eruptions explode?",
-            "Rising magma contains dissolved gases that expand as pressure decreases.",
-            "When gases escape violently, they can break magma apart and drive explosive eruptions."
+            "Some volcanoes explode. Others pour out rivers of lava. The difference starts underground.",
+            "Magma rises through buoyancy and gas pressure. As pressure drops, gas bubbles expand.",
+            "If gas escapes easily, lava can flow. Trapped gas in sticky magma can drive an explosive eruption."
         ],
         "de": [
             "Heiße Lava fließt aus einem Vulkan. Aber warum verlaufen manche Ausbrüche explosionsartig?",
@@ -679,10 +679,15 @@ def verified_documentary_kind(topic: str) -> str | None:
     # These narrow source-reviewed explainers are keyed to the 2026-11-20
     # production #85 batch. Unrelated volcanoes, whale diets, other ice
     # questions and all other science still require independent review.
-    if (tokens & {"volcano", "volcanoes"} and
-            tokens & {"erupt", "erupts", "eruption"} and
-            tokens & {"suddenly", "sudden"} and
-            not tokens & {"island", "ocean", "underwater"}):
+    # Exact generic why/how questions in both languages, not questions
+    # about a named volcano, date, location, eruption forecast or impacts.
+    if (tokens & {"volcano", "volcanoes", "vulkan", "vulkane"}
+            and tokens & {"erupt", "erupts", "eruption", "bricht", "brechen"}
+            and (tokens & {"why", "how", "warum", "wieso", "wie", "suddenly", "sudden"})
+            and tokens <= {"why","how","do","does","a","the","volcano","volcanoes",
+                           "erupt","erupts","eruption","suddenly","sudden",
+                           "warum","wieso","wie","ein","der","vulkan","vulkane",
+                           "bricht","brechen","aus","plötzlich","pl","tzlich"}):
         return "volcano_eruption"
     if (tokens & {"iceberg", "icebergs"} and
             tokens & {"break", "breaking", "apart", "split", "calving"}):
