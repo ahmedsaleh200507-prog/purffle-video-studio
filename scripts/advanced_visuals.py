@@ -116,6 +116,48 @@ def tracking_agreement(observation, rows, times, proposal, *, tolerance=.14):
             "matching_tracks":len(matches),"sample_count":len(times),
             "scope":"sampled association agreement, not individual identity"}
 
+def residual_motion(before,after):
+    """Estimate local movement after subtracting dominant image translation.
+
+    Only sampled 2-D motion evidence; camera rotation, cuts, occlusion and
+    parallax remain possible. Insufficient textured features means abstain.
+    """
+    import cv2
+    import numpy as np
+    def gray(im):
+        image=np.asarray(im.convert("L"))
+        h,w=image.shape
+        scale=min(1.,320/max(h,w))
+        return cv2.resize(image,(max(1,round(w*scale)),max(1,round(h*scale))))
+    a,b=gray(before),gray(after)
+    if a.shape!=b.shape:
+        return {"state":"incomparable"}
+    if np.array_equal(a,b):
+        return {"state":"observed","localized_motion":False,"residual_fraction":0.,"tracked_features":0}
+    points=cv2.goodFeaturesToTrack(a,maxCorners=160,qualityLevel=.02,minDistance=5)
+    if points is None or len(points)<12:
+        return {"state":"insufficient_texture"}
+    moved,ok,_=cv2.calcOpticalFlowPyrLK(a,b,points,None)
+    if moved is None or ok is None:
+        return {"state":"insufficient_texture"}
+    back,valid,_=cv2.calcOpticalFlowPyrLK(b,a,moved,None)
+    if back is None or valid is None:
+        return {"state":"insufficient_texture"}
+    p,q=points.reshape(-1,2),moved.reshape(-1,2)
+    keep=(ok.ravel()==1)&(valid.ravel()==1)&(np.linalg.norm(back.reshape(-1,2)-p,axis=1)<1.5)
+    keep &= np.isfinite(q).all(axis=1)
+    flow=(q-p)[keep]
+    if len(flow)<12 or len(flow)<.5*len(points):
+        return {"state":"insufficient_consistent_features"}
+    translation=np.median(flow,axis=0)
+    residual=np.linalg.norm(flow-translation,axis=1)
+    count=int(np.sum(residual>=2.5))
+    fraction=count/len(flow)
+    return {"state":"observed","localized_motion":count>=4 and fraction>=.08,
+            "residual_fraction":round(float(fraction),4),"tracked_features":len(flow),
+            "dominant_translation_px":[round(float(x),3) for x in translation],
+            "scope":"translation-compensated sampled optical flow, not semantic action"}
+
 def rank_vectors(vectors,query):
     import numpy as np
     import faiss
