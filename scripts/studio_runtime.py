@@ -1239,6 +1239,14 @@ def _validate_free_speech(speech, engine, language=None):
                     "faster-whisper-base.en actual generated WAV word timestamps"
                 or float(proof.get("speaker_similarity_cosine", 0)) < .70):
             raise RuntimeError("English narration reference identity/word alignment proof invalid")
+    from local_voice import george_enabled
+    if george_enabled(language) and engine!="kokoro":
+        raise RuntimeError("English narrator is locked to George; other voices refused")
+    if engine=="kokoro":
+        from george_voice import VOICE,verify_provenance
+        if language!="en" or not george_enabled(language) or speech.voice!=VOICE:
+            raise RuntimeError("Unapproved Kokoro narrator")
+        verify_provenance(getattr(speech,"provenance",{}))
     if engine == "piper":
         proof = getattr(speech, "provenance", {})
         if proof.get("alignment") != "native_phoneme_samples":
@@ -1279,7 +1287,9 @@ def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_
 
     save()
     # V4 has one fixed voice per language, irrespective of legacy env flags.
-    engines = (("piper", local_synthesize, "Locked male Piper narrator"),)
+    from local_voice import provenance
+    expected_engine=provenance(settings.language)["engine"]
+    engines = ((expected_engine, local_synthesize, "Locked male narrator"),)
     for engine, synthesize, stage in engines:
         started = time.monotonic()
         try:
