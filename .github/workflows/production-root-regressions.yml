@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - 'scripts/render_job.py'
+      - 'scripts/fact_checked_topics.py'
+      - 'scripts/visual_director.py'
+      - 'scripts/source_overlay.py'
+      - 'scripts/short_recovery.py'
+      - '.github/workflows/videos.yml'
       - 'scripts/science_*.py'
       - 'scripts/retention_storyboard.py'
       - 'scripts/long_*.py'
