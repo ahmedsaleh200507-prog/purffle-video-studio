@@ -772,7 +772,10 @@ class SceneMatcher:
         best = max(range(3), key=lambda i: crop_scores[i][0])
         from visual_language_review import observe as observe_vlm
         try:
-            vlm_review = observe_vlm(frames, spec.object, spec.visual_search_query)
+            if os.environ.get("PURFFLE_ADVANCED_VISUALS")=="1" and os.environ.get("PURFFLE_SMART_CROP")=="1":
+                vlm_review={"state":"deferred_to_actual_crop"}
+            else:
+                vlm_review = observe_vlm(frames, spec.object, spec.visual_search_query)
         except Exception as exc:
             vlm_review = {"state":"unavailable","error_type":type(exc).__name__}
         return {"visual_language_review": vlm_review,
