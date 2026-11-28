@@ -533,18 +533,27 @@ class StrictVisuals:
                         raise ValueError(
                             "volcano_final_action_mismatch: no provider evidence "
                             "for an active eruption, plume, ash, or molten lava")
+                    from pixel_first_policy import enabled as pixel_first_enabled, metadata_rank, action_rank
+                    pixel_first = pixel_first_enabled() and isinstance(self.matcher, SceneMatcher) and bool(director_contract)
                     action_metadata = "explicit_event"
                     if director_contract:
                         from visual_director import metadata_action_candidate
                         action_metadata = metadata_action_candidate(director_contract, " ".join(
                                 (str(item.text),
                                  str(license_info.get("source_page", "")))))
+                        if action_metadata == "reject" and pixel_first:
+                            action_metadata = action_rank(director_contract, " ".join((str(item.text),str(license_info.get("source_page", "")))))
                         if action_metadata == "reject":
                             raise ValueError(
                                 "visual_director_action_metadata_mismatch: "
                                 "provider cannot establish required visible action")
                     if hasattr(self.matcher, "validate_metadata"):
-                        score = self.matcher.validate_metadata(spec, item.text)
+                        if pixel_first:
+                            score, metadata_state = metadata_rank(self.matcher,spec,item.text)
+                            if metadata_state == "deferred":
+                                action_metadata = "pixel_review_required"
+                        else:
+                            score = self.matcher.validate_metadata(spec, item.text)
                     elif hasattr(self.matcher, "metadata_score"):
                         score = self.matcher.metadata_score(spec, item.text)
                         if score < .45:
@@ -556,6 +565,7 @@ class StrictVisuals:
                     if evidence["contradictions"]:
                         raise ValueError("semantic_contradiction: " + "; ".join(evidence["contradictions"]))
                     evidence["action_metadata"] = action_metadata
+                    evidence["pixel_review_required"] = action_metadata == "pixel_review_required"
                     item.extra["relevance_evidence"] = evidence
                     ranked.append((score, item, url_key))
                 except Exception as exc:
@@ -580,11 +590,17 @@ class StrictVisuals:
                     return 0 if item.height >= item.width else 1
                 return 2 if scale <= 1.20 else 3
 
-            ranked.sort(key=lambda row: (row[1].extra.get("relevance_evidence",{}).get("action_metadata") == "subject_only_visual_check", crop_rank(row[1]), -row[0], row[1].rank,
+            ranked.sort(key=lambda row: (row[1].extra.get("relevance_evidence",{}).get("action_metadata") in ("subject_only_visual_check","pixel_review_required"), crop_rank(row[1]), -row[0], row[1].rank,
                                           -int(row[1].height > row[1].width),
                                           -min(row[1].width, row[1].height)))
             subject_only_attempts = 0
-            for score, item, url_key in ranked[:max_candidates]:
+            shortlist=ranked[:max_candidates]
+            # Reserve one bounded slot for a plausible but sparsely tagged source.
+            if pixel_first_enabled():
+                deferred_candidate=next((r for r in ranked if r[1].extra.get("relevance_evidence",{}).get("pixel_review_required")),None)
+                if deferred_candidate is not None and deferred_candidate not in shortlist:
+                    shortlist=shortlist[:max_candidates-1]+[deferred_candidate]
+            for score, item, url_key in shortlist:
                 if best is not None:
                     if extra_attempts>=2 or time.monotonic()+20>=comparison_deadline:
                         break
@@ -695,7 +711,11 @@ class StrictVisuals:
                             f"{quality.get('width')}x{quality.get('height')} source "
                             f"to {required_width}x{required_height}"
                         )
-                    match = self.matcher.match(path, spec, metadata=item.text, duration=need)
+                    pixel_required=bool(item.extra.get("relevance_evidence",{}).get("pixel_review_required"))
+                    if pixel_required:
+                        match = self.matcher.match(path,spec,metadata=item.text,duration=need,allow_sparse_metadata=True)
+                    else:
+                        match = self.matcher.match(path, spec, metadata=item.text, duration=need)
                     match["action_window"]=window_review
                     if center_enabled():
                         match["crop_focus_x"] = .5
@@ -830,7 +850,7 @@ class StrictVisuals:
                             q2=self.quality.validate(derived,need=float(need)+.05)
                             if (q2["width"],q2["height"])!=(required_width,required_height):
                                 raise ValueError("Dynamic crop dimensions mismatch")
-                            m2=self.matcher.match(derived,spec,metadata=item.text,duration=need)
+                            m2=self.matcher.match(derived,spec,metadata=item.text,duration=need,allow_sparse_metadata=True) if pixel_required else self.matcher.match(derived,spec,metadata=item.text,duration=need)
                             m2["crop_focus_x"]=.5
                             frames2=_first_frames(derived,focus=.5,seconds=check_times)
                             integrity2=assess_portrait_pillarbox(frames2)
@@ -878,6 +898,11 @@ class StrictVisuals:
                                 derived.unlink(missing_ok=True)
                             dynamic_review={"state":"static_fallback","error_type":type(exc).__name__}
                     match["dynamic_crop"]=dynamic_review
+                    if pixel_required:
+                        from pixel_first_policy import verify_pixels
+                        match["pixel_first_proof"]=verify_pixels(path,float(need),float(match.get("crop_focus_x",.5)),director_contract,self.matcher,deadline=phase_deadline)
+                        if not match["pixel_first_proof"]["verified"]:
+                            raise ValueError("pixel_first_review_not_verified: "+match["pixel_first_proof"]["reason"])
                     if (os.environ.get("PURFFLE_EVENT_THEME_REVIEW")=="1"
                             and isinstance(self.matcher,SceneMatcher)):
                         try:
