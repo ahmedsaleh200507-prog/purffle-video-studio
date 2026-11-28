@@ -1,0 +1,86 @@
+name: Focused production narration proof
+on:
+  push:
+    branches: [chatgpt/yellow-system-fixes]
+    paths: ['.github/workflows/focused-narration-proof.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      PURFFLE_LOCAL_LLM: '0'
+      PURFFLE_CLOUD_MODEL_ROUTER: '1'
+      PURFFLE_EDITORIAL_STANDARD: '1'
+      PURFFLE_CREATIVE_NARRATION: '1'
+      PURFFLE_SINGLE_PASS_NARRATION: '1'
+      PURFFLE_EDITORIAL_ANSWER_GATE: '1'
+      PURFFLE_EDITORIAL_PACING: '1'
+      PURFFLE_NARRATION_ONLY: '1'
+      PURFFLE_MEDIA_FIRST: '1'
+      PURFFLE_ENGLISH_NARRATOR: george
+      PURFFLE_NARRATOR_LOCK: '1'
+      PURFFLE_NATURAL_VOICE: '1'
+      PURFFLE_STRICT: '1'
+      UPLOAD: 'false'
+      RESOLUTION: 1080x1920
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install production text dependencies
+        run: |
+          python -m pip install 'torch==2.6.0+cpu' 'torchvision==0.21.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements-dev.txt 'jsonschema>=4.20,<5' 'sentencepiece>=0.2,<1'
+      - name: Compile and run offline regression checks
+        env:
+          PURFFLE_CREATIVE_NARRATION: '0'
+          PURFFLE_SINGLE_PASS_NARRATION: '0'
+        run: |
+          python -m compileall -q scripts tests/test_production_narration.py
+          python -m pytest -q tests/test_production_narration.py tests/test_story_room.py tests/test_root_production.py
+      - name: Exercise the real production text path on five subjects
+        run: |
+          python - <<'PY'
+          import json,os,subprocess,sys
+          from pathlib import Path
+          cases=[
+              ("en","Why do airplanes leave white trails?"),
+              ("de","Warum haben Katzen Schnurrhaare?"),
+              ("en","Why did the Roman Colosseum have underground tunnels?"),
+              ("de","Warum schwimmt ein Schiff aus Stahl?"),
+              ("en","Why is the Moon covered in craters?")
+          ]
+          failed=0
+          for i,(lang,topic) in enumerate(cases,1):
+              root=Path("focused-proof")/str(i)
+              root.mkdir(parents=True,exist_ok=True)
+              env=dict(os.environ,LANGUAGE=lang,VIDEO_TOPIC=topic,
+                       JOB_RESULT=str(root/"result.json"),SCIENCE_REPORT=str(root/"science-report.json"),
+                       PURFFLE_REVIEWED_SCRIPT=str(root/"reviewed-script.json"))
+              print("TEST TOPIC:",topic,flush=True)
+              p=subprocess.run([sys.executable,"scripts/render_job.py"],env=env)
+              result=json.loads((root/"result.json").read_text()) if (root/"result.json").is_file() else {}
+              success=p.returncode==0 and result.get("status")=="narration_reviewed"
+              failed+=not success
+              for path in sorted(root.glob("narration*.json")):
+                  print("NARRATION OUTPUT:",i,path.name,path.read_text(),flush=True)
+              if (root/"science-report.json").is_file():
+                  print("SOURCE SCREEN:",i,(root/"science-report.json").read_text(),flush=True)
+              print("TEST RESULT:",i,topic,success,result.get("stage"),flush=True)
+          print("TOTAL ACCEPTED:",5-failed,"/5",flush=True)
+          sys.exit(1 if failed else 0)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: focused-production-narration
+          path: focused-proof/
+          retention-days: 7
