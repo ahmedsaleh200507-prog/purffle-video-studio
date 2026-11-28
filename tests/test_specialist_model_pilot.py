@@ -38,3 +38,12 @@ def test_openrouter_never_falls_back_to_paid_model():
     model="google/gemma-4-31b-it:free"
     assert request("openrouter",model,[],env,post=post)=="test output"
     assert seen[0]["model"]==model and seen[0]["provider"]["max_price"]["completion"]==0
+
+def test_new_writers_are_text_only_and_free_variants():
+    from specialist_model_pilot import NEW_WRITER_MODELS,CANDIDATES
+    found={m for p,m,roles in CANDIDATES if m in NEW_WRITER_MODELS}
+    assert found==NEW_WRITER_MODELS
+    for provider,model,roles in CANDIDATES:
+        if model in found:
+            assert roles==("text",)
+            assert provider=="gemini" or (provider=="openrouter" and model.endswith(":free"))

@@ -20,12 +20,15 @@ from science_sources import discover_evidence
 
 # provider, exact API ID, supported audition roles
 CANDIDATES=(
+    ("gemini","gemini-4-hydrogen",("text",)),
     ("gemini","gemini-3.8-flash",("text","vision")),
     ("gemini","gemma-4-31b-it",("text",)),
     ("gemini","gemini-3.1-flash-lite",("text","vision")),
     ("groq","qwen/qwen3.8-27b",("text","vision")),
     ("groq","openai/gpt-oss-120b",("text",)),
     ("openrouter","google/gemma-4-31b-it:free",("text","vision")),
+    ("openrouter","baidu/ernie-5.5-flash-preview:free",("text",)),
+    ("openrouter","google/gemma-4-26b-a4b-it:free",("text",)),
     ("openrouter","nvidia/nemotron-3-ultra-550b-a55b:free",("text",)),
     ("cloudflare","@cf/google/gemma-4-26b-a4b-it",("text",)),
     ("cloudflare","@cf/qwen/qwen3.8-27b",("text","vision")),
@@ -140,11 +143,13 @@ def save(path,data):
     path.parent.mkdir(parents=True,exist_ok=True)
     path.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding="utf-8")
 
-def main(role):
+NEW_WRITER_MODELS={"gemini-4-hydrogen","baidu/ernie-5.5-flash-preview:free","google/gemma-4-26b-a4b-it:free"}
+
+def main(role,only_new=False):
     root=Path("specialist-pilot")/role
     env=os.environ
     rows=[]
-    models=[(p,m) for p,m,roles in CANDIDATES if role in roles]
+    models=[(p,m) for p,m,roles in CANDIDATES if role in roles and (not only_new or m in NEW_WRITER_MODELS)]
     cases=[]
     if role=="text":
         for lang,topic in CASES:
@@ -215,4 +220,8 @@ if __name__=="__main__":
     import argparse
     parser=argparse.ArgumentParser()
     parser.add_argument("--role",required=True,choices=("text","vision"))
-    raise SystemExit(main(parser.parse_args().role))
+    parser.add_argument("--only-new",action="store_true",help="Only the additional writer candidates; avoids repeating the first pilot")
+    args=parser.parse_args()
+    if args.only_new and args.role!="text":
+        parser.error("--only-new is only for text")
+    raise SystemExit(main(args.role,args.only_new))

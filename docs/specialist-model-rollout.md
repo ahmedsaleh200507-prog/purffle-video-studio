@@ -14,3 +14,14 @@ Official references:
 - https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/
 - https://developers.cloudflare.com/changelog/post/2026-07-28-models-require-workers-paid/
 - https://openrouter.ai/collections/free-models
+
+## Additional writer candidates (2026-11-28)
+Gemini 4 Hydrogen (already in the older production router, now an isolated exact-ID writer candidate), ERNIE-5.5-Flash-Preview and Gemma 4 26B A4B via explicit OpenRouter free variants. Gemini 3.8 Flash remains in the first audition. Arena creative-writing preferences dated 2026-11-22 place Hydrogen (xHigh) at rank 8 and Flash (High) at rank 10; those configurations are not proven equivalent to our API settings or a documentary-writing benchmark. Google lists standard free-tier input and output for both; verify the actual account. No deprecated Gemini 3.7 alias and no paid Claude/DeepSeek variants added. OpenRouter candidates remain disabled until a free account/key is configured.
+
+The additional workflow is manual-only on purpose: finish the current text/vision pilot first, then run the small additional writer audition before spending quota on a full bilingual comparison. No competing automatic workflow, no automatic production promotion.
+
+References:
+- https://arena.ai/leaderboard/chat/text/creative-writing
+- https://arena.ai/leaderboard/chat/text/german
+- https://openrouter.ai/baidu/ernie-5.5-flash-preview:free
+- https://openrouter.ai/google/gemma-4-26b-a4b-it:free
