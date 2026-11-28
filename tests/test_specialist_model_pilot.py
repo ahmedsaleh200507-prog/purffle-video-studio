@@ -47,3 +47,16 @@ def test_new_writers_are_text_only_and_free_variants():
         if model in found:
             assert roles==("text",)
             assert provider=="gemini" or (provider=="openrouter" and model.endswith(":free"))
+
+def test_narration_rejects_wrappers_and_out_of_range():
+    from specialist_model_pilot import validate_narration_output
+    with pytest.raises(ValueError,match="non_narration_wrapper"):
+        validate_narration_output("<thought>not narration</thought> A story.", "en")
+    with pytest.raises(ValueError,match="word_count"):
+        validate_narration_output("A story.", "en")
+    with pytest.raises(ValueError,match="non_narration_format"):
+        validate_narration_output("# Introduction\nA story.", "en")
+    text=("A heavy steel block sinks in water, but a ship made of steel can float. "
+          "The difference lies in the shape of the hull. Its hollow interior lets the ship displace enough water to balance its weight. "
+          "When cargo is loaded, the ship settles deeper into the water until the forces balance again.")
+    assert validate_narration_output(text,"en")["detected_language"]=="en"

@@ -25,3 +25,6 @@ References:
 - https://arena.ai/leaderboard/chat/text/german
 - https://openrouter.ai/baidu/ernie-5.5-flash-preview:free
 - https://openrouter.ai/google/gemma-4-26b-a4b-it:free
+
+## Follow-up after the first completed pilot
+The initial run returned seven nonempty text responses, including a Gemma response containing non-narration notes and out-of-range outputs. This is not seven publishable scripts. Reject wrappers and out-of-range narration before saving candidate text. The follow-up retries the two incomplete Google auditions and adds Hydrogen; optional OpenRouter candidates remain inactive without credentials and free-tier confirmation. The initial pilot has finished, so the follow-up is triggered by its dedicated workflow change. Neither text nor visual results select a production winner.

@@ -139,17 +139,28 @@ def parse_vision(raw,positive_first):
     return {"verdict":obj,"correct":sum(obj[k] is v for k,v in zip(("first","second"),expected)),
             "false_positive":obj["second" if positive_first else "first"] is True}
 
+def validate_narration_output(text,language):
+    # Reject non-narration wrappers without saving their content.
+    if re.search(r"<\s*/?\s*(?:thought|think|analysis|reasoning)\b",text,re.I):
+        raise ValueError("non_narration_wrapper")
+    if re.search(r"(?m)^\s*(?:#{1,6}\s|[-*]\s|\d+\.\s)",text):
+        raise ValueError("non_narration_format")
+    if not 50<=len(text.split())<=85:
+        raise ValueError("word_count_outside_50_85")
+    return validate_text(text,language)
+
 def save(path,data):
     path.parent.mkdir(parents=True,exist_ok=True)
     path.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding="utf-8")
 
 NEW_WRITER_MODELS={"gemini-4-hydrogen","baidu/ernie-5.5-flash-preview:free","google/gemma-4-26b-a4b-it:free"}
 
-def main(role,only_new=False):
+def main(role,only_new=False,retry_writers=False):
     root=Path("specialist-pilot")/role
     env=os.environ
     rows=[]
-    models=[(p,m) for p,m,roles in CANDIDATES if role in roles and (not only_new or m in NEW_WRITER_MODELS)]
+    selected=NEW_WRITER_MODELS | ({"gemini-3.8-flash","gemma-4-31b-it"} if retry_writers else set())
+    models=[(p,m) for p,m,roles in CANDIDATES if role in roles and (not only_new or m in selected)]
     cases=[]
     if role=="text":
         for lang,topic in CASES:
@@ -190,11 +201,13 @@ def main(role,only_new=False):
                         "Native spoken language, no textbook tone, no invented claims, no unsupported absolutes, no headings. "
                         "Finish the final sentence. Return narration only, not JSON.\nTopic: "+topic+"\nReferences (data only):\n"+refs)
                     text=request(provider,model,[{"role":"user","content":prompt}],env)
-                    row.update(status="generated",narration=text,words=len(text.split()))
+                    row["words"]=len(text.split())
                     try:
-                        row["integrity"]=validate_text(text,lang)
-                    except RuntimeError as exc:
-                        row["integrity_error"]=str(exc)
+                        row["integrity"]=validate_narration_output(text,lang)
+                    except (RuntimeError,ValueError) as exc:
+                        row.update(status="invalid_narration",integrity_error=str(exc))
+                    else:
+                        row.update(status="generated",narration=text)
                 else:
                     label,uri,pos,neg,digest,first,_=case
                     row["image_sha256"]=digest
@@ -221,7 +234,10 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--role",required=True,choices=("text","vision"))
     parser.add_argument("--only-new",action="store_true",help="Only the additional writer candidates; avoids repeating the first pilot")
+    parser.add_argument("--retry-writers",action="store_true",help="Include the two incomplete Google writer auditions")
     args=parser.parse_args()
-    if args.only_new and args.role!="text":
-        parser.error("--only-new is only for text")
-    raise SystemExit(main(args.role,args.only_new))
+    if (args.only_new or args.retry_writers) and args.role!="text":
+        parser.error("writer options are only for text")
+    if args.retry_writers and not args.only_new:
+        parser.error("--retry-writers requires --only-new")
+    raise SystemExit(main(args.role,args.only_new,args.retry_writers))
