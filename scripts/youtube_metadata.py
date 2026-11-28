@@ -58,7 +58,7 @@ def _fallback_title(topic: str, language: str) -> str:
 
 def _title_related(candidate: str, topic: str) -> bool:
     """Guard against an unrelated AI hook; never certify disputed claims."""
-    common = set("what when where why how does do is are the a an can of in on it your its who to and with for was were really this that the most".split())
+    common = set("what when where why how does do is are the a an can of in on it your its who to and with for was were really this that the most self aware suddenly became become happens happen warum wieso welche welchen wirklich passiert werden wurde".split())
     tokens = lambda text: {t for t in re.findall(r"[a-zÀ-ÿ]{4,}", text.lower()) if t not in common}
     wanted = tokens(topic)
     return not wanted or bool(wanted & tokens(candidate))
@@ -127,10 +127,32 @@ def attach_title_to_video(result: dict) -> dict:
         except (OSError, ValueError, TypeError):
             pass
     title_file = video.parent / "YouTube_Title.txt"
+    from editorial_standard import enabled
+    if enabled():
+        # Do not create a second, unreviewed AI promise after story review.
+        # Preserve the already reviewed script title only when it actually
+        # matches the generated metadata and the science report passed.
+        title=_fallback_title(result.get("topic",""),result.get("language","en"))
+        try:
+            report=json.loads(Path(result["science_report"]).read_text(encoding="utf8"))
+            script_path=Path(metadata_name).with_name("script.json")
+            script=json.loads(script_path.read_text(encoding="utf8"))
+            approved=_clean(script.get("title",""))
+            editorial=report.get("topic_review",{}).get("state") in (
+                "model_screened_topic_answer","exact_curated_dossier")
+            if (editorial and approved and approved==_clean(existing_title)
+                    and _title_related(approved,result.get("topic",""))):
+                title=approved
+        except (OSError,ValueError,KeyError,TypeError,AttributeError):
+            pass
+        title_file.write_text(title+"\n",encoding="utf8")
+        result.update(youtube_title=title,youtube_title_file=str(title_file),
+                      youtube_title_policy="reviewed_script_or_original_topic")
+        return result
     if title_file.is_file():
         current = _clean(title_file.read_text(encoding="utf-8", errors="replace"))
         # Resume should preserve the original, already prepared title.
-        if current:
+        if current and _title_related(current,result.get("topic","")):
             result.update(youtube_title=current, youtube_title_file=str(title_file))
             return result
     title = make_short_title(result.get("topic", ""), result.get("language", "en"), existing_title)

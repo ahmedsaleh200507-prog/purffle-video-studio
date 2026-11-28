@@ -1,0 +1,59 @@
+name: Free writer comparison
+on:
+  push:
+    branches: [chatgpt/yellow-system-fixes]
+    paths: ['.github/workflows/free-writer-comparison.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    if: github.ref == 'refs/heads/chatgpt/yellow-system-fixes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Free credential check
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "::error::OPENROUTER_API_KEY missing; no requests made"
+            exit 1
+          fi
+      - run: pip install requests
+      - name: Compare real narration without model self-scores
+        run: |
+          mkdir -p free-writer-proof
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from free_narration import FreeWriter, MODELS
+          from story_references import story_reference
+          writer=FreeWriter()
+          cases=[("Why Do Octopuses Have Three Hearts?","en"),("Warum leuchten Polarlichter?","de")]
+          results=[]
+          for model in MODELS:
+              for topic,lang in cases:
+                  try:
+                      row=writer.write(model,topic,lang,story_reference(topic,lang))
+                  except RuntimeError as exc:
+                      if "Nonzero reported cost" in str(exc):
+                          raise
+                      row={"model":model,"language":lang,"error":str(exc)}
+                  results.append(row)
+                  print("CANDIDATE:",json.dumps(row,ensure_ascii=False),flush=True)
+                  Path("free-writer-proof/results.json").write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding="utf-8")
+          if not any("narration" in row for row in results):
+              raise SystemExit("No free writer returned a complete narration")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: free-writer-comparison
+          path: free-writer-proof/
+          retention-days: 7

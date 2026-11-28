@@ -13,6 +13,7 @@ import json
 import math
 import os
 import signal
+import subprocess
 import threading
 from pathlib import Path
 import time
@@ -354,6 +355,9 @@ class StrictVisuals:
         attempt_deadline = min(scene_start + (150 if os.environ.get("PURFFLE_SHORTS_PORTRAIT_FIRST")=="1" else 75),
                                getattr(self, "_shot_deadline", float("inf")))
         max_candidates = max(1, min(12, int(os.getenv("CANDIDATES_PER_SOURCE", "4"))))
+        # Decide once, even when every provider batch is empty or rejected.
+        from pixel_first_policy import enabled as pixel_first_enabled, metadata_rank, action_rank
+        pixel_first = pixel_first_enabled() and isinstance(getattr(self,"matcher",None), SceneMatcher) and bool(director_contract)
         # #93: the precise "lava entering ocean" shot was filled by a
         # generic Pixabay lava clip before the curated USGS ocean-entry
         # footage was ever considered. Prefer USGS ONLY for that shot;
@@ -397,7 +401,53 @@ class StrictVisuals:
                                for item in hits),batches)
             except Exception as exc:
                 scene["verified_library_error"]=type(exc).__name__
+        from editorial_pacing import enabled as pacing_enabled
+        opening_compare=(idx==0 and pacing_enabled() and isinstance(self.matcher,SceneMatcher))
+        def commit_selection(item,source,url_key,digest,actual_digest,path,quality,match,layout,native_scale,license_info,attribution,source_quality,orientation_phase):
+            self.credits.add(attribution)
+            self.used_hashes.add(actual_digest)
+            self._remember(item, url_key, digest)
+            if os.environ.get("PURFFLE_VERIFIED_LIBRARY")=="1":
+                try:
+                    from verified_library import remember as library_remember
+                    match["verified_library_saved"]=library_remember(
+                        Path("media_cache/verified-library/index.json"),item,spec,source_quality)
+                except Exception as exc:
+                    match["verified_library_error"]=type(exc).__name__
+            # Coverr's MP4 link contains a signed access token tied
+            # to the private API key. The renderer already uses the
+            # validated local path: discard the token before emitting
+            # reports, metadata, logs or artifact ZIPs.
+            if source == "coverr-video":
+                item.url = license_info["source_page"]
+            scene.update({"status": "selected", "source": source, "id": item.id,
+                          "director_contract": director_contract,
+                          "source_url": item.url, "downloaded_file": str(path),
+                          "sha256": actual_digest, "original_sha256": digest, "quality": quality, "match": match,
+                          "metadata_text": str(item.text)[:4000],
+                          "portrait_layout": layout,
+                          "recorded_date": item.extra.get("recorded_date",""),
+                          "geography_evidence": item.extra.get("geography_evidence",{}),
+                          "orientation_phase": orientation_phase,
+                          "source_orientation": ("portrait" if quality["height"]>quality["width"] else
+                                                 "landscape" if quality["width"]>quality["height"] else "square"),
+                          "download_evidence":item.extra.get("download_evidence",{}),
+                          "license": license_info,
+                          "crop": {"focus_x": match.get("crop_focus_x", .5),
+                                   "effective_source_width": layout["effective_source_width"],
+                                   "effective_source_height": layout["effective_source_height"],
+                                   "upscaled_after_crop": native_scale>1.0001,
+                                   "crop_scale": round(native_scale, 4)}})
+            self._save()
+            print(f"[SELECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} "
+                  f"actual={item.width}x{item.height} visual_score={match.get('visual_score')} "
+                  f"license={license_info.get('id')}", flush=True)
+            return item
+
         for source, candidates, orientation_phase, phase_deadline in batches:
+            best,best_rank=None,0.
+            comparison_deadline=phase_deadline
+            extra_attempts=0
             print(f"[SOURCE CHECK] {source}: {len(candidates)} candidates scene={idx+1} phase={orientation_phase}", flush=True)
             ranked = []
             for item in candidates:
@@ -492,12 +542,21 @@ class StrictVisuals:
                         action_metadata = metadata_action_candidate(director_contract, " ".join(
                                 (str(item.text),
                                  str(license_info.get("source_page", "")))))
+                        if pixel_first:
+                            pixel_metadata = action_rank(director_contract, " ".join((str(item.text),str(license_info.get("source_page", "")))))
+                            if pixel_metadata == "reject" or action_metadata == "reject":
+                                action_metadata = pixel_metadata
                         if action_metadata == "reject":
                             raise ValueError(
                                 "visual_director_action_metadata_mismatch: "
                                 "provider cannot establish required visible action")
                     if hasattr(self.matcher, "validate_metadata"):
-                        score = self.matcher.validate_metadata(spec, item.text)
+                        if pixel_first:
+                            score, metadata_state = metadata_rank(self.matcher,spec,item.text)
+                            if metadata_state == "deferred":
+                                action_metadata = "pixel_review_required"
+                        else:
+                            score = self.matcher.validate_metadata(spec, item.text)
                     elif hasattr(self.matcher, "metadata_score"):
                         score = self.matcher.metadata_score(spec, item.text)
                         if score < .45:
@@ -509,6 +568,7 @@ class StrictVisuals:
                     if evidence["contradictions"]:
                         raise ValueError("semantic_contradiction: " + "; ".join(evidence["contradictions"]))
                     evidence["action_metadata"] = action_metadata
+                    evidence["pixel_review_required"] = action_metadata == "pixel_review_required"
                     item.extra["relevance_evidence"] = evidence
                     ranked.append((score, item, url_key))
                 except Exception as exc:
@@ -533,11 +593,23 @@ class StrictVisuals:
                     return 0 if item.height >= item.width else 1
                 return 2 if scale <= 1.20 else 3
 
-            ranked.sort(key=lambda row: (row[1].extra.get("relevance_evidence",{}).get("action_metadata") == "subject_only_visual_check", crop_rank(row[1]), -row[0], row[1].rank,
+            ranked.sort(key=lambda row: (row[1].extra.get("relevance_evidence",{}).get("action_metadata") in ("subject_only_visual_check","pixel_review_required"), crop_rank(row[1]), -row[0], row[1].rank,
                                           -int(row[1].height > row[1].width),
                                           -min(row[1].width, row[1].height)))
             subject_only_attempts = 0
-            for score, item, url_key in ranked[:max_candidates]:
+            shortlist=ranked[:max_candidates]
+            # Reserve one bounded slot for a plausible but sparsely tagged source.
+            if pixel_first and max_candidates > 1:
+                deferred_candidate=next((r for r in ranked if r[1].extra.get("relevance_evidence",{}).get("pixel_review_required")),None)
+                if deferred_candidate is not None and deferred_candidate not in shortlist:
+                    shortlist=shortlist[:max_candidates-1]+[deferred_candidate]
+            for score, item, url_key in shortlist:
+                if best is not None:
+                    if extra_attempts>=2 or time.monotonic()+20>=comparison_deadline:
+                        break
+                    if item.key==best["item"].key or url_key==best["url_key"]:
+                        continue
+                    extra_attempts+=1
                 if item.extra.get("relevance_evidence",{}).get("action_metadata") == "subject_only_visual_check":
                     if subject_only_attempts >= 2:
                         continue
@@ -581,7 +653,7 @@ class StrictVisuals:
                         deferred.append((source,item))
                         continue
                     digest = self.downloader.digest(path)
-                    if digest in self.used_hashes:
+                    if digest in self.used_hashes or (best is not None and digest in (best["digest"],best["actual_digest"])):
                         raise ValueError("duplicate content hash")
                     # Source durations are measured by FFprobe. A 10.060s
                     # genuine clip covers a 10.000s narration scene; the old
@@ -593,11 +665,12 @@ class StrictVisuals:
                     # event. Keep original digest for source deduplication.
                     window_review = {"state":"disabled","offset":0.}
                     if (os.environ.get("PURFFLE_ACTION_WINDOW")=="1"
-                            and idx==0 and isinstance(self.matcher,SceneMatcher)
+                            and isinstance(self.matcher,SceneMatcher)
                             and director_contract and director_contract.get("event_required")):
                         from action_window import select_window,extract_window
                         window_review=select_window(path,float(quality["duration"]),float(need),
-                            director_contract,scorer=self.matcher._similarities,deadline=phase_deadline)
+                            director_contract,scorer=self.matcher._similarities,deadline=phase_deadline,
+                            opening=(idx==0))
                         if window_review["offset"]>0:
                             trimmed=None
                             try:
@@ -641,7 +714,11 @@ class StrictVisuals:
                             f"{quality.get('width')}x{quality.get('height')} source "
                             f"to {required_width}x{required_height}"
                         )
-                    match = self.matcher.match(path, spec, metadata=item.text, duration=need)
+                    pixel_required=bool(item.extra.get("relevance_evidence",{}).get("pixel_review_required"))
+                    if pixel_required:
+                        match = self.matcher.match(path,spec,metadata=item.text,duration=need,allow_sparse_metadata=True)
+                    else:
+                        match = self.matcher.match(path, spec, metadata=item.text, duration=need)
                     match["action_window"]=window_review
                     if center_enabled():
                         match["crop_focus_x"] = .5
@@ -649,7 +726,7 @@ class StrictVisuals:
                     if smart_crop_enabled() and isinstance(self.matcher,SceneMatcher):
                         subject=" ".join(x for x in (spec.main_character,spec.object) if x)
                         framing=propose(path,float(need),subject,quality["width"],quality["height"],
-                                        required_width,required_height,float(match.get("crop_focus_x",.5)))
+                                        required_width,required_height,float(match.get("crop_focus_x",.5)),deadline=phase_deadline)
                         match["object_framing"]=framing
                         if framing["state"]=="proposed":
                             match["crop_focus_x"]=framing["focus_x"]
@@ -686,6 +763,8 @@ class StrictVisuals:
                                 crop_integrity["reason"])
                         match["portrait_integrity"] = crop_integrity
                         from crop_subject_policy import verify_crop_subject
+                        from source_overlay import check_source
+                        match["source_overlay"]=check_source(path,float(need),crop_focus)
                         match["crop_subject_proof"]=verify_crop_subject(crop_frames,spec,self.matcher)
                         # Production #103: the second whale shot passed CLIP but
                         # independent SigLIP favored alternatives in two frames.
@@ -774,12 +853,13 @@ class StrictVisuals:
                             q2=self.quality.validate(derived,need=float(need)+.05)
                             if (q2["width"],q2["height"])!=(required_width,required_height):
                                 raise ValueError("Dynamic crop dimensions mismatch")
-                            m2=self.matcher.match(derived,spec,metadata=item.text,duration=need)
+                            m2=self.matcher.match(derived,spec,metadata=item.text,duration=need,allow_sparse_metadata=True) if pixel_required else self.matcher.match(derived,spec,metadata=item.text,duration=need)
                             m2["crop_focus_x"]=.5
                             frames2=_first_frames(derived,focus=.5,seconds=check_times)
                             integrity2=assess_portrait_pillarbox(frames2)
                             if not integrity2["verified"]:
                                 raise ValueError("Dynamic crop border check failed")
+                            m2["source_overlay"]=check_source(derived,float(need),.5)
                             proof2=verify_crop_subject(frames2,spec,self.matcher)
                             second2=proof2.get("siglip_shadow_review",{})
                             if second2.get("state")=="observed" and second2.get("agrees") is False:
@@ -821,6 +901,11 @@ class StrictVisuals:
                                 derived.unlink(missing_ok=True)
                             dynamic_review={"state":"static_fallback","error_type":type(exc).__name__}
                     match["dynamic_crop"]=dynamic_review
+                    if pixel_required:
+                        from pixel_first_policy import verify_pixels
+                        match["pixel_first_proof"]=verify_pixels(path,float(need),float(match.get("crop_focus_x",.5)),director_contract,self.matcher,deadline=phase_deadline)
+                        if not match["pixel_first_proof"]["verified"]:
+                            raise ValueError("pixel_first_review_not_verified: "+match["pixel_first_proof"]["reason"])
                     if (os.environ.get("PURFFLE_EVENT_THEME_REVIEW")=="1"
                             and isinstance(self.matcher,SceneMatcher)):
                         try:
@@ -829,6 +914,8 @@ class StrictVisuals:
                             match["theme_review"]=observe_theme(final_frames,topic,spec.object,subject_specification)
                         except Exception as exc:
                             match["theme_review"]={"state":"unavailable","error_type":type(exc).__name__}
+                    from visual_consensus import summarize as summarize_visual_evidence
+                    match["visual_consensus"]=summarize_visual_evidence(match)
                     if window_review["state"]=="materialized_pending_full_validation":
                         window_review["state"]="validated_interval"
                     item.path = path
@@ -860,52 +947,30 @@ class StrictVisuals:
                     attribution = license_info.get("attribution") or item.credit
                     if not attribution:
                         raise ValueError("Missing license provenance/attribution")
-                    self.credits.add(attribution)
-                    self.used_hashes.add(actual_digest)
-                    self._remember(item, url_key, digest)
-                    if os.environ.get("PURFFLE_VERIFIED_LIBRARY")=="1":
-                        try:
-                            from verified_library import remember as library_remember
-                            match["verified_library_saved"]=library_remember(
-                                Path("media_cache/verified-library/index.json"),item,spec,source_quality)
-                        except Exception as exc:
-                            match["verified_library_error"]=type(exc).__name__
-                    # Coverr's MP4 link contains a signed access token tied
-                    # to the private API key. The renderer already uses the
-                    # validated local path: discard the token before emitting
-                    # reports, metadata, logs or artifact ZIPs.
-                    if source == "coverr-video":
-                        item.url = license_info["source_page"]
-                    scene.update({"status": "selected", "source": source, "id": item.id,
-                                  "director_contract": director_contract,
-                                  "source_url": item.url, "downloaded_file": str(path),
-                                  "sha256": actual_digest, "original_sha256": digest, "quality": quality, "match": match,
-                                  "metadata_text": str(item.text)[:4000],
-                                  "portrait_layout": layout,
-                                  "recorded_date": item.extra.get("recorded_date",""),
-                                  "geography_evidence": item.extra.get("geography_evidence",{}),
-                                  "orientation_phase": orientation_phase,
-                                  "source_orientation": ("portrait" if quality["height"]>quality["width"] else
-                                                         "landscape" if quality["width"]>quality["height"] else "square"),
-                                  "download_evidence":item.extra.get("download_evidence",{}),
-                                  "license": license_info,
-                                  "crop": {"focus_x": match.get("crop_focus_x", .5),
-                                           "effective_source_width": layout["effective_source_width"],
-                                           "effective_source_height": layout["effective_source_height"],
-                                           "upscaled_after_crop": native_scale>1.0001,
-                                           "crop_scale": round(native_scale, 4)}})
-                    self._save()
-                    print(f"[SELECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} "
-                          f"actual={item.width}x{item.height} visual_score={match.get('visual_score')} "
-                          f"license={license_info.get('id')}", flush=True)
-                    return item
+                    candidate=dict(item=item,source=source,url_key=url_key,digest=digest,
+                        actual_digest=actual_digest,path=path,quality=quality,match=match,layout=layout,
+                        native_scale=native_scale,license_info=license_info,attribution=attribution,
+                        source_quality=source_quality,orientation_phase=orientation_phase)
+                    if opening_compare:
+                        from editorial_pacing import better_opening
+                        rank=float(match["opening_preflight"]["chosen_score"])
+                        if best is None or better_opening(rank,best_rank):
+                            best,best_rank=candidate,rank
+                        if best_rank>=90 or extra_attempts>=2 or time.monotonic()+20>=comparison_deadline:
+                            break
+                        if comparison_deadline==phase_deadline:
+                            comparison_deadline=min(phase_deadline,time.monotonic()+35)
+                        continue
+                    return commit_selection(**candidate)
                 except Exception as exc:
                     self._rejected_candidates.add((spec.object, spec.action,
                         json.dumps(director_contract, sort_keys=True), item.key))
                     # A rejected 4K file must not accumulate until it fills the CI disk.
                     # Preserve anything referenced by accepted footage, including a
                     # duplicate hash reached through another URL.
-                    if path is not None and digest is not None and digest not in self.used_hashes:
+                    if (path is not None and digest is not None and digest not in self.used_hashes
+                            and (best is None or (digest not in (best["digest"],best["actual_digest"])
+                                 and Path(path)!=Path(best["path"])))):
                         try:
                             Path(path).unlink(missing_ok=True)
                             Path(path).with_suffix(".json").unlink(missing_ok=True)
@@ -915,6 +980,9 @@ class StrictVisuals:
                     scene["rejections"].append({"source": source, "id": item.id,
                                                 "reason": reason, "stage": "download_quality_or_visual"})
                     print(f"[REJECTED FOOTAGE] scene={idx+1} provider={source} id={item.id} reason={reason}", flush=True)
+            if best is not None:
+                best["match"]["opening_comparison"]={"state":"best_verified_in_bounded_batch","chosen_score":best_rank,"extra_attempts":extra_attempts,"scope":"editorial heuristic; not a views prediction"}
+                return commit_selection(**best)
             self._save()
         scene["status"] = "failed"
         self.report["state"] = "failed"
@@ -1021,6 +1089,13 @@ def strict_prepare_segment(item, seconds, idx, settings, work):
         raise RuntimeError("Render refused unvalidated footage or generated/still content")
     if item.duration < seconds + 0.05:
         raise RuntimeError("Source too short; refusing footage loop")
+    if item.extra.get("multi_shot"):
+        from multi_shot_runtime import validate_bundle
+        from multi_shot import digest
+        bundle=item.extra["multi_shot"]
+        validate_bundle(bundle,bundle["shots"][0]["director_contract"])
+        if digest(item.path)!=bundle["sha256"]:
+            raise RuntimeError("Multi-shot bytes changed after verification")
     W, H, F = settings.width, settings.height, settings.fps
     measured_scale = _native_portrait_scale(
         {"width": item.width, "height": item.height}, W, H)
@@ -1050,6 +1125,17 @@ def strict_prepare_segment(item, seconds, idx, settings, work):
                 "-t", f"{seconds:.3f}", "-an", "-vf", f"{cover},fps={F}{_grade(settings)}",
                 *_encode_args(settings, final=False), "-threads", "2", "-frames:v", str(max(2, round(seconds*F))), str(out)],
                label=f"validated segment {idx}", timeout=240)
+    from editorial_pacing import enabled as pacing_enabled
+    if pacing_enabled():
+        try:
+            measured=subprocess.run(["ffprobe","-v","error","-show_entries","format=duration",
+                "-of","default=noprint_wrappers=1:nokey=1",str(out)],
+                capture_output=True,text=True,check=True,timeout=10)
+            measured_seconds=float(measured.stdout.strip())
+            if math.isfinite(measured_seconds) and measured_seconds>0:
+                item.extra["editorial_segment_seconds"]=measured_seconds
+        except (OSError,ValueError,subprocess.SubprocessError):
+            item.extra["editorial_segment_seconds"]=None
     return out
 
 
@@ -1188,13 +1274,20 @@ def _validate_free_speech(speech, engine, language=None):
                     "faster-whisper-base.en actual generated WAV word timestamps"
                 or float(proof.get("speaker_similarity_cosine", 0)) < .70):
             raise RuntimeError("English narration reference identity/word alignment proof invalid")
+    from local_voice import george_enabled
+    if george_enabled(language) and engine!="kokoro":
+        raise RuntimeError("English narrator is locked to George; other voices refused")
+    if engine=="kokoro":
+        from george_voice import VOICE,verify_provenance
+        if language!="en" or not george_enabled(language) or speech.voice!=VOICE:
+            raise RuntimeError("Unapproved Kokoro narrator")
+        verify_provenance(getattr(speech,"provenance",{}))
     if engine == "piper":
         proof = getattr(speech, "provenance", {})
         if proof.get("alignment") != "native_phoneme_samples":
             raise RuntimeError("Piper narration has no native sample alignment provenance")
         # Exactly the two requested, pinned Piper identities are accepted.
-        approved = {"en": ("en_US-joe-medium", "CC0"),
-                    "de": ("de_DE-thorsten-medium", "CC0-1.0")}
+        approved = {"de": ("de_DE-thorsten-medium", "CC0-1.0")}
         expected = approved.get(language)
         if (expected is None or proof.get("model") != expected[0]
                 or speech.voice != expected[0]):
@@ -1209,7 +1302,7 @@ def _validate_free_speech(speech, engine, language=None):
 
 
 def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_synthesize):
-    """Synthesize only the fixed Piper identity; failures never switch voices."""
+    """Synthesize only the approved George or Thorsten identity; never switch voices."""
     from english_reference_policy import enforce_english_reference_only
     enforce_english_reference_only(settings.language)
     if settings.offline or settings.tts_engine not in ("edge", "piper") or settings.language not in ("de", "en"):
@@ -1228,7 +1321,9 @@ def speak_with_free_fallback(screenplay, work, settings, edge_synthesize, local_
 
     save()
     # V4 has one fixed voice per language, irrespective of legacy env flags.
-    engines = (("piper", local_synthesize, "Locked male Piper narrator"),)
+    from local_voice import provenance
+    expected_engine=provenance(settings.language)["engine"]
+    engines = ((expected_engine, local_synthesize, "Locked male narrator"),)
     for engine, synthesize, stage in engines:
         started = time.monotonic()
         try:
@@ -1457,8 +1552,8 @@ exact suitable footage cannot be verified; never weaken the scene to hide that f
         source_feedback = review_feedback()
         if source_feedback:
             user += (
-                "\n\nSOURCE-REVIEW REDRAFT (ONE bounded revision): The previous "
-                "draft contained the unsupported claim(s) below. Never repeat "
+                "\n\nSOURCE/EDITORIAL REDRAFT (bounded revision): Correct the "
+                "previous draft problems below. Never repeat "
                 "those claims unless a supplied independent source excerpt "
                 "explicitly supports them. Replace them with different, "
                 "simple, source-supported scientific facts, keep the full "

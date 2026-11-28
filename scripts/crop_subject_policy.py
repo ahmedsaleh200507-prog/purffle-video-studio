@@ -21,6 +21,14 @@ def verify_crop_subject(frames,spec,matcher):
         raise ValueError("Actual output crop lacks the requested subject in two of three frames")
     from siglip_review import observe
     second=observe(frames,subject,spec.visual_search_query)
-    return {"verified":True,"siglip_shadow_review":second,"method":"clip_actual_crop_subject","matching_frames":sum(good),
+    import os
+    vlm={"state":"not_requested"}
+    if os.environ.get("PURFFLE_ADVANCED_VISUALS")=="1":
+        from visual_language_review import observe as observe_vlm
+        try:
+            vlm=observe_vlm(frames,subject,spec.visual_search_query)
+        except Exception as exc:
+            vlm={"state":"unavailable","error_type":type(exc).__name__}
+    return {"verified":True,"siglip_shadow_review":second,"visual_language_review":vlm,"method":"clip_actual_crop_subject","matching_frames":sum(good),
             "sample_count":len(rows),"subject_scores":[round(r[0],4) for r in rows],
             "threshold":threshold,"limitations":"Sampled visual similarity, not identity or geolocation proof"}

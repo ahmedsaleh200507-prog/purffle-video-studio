@@ -10,7 +10,7 @@ import tempfile
 import time
 from pathlib import Path
 
-def select_window(path, duration, need, contract, *, scorer, deadline, inspector=None):
+def select_window(path, duration, need, contract, *, scorer, deadline, inspector=None, opening=True):
     if not contract or not contract.get("event_required"):
         return {"state":"not_required","offset":0.}
     if not all(math.isfinite(float(v)) for v in (duration,need)) or need<1 or duration<need+2:
@@ -19,10 +19,18 @@ def select_window(path, duration, need, contract, *, scorer, deadline, inspector
         from visual_director import inspect_action
         inspector=inspect_action
     # Use actual 9:16 centre preview; final chosen crop is rechecked independently.
-    # Limit the search to three intervals and do not run more models here.
-    tail=min(float(duration)-float(need)-.2,30.)
-    offsets=list(dict.fromkeys(round(v,3) for v in (0.,min(3.,tail),min(9.,tail))))
+    # Preserve early fast paths, then look across the available clip. At most
+    # six previews; every extracted window still needs the full validators.
+    tail=max(0.,float(duration)-float(need)-.2)
+    offsets=list(dict.fromkeys(round(v,3) for v in
+        (0.,min(3.,tail),min(9.,tail),tail/2,tail*.75,tail)))
     attempts=[]
+    from advanced_visuals import cut_observation
+    cuts=cut_observation(path,duration,need,deadline)
+    # Preserve start and existing fallbacks; use cut-aligned offsets first
+    # when enabled, while keeping the six-preview budget.
+    if cuts.get("state")=="observed":
+        offsets=list(dict.fromkeys([0.,*cuts["candidate_offsets"],*offsets]))[:6]
     from visual_director import _frame_at
     for offset in offsets:
         if time.monotonic()+12>=deadline:
@@ -31,16 +39,16 @@ def select_window(path, duration, need, contract, *, scorer, deadline, inspector
             # Frame timestamps exactly mirror the final opening check.
             times=[offset+min(.4,need*.1),offset+min(1.7,need*.35),offset+need*.66]
             frames=[_frame_at(path,t,.5) for t in times]
-            result=inspector(path,need,.5,contract,scorer=scorer,frames=frames,opening=True)
+            result=inspector(path,need,.5,contract,scorer=scorer,frames=frames,opening=opening)
             attempts.append({"offset":offset,"verified":bool(result.get("verified")),
                              "margin":result.get("best_action_margin")})
             if result.get("verified"):
                 return {"state":"keep_start" if offset==0 else "later_interval_proposed",
-                        "offset":offset,"attempts":attempts}
+                        "offset":offset,"attempts":attempts,"scene_boundaries":cuts}
         except Exception as exc:
             attempts.append({"offset":offset,"error_type":type(exc).__name__})
-            break
-    return {"state":"no_verified_later_interval","offset":0.,"attempts":attempts}
+            continue
+    return {"state":"no_verified_later_interval","offset":0.,"attempts":attempts,"scene_boundaries":cuts}
 
 def extract_window(path, offset, need, *, deadline):
     """Materialize the interval so downstream timestamps remain zero-based."""

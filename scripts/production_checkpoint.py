@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import shutil
+import tempfile
 from pathlib import Path
 def digest(path):
     h=hashlib.sha256()
@@ -15,9 +16,14 @@ def signature(value):
 def write(path,value):
     path=Path(path)
     path.parent.mkdir(parents=True,exist_ok=True)
-    temp=path.with_suffix(path.suffix+".part")
-    temp.write_text(json.dumps(value,ensure_ascii=False,sort_keys=True),encoding="utf8")
-    temp.replace(path)
+    fd,name=tempfile.mkstemp(prefix=path.name+".",suffix=".part",dir=path.parent)
+    temp=Path(name)
+    try:
+        with os.fdopen(fd,"w",encoding="utf8") as stream:
+            json.dump(value,stream,ensure_ascii=False,sort_keys=True)
+        temp.replace(path)
+    finally:
+        temp.unlink(missing_ok=True)
 def read(path):
     try:
         return json.loads(Path(path).read_text(encoding="utf8"))
@@ -37,16 +43,27 @@ class Checkpoint:
         write(self.root/(key+".json"),{"identity":signature(identity),"value":value})
     def store_file(self,key,identity,source,metadata):
         source=Path(source)
-        dest=self.root/(key+source.suffix)
-        temp=dest.with_suffix(dest.suffix+".part")
-        shutil.copyfile(source,temp)
-        sha=digest(temp)
-        temp.replace(dest)
-        self.put(key,identity,{"name":dest.name,"sha256":sha,"metadata":metadata})
-        return dest
+        fd,name=tempfile.mkstemp(prefix=key+".",suffix=".part",dir=self.root)
+        os.close(fd)
+        temp=Path(name)
+        try:
+            shutil.copyfile(source,temp)
+            sha=digest(temp)
+            dest=self.root/(key+"-"+sha+source.suffix)
+            temp.replace(dest)
+            self.put(key,identity,{"name":dest.name,"sha256":sha,"metadata":metadata})
+            return dest
+        finally:
+            temp.unlink(missing_ok=True)
     def get_file(self,key,identity,suffix):
         data=self.get(key,identity)
-        if not isinstance(data,dict) or data.get("name")!=key+suffix:
+        if not isinstance(data,dict):
+            return None
+        sha=data.get("sha256")
+        if not isinstance(sha,str) or len(sha)!=64 or any(c not in "0123456789abcdef" for c in sha):
+            return None
+        # Read earlier checkpoint format as well as immutable content-addressed files.
+        if data.get("name") not in (key+suffix,key+"-"+sha+suffix):
             return None
         path=self.root/data["name"]
         if not path.is_file() or path.is_symlink() or digest(path)!=data.get("sha256"):

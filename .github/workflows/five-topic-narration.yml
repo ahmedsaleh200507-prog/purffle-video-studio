@@ -1,0 +1,64 @@
+name: Five different topic narration samples
+on:
+  push:
+    branches: [chatgpt/yellow-system-fixes]
+    paths: ['.github/workflows/five-topic-narration.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  text:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: scripts
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      PURFFLE_LOCAL_LLM: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests jsonschema
+      - name: Write five topics without rendering or grading loops
+        run: |
+          mkdir -p five-topic-proof
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from story_room import StoryRoom
+          from editorial_standard import word_tokens
+          from creative_narration import WRITERS
+          topics=[
+              ("en","Why do airplanes leave white trails?","Water vapor from jet exhaust can condense and freeze into ice crystals in sufficiently cold air. Persistent trails need humid air at altitude. Dry air makes ice crystals disappear faster. Visible contrails are clouds of ice crystals."),
+              ("de","Warum haben Katzen Schnurrhaare?","Whiskers are sensitive touch organs rooted in follicles rich in nerves. They help cats detect nearby obstacles and air movements. Whiskers can move forward during exploration. They are not simply ordinary decorative fur."),
+              ("en","Why did the Roman Colosseum have underground tunnels?","The hypogeum beneath the arena contained corridors, rooms, lifts and trapdoors. Workers moved animals and scenery up into the arena. Spectators could not see this backstage machinery. It was added after the original arena was built."),
+              ("de","Warum schwimmt ein Schiff aus Stahl?","A solid block of steel sinks in water. A hollow ship hull encloses air and displaces water. The buoyant force equals the weight of displaced water. A floating ship displaces its own weight of water; flooding can reduce its ability to float."),
+              ("en","Why is the Moon covered in craters?","Asteroids and meteoroids strike the Moon. Its extremely thin atmosphere does not protect it like Earth's atmosphere. The Moon has no rain or wind like Earth and lacks active plate tectonics. Many ancient impact craters remain visible.")
+          ]
+          room=StoryRoom()
+          schema={"type":"object","properties":{"narration":{"type":"string"}},"required":["narration"],"additionalProperties":False}
+          for i,(lang,topic,facts) in enumerate(topics,1):
+              try:
+                  prompt=(f"Write one unforgettable short documentary voiceover about {topic} in native {'German' if lang=='de' else 'English'}. "
+                          "Write 45 to 80 words. Start with the most fascinating concrete detail, not a definition. "
+                          "Make the listener want the next sentence. Tell a small connected story, with a satisfying answer. "
+                          "Write like a fascinating friend speaking naturally: short varied sentences, clear pronunciation, no jargon, no filler. "
+                          "Privately consider several angles and choose the most intriguing. No fake suspense or invented facts. "
+                          "Use only these factual notes; simplify unnecessary detail. No headings or commentary. Return the narration in JSON. "
+                          f"Facts: {facts}")
+                  room.trace=[]
+                  result,model=room.ask("writer",prompt,schema,WRITERS,temperature=.75)
+                  row={"topic":topic,"language":lang,"model":model,"narration":result["narration"],"words":len(word_tokens(result["narration"])),"trace":room.trace}
+              except Exception as e:
+                  row={"topic":topic,"language":lang,"error":str(e),"trace":room.trace}
+              Path(f"five-topic-proof/{i}.json").write_text(json.dumps(row,ensure_ascii=False,indent=2),encoding="utf-8")
+              print("SAMPLE:",json.dumps(row,ensure_ascii=False),flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: five-topic-narrations
+          path: five-topic-proof/
+          retention-days: 7

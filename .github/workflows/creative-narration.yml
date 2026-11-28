@@ -1,0 +1,56 @@
+name: Creative narration text samples
+on:
+  push:
+    branches: [chatgpt/yellow-system-fixes]
+    paths: ['.github/workflows/creative-narration.yml', 'scripts/creative_narration.py', 'scripts/story_references.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  text:
+    if: github.ref == 'refs/heads/chatgpt/yellow-system-fixes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - language: en
+            topic: Why Do Octopuses Have Three Hearts?
+          - language: de
+            topic: Warum leuchten Polarlichter?
+    env:
+      PYTHONPATH: scripts
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      PURFFLE_LOCAL_LLM: '0'
+      LANGUAGE: ${{ matrix.language }}
+      TOPIC: ${{ matrix.topic }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests jsonschema
+      - name: Generate five openings and one finished script
+        run: |
+          mkdir -p creative-proof
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          from creative_narration import CreativeNarration
+          from story_references import story_reference
+          topic,lang=os.environ["TOPIC"],os.environ["LANGUAGE"]
+          result=CreativeNarration().generate(topic,lang,story_reference(topic,lang))
+          Path("creative-proof/report.json").write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
+          Path("creative-proof/narration.txt").write_text(result["narration"],encoding="utf-8")
+          print("FINAL RESULT:",json.dumps(result,ensure_ascii=False),flush=True)
+          print("GENERATED NARRATION:",result["narration"],flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: creative-narration-${{ matrix.language }}
+          path: creative-proof/
+          retention-days: 7

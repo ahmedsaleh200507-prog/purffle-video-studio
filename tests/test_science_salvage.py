@@ -35,6 +35,8 @@ def report(tmp_path, supported=(True, True, False, False)):
 
 def test_real_proof_2_of_4_source_verified_scenes_can_be_shortened(tmp_path):
     original = draft()
+    original.scenes[0].narration += " In the atmosphere, sunlight interacts with tiny particles and molecules."
+    original.scenes[1].narration += " The scattered light travels in different directions before reaching our eyes."
     concise = salvage_approved_narration(original, report(tmp_path))
     assert concise is not None
     assert concise is not original
@@ -83,9 +85,34 @@ def test_salvage_never_bypasses_absent_or_nonfailed_review(tmp_path):
 
 
 def test_pipeline_tries_salvage_only_after_last_rejection_and_rechecks_source():
+    import ast
     from pathlib import Path
-    source = Path("scripts/render_job.py").read_text(encoding="utf-8")
-    salvage = source.index("salvage_approved_narration(")
-    review = source.index("screen_narration(\n                            salvaged")
-    assert salvage < review < source.index("stage = 'visual_director_preflight'")
-    assert "if attempt >= 2:" in source[:salvage]
+    tree = ast.parse(Path("scripts/render_job.py").read_text(encoding="utf-8"))
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    def calls(name):
+        return [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name) and n.func.id == name]
+    salvage, = calls("salvage_approved_narration")
+    node = salvage
+    ancestors = []
+    while node in parents:
+        node = parents[node]
+        ancestors.append(node)
+    retry_guard = ast.parse("attempt >= max_attempts - 1", mode="eval").body
+    guard = next(n for n in ancestors if isinstance(n, ast.If)
+                 and ast.dump(n.test) == ast.dump(retry_guard))
+    review, = [n for n in calls("screen_narration") if n.args
+               and isinstance(n.args[0], ast.Name) and n.args[0].id == "salvaged"]
+    assert review in list(ast.walk(guard))
+    assert salvage.lineno < review.lineno
+    assert any(isinstance(n, ast.Assign) and isinstance(n.value, ast.Name)
+               and n.value.id == "salvaged" and n.lineno > review.lineno
+               and any(isinstance(t, ast.Name) and t.id == "screenplay" for t in n.targets)
+               for n in ast.walk(guard))
+    preflight = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Assign)
+                 and isinstance(n.value, ast.Constant) and n.value.value == "visual_director_preflight"]
+    assert review.lineno < min(preflight)
+
+
+def test_underlength_salvage_does_not_pass(tmp_path):
+    assert salvage_approved_narration(draft(),report(tmp_path)) is None

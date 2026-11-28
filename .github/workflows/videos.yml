@@ -44,6 +44,54 @@ on:
         description: '10 - en|Topic or de|Thema'
         required: false
         type: string
+  workflow_call:
+    inputs:
+      multi_shot:
+        type: boolean
+        required: false
+        default: false
+      pixel_first:
+        type: boolean
+        required: false
+        default: false
+      free_canary:
+        type: boolean
+        required: false
+        default: false
+      single_pass_narration:
+        type: boolean
+        required: false
+        default: false
+      video_1:
+        type: string
+        required: true
+      video_2:
+        type: string
+        required: false
+      video_3:
+        type: string
+        required: false
+      video_4:
+        type: string
+        required: false
+      video_5:
+        type: string
+        required: false
+      video_6:
+        type: string
+        required: false
+      video_7:
+        type: string
+        required: false
+      video_8:
+        type: string
+        required: false
+      video_9:
+        type: string
+        required: false
+      video_10:
+        type: string
+        required: false
 permissions:
   contents: read
 # No workflow-wide concurrency lock. With a constant group GitHub allows only
@@ -83,21 +131,37 @@ jobs:
             input: video_10
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      PURFFLE_LOCAL_LLM: '1'
-      PURFFLE_LOCAL_QUALITY: '1'
+      GROQ_API_KEY: ${{ (!inputs.free_canary || vars.PURFFLE_GROQ_FREE_CONFIRMED == '1') && secrets.GROQ_API_KEY || '' }}
+      GEMINI_API_KEY: ${{ (!inputs.free_canary || vars.PURFFLE_GEMINI_FREE_CONFIRMED == '1') && secrets.GEMINI_API_KEY || '' }}
+      OPENROUTER_API_KEY: ${{ inputs.free_canary && vars.PURFFLE_OPENROUTER_FREE_CONFIRMED == '1' && secrets.OPENROUTER_API_KEY || '' }}
+      PURFFLE_OPENROUTER_FREE_CONFIRMED: ${{ vars.PURFFLE_OPENROUTER_FREE_CONFIRMED }}
+      PURFFLE_STORY_FIRST: ${{ inputs.free_canary && '1' || '0' }}
+      PURFFLE_RANKED_WRITERS: ${{ inputs.free_canary && '1' || '0' }}
+      PURFFLE_CONDITIONAL_EDIT: ${{ inputs.free_canary && '1' || '0' }}
+      PURFFLE_LOCAL_LLM: ${{ inputs.free_canary && '0' || '1' }}
+      PURFFLE_LOCAL_QUALITY: ${{ inputs.free_canary && '0' || '1' }}
       PURFFLE_CLOUD_MODEL_ROUTER: '1'
       PURFFLE_SIGLIP_REVIEW: '1'
+      PURFFLE_MULTI_SHOT: ${{ inputs.multi_shot && '1' || '0' }}
+      PURFFLE_PIXEL_FIRST: ${{ inputs.pixel_first && '1' || '0' }}
       PURFFLE_VLM_SHADOW: '1'
-      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-      COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
-      COVER2: ${{ secrets.COVER2 }}
-      NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
-      VECTEEZY_API_KEY: ${{ secrets.VECTEEZY_API_KEY }}
+      PURFFLE_EDITORIAL_ANSWER_GATE: '1'
+      PURFFLE_EDITORIAL_STANDARD: '1'
+      PURFFLE_CREATIVE_NARRATION: '1'
+      PURFFLE_SINGLE_PASS_NARRATION: ${{ inputs.single_pass_narration && '1' || '0' }}
+      PURFFLE_NATURAL_VOICE: '1'
+      PURFFLE_ENGLISH_NARRATOR: george
+      PURFFLE_EDITORIAL_PACING: '1'
+      PURFFLE_SOURCE_TEXT_GATE: '1'
+      PURFFLE_ADVANCED_VISUALS: '0'  # enabled after optional dependency checks
+      PIXABAY_API_KEY: ${{ (!inputs.free_canary || vars.PURFFLE_PIXABAY_FREE_CONFIRMED == '1') && secrets.PIXABAY_API_KEY || '' }}
+      PEXELS_API_KEY: ${{ (!inputs.free_canary || vars.PURFFLE_PEXELS_FREE_CONFIRMED == '1') && secrets.PEXELS_API_KEY || '' }}
+      COVERR_API_KEY: ${{ !inputs.free_canary && secrets.COVERR_API_KEY || '' }}
+      COVER2: ${{ !inputs.free_canary && secrets.COVER2 || '' }}
+      NPS_API_KEY: ${{ !inputs.free_canary && secrets.NPS_API_KEY || '' }}
+      VECTEEZY_API_KEY: ${{ !inputs.free_canary && secrets.VECTEEZY_API_KEY || '' }}
       PURFFLE_COVERR_MAX_CALLS: '5'
-      EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
+      EUROPEANA_API_KEY: ${{ !inputs.free_canary && secrets.EUROPEANA_API_KEY || '' }}
       LLM_PROVIDER: groq
       LLM_MODEL: openai/gpt-oss-20b
       SCRIPT_REVIEW: 'off'
@@ -106,8 +170,8 @@ jobs:
       # working video indexes before tiny fixed catalogs or slower archives.
       # Remaining providers are still checked when the first ones have no
       # verified, relevant HD clip; license and CLIP checks stay unchanged.
-      VISUAL_SOURCES: pexels,pixabay,usgs-video,nps-video,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video,vecteezy-video
-      # V4 fixed Piper Joe/Thorsten; no alternate voice or private model setup.
+      VISUAL_SOURCES: ${{ inputs.free_canary && 'pexels,pixabay,usgs-video,freenaturestock-video,nasa-video,wikimedia-video,archive-video' || 'pexels,pixabay,usgs-video,nps-video,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video,vecteezy-video' }}
+      # Fixed George/Thorsten; no alternate voice or private model setup.
       PURFFLE_NARRATOR_LOCK: '1'
       TTS_ENGINE: piper
       EDGE_TTS_TIMEOUT_SECONDS: '120'
@@ -177,7 +241,7 @@ jobs:
           language, topic = parse_topic(os.environ["SLOT_TOPIC"])
           print(f"[TOPIC VALIDATED] one {language} topic, {len(topic)} characters")
           PY
-      - name: Verify fixed Piper voice policy before installing video tools
+      - name: Verify fixed narrator policy before installing video tools
         if: steps.selected.outputs.render == 'true'
         env:
           SLOT_TOPIC: ${{ inputs[matrix.input] }}
@@ -216,6 +280,36 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-dev.txt 'jsonschema>=4.20,<5' 'sentencepiece>=0.2,<1'
+      - name: Install bounded native video verifier
+        if: steps.selected.outputs.render == 'true' && inputs.pixel_first
+        run: python -m pip install 'transformers==4.57.1' 'accelerate>=1,<2' decord num2words 'av>=14,<17'
+      - name: Install approved George voice only for English
+        if: steps.selected.outputs.render == 'true'
+        env:
+          SLOT_TOPIC: ${{ inputs[matrix.input] }}
+        run: |
+          if [[ "${SLOT_TOPIC,,}" =~ ^[[:space:]]*en[[:space:]\|] ]]; then
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y -qq espeak-ng
+            python -m pip install 'kokoro==0.9.4' 'soundfile==0.13.1' 'faster-whisper==1.2.1' 'av==14.2.0' 'scipy==1.15.3'
+          fi
+      - name: Enable validated optional CPU vision tools
+        if: steps.selected.outputs.render == 'true'
+        run: |
+          if python -m pip install -r requirements-advanced-visuals.txt && python -c 'import supervision,scenedetect,faiss,cv2'; then
+            echo 'PURFFLE_ADVANCED_VISUALS=1' >> "$GITHUB_ENV"
+          else
+            echo 'PURFFLE_ADVANCED_VISUALS=0' >> "$GITHUB_ENV"
+            echo '::warning::Optional advanced tools unavailable; existing visual gates remain active'
+          fi
+      - name: Install local source text screen
+        if: steps.selected.outputs.render == 'true'
+        run: |
+          if ! command -v tesseract >/dev/null || ! tesseract --list-langs 2>/dev/null | grep -qx deu; then
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y -qq tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu
+          fi
+          tesseract --list-langs
       - name: Restore local model cache
         if: steps.selected.outputs.render == 'true'
         id: model-cache
@@ -224,7 +318,8 @@ jobs:
           path: |
             .cache/huggingface
             .cache/piper
-          key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/media_validation.py') }}
+            .cache/whisper
+          key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/george_voice.py', 'scripts/media_validation.py') }}
       - name: Restore verified local Qwen download cache
         if: steps.selected.outputs.render == 'true'
         id: qwen-cache
@@ -282,11 +377,11 @@ jobs:
           PURFFLE_STRICT: '1'
         run: python scripts/batch.py
       - name: Recover verified real media after production errors
-        if: always() && steps.selected.outputs.render == 'true'
+        if: always() && steps.selected.outputs.render == 'true' && !inputs.free_canary
         env:
           SLOT_TOPIC: ${{ inputs[matrix.input] }}
           SLOT_INDEX: ${{ matrix.slot }}
-          PURFFLE_LAST_RESORT_GRAPHICS: '1'
+          PURFFLE_LAST_RESORT_GRAPHICS: '0'
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
         run: |
           # A normal successful MP4 is always preferred.
@@ -338,7 +433,8 @@ jobs:
           path: |
             .cache/huggingface
             .cache/piper
-          key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/media_validation.py') }}
+            .cache/whisper
+          key: purffle-v4-model-${{ runner.os }}-${{ hashFiles('requirements*.txt', 'scripts/local_voice.py', 'scripts/george_voice.py', 'scripts/media_validation.py') }}
       - name: Save public-domain verified source index
         if: always() && steps.selected.outputs.render == 'true' && hashFiles('media_cache/verified-library/index.json') != ''
         continue-on-error: true

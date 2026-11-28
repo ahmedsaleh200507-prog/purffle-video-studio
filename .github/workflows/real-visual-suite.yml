@@ -1,0 +1,74 @@
+name: Real footage visual suite
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/real_visual_suite.py'
+      - '.github/workflows/real-visual-suite.yml'
+permissions:
+  contents: read
+concurrency:
+  group: real-visual-suite-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests 'Pillow>=10.1,<14'
+      - run: python scripts/real_visual_suite.py --prepare --fixtures shared-fixtures
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shared-visual-fixtures
+          path: shared-fixtures/
+          retention-days: 1
+          if-no-files-found: error
+  audit:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        model: [clip, siglip, dino, florence, qwen, motion]
+    env:
+      PYTHONPATH: scripts
+      HF_HOME: ${{ github.workspace }}/.cache/huggingface
+      OMP_NUM_THREADS: '2'
+      TOKENIZERS_PARALLELISM: 'false'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install FFmpeg
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update -qq
+            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y -qq ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+      - run: pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install 'transformers==4.57.1' 'Pillow>=10.1,<14' requests 'sentencepiece>=0.2,<1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: shared-visual-fixtures
+          path: shared-fixtures
+      - name: Evaluate both real clips
+        run: python scripts/real_visual_suite.py --model ${{ matrix.model }} --fixtures shared-fixtures
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-visual-${{ matrix.model }}
+          path: real-visual-suite/
+          if-no-files-found: warn

@@ -167,20 +167,20 @@ _DOCUMENTARY_FACTS = {
     },
     "volcano_eruption": {
         "en": [
-            "Hot lava flows from a volcano. But why do some eruptions explode?",
-            "Deep underground, molten rock called magma contains dissolved gases under pressure.",
-            "As magma rises, surrounding pressure drops and gas bubbles expand.",
-            "When gases escape violently, they can fragment magma and drive an explosive eruption."
+            "A volcano can blast rock high into the sky. The force starts deep underground.",
+            "Molten rock is called magma. It can rise because it is less dense than surrounding rock.",
+            "Near the surface, pressure drops and gas bubbles expand. Runny magma lets gas escape more easily.",
+            "Sticky magma can trap that expanding gas, building pressure that drives an explosive eruption."
         ],
         "de": [
-            "Heiße Lava fließt aus einem Vulkan. Aber warum verlaufen manche Ausbrüche explosionsartig?",
-            "Tief unter der Erde enthält geschmolzenes Gestein, das Magma, gelöste Gase.",
-            "Wenn Magma aufsteigt, sinkt der Druck und Gasblasen dehnen sich aus.",
-            "Entweichen die Gase heftig, können sie Magma zerreißen und explosive Ausbrüche auslösen."
+            "Bei einem Ausbruch kann ein Vulkan Gestein hoch in den Himmel schleudern. Die Kraft entsteht tief unter der Erde.",
+            "Geschmolzenes Gestein heißt Magma. Es kann aufsteigen, weil seine Dichte geringer ist als die des umliegenden Gesteins.",
+            "Nahe der Oberfläche sinkt der Druck und Gasblasen dehnen sich aus. Aus dünnflüssigem Magma entweicht Gas leichter.",
+            "Zähes Magma kann das Gas einschließen. Der Druck kann einen explosiven Ausbruch antreiben."
         ],
         "title": {
-            "en": "What Makes a Volcano Suddenly Erupt?",
-            "de": "Warum bricht ein Vulkan plötzlich aus?"
+            "en": "Why Do Volcanoes Erupt?",
+            "de": "Warum brechen Vulkane aus?"
         },
         "description": {
             "en": "USGS explains how gas expansion in rising magma can drive violent volcanic eruptions.",
@@ -579,14 +579,14 @@ _DOCUMENTARY_FACTS = {
 _THREE_SCENE_SOURCE_REVIEWED = {
     "volcano_eruption": {
         "en": [
-            "Hot lava flows from a volcano. But why do some eruptions explode?",
-            "Rising magma contains dissolved gases that expand as pressure decreases.",
-            "When gases escape violently, they can break magma apart and drive explosive eruptions."
+            "A volcano can blast rock into the sky. The force starts deep underground.",
+            "Molten rock, called magma, rises through buoyancy and gas pressure. Near the surface, the falling pressure makes gas bubbles expand.",
+            "Runny magma lets gas escape more easily. Sticky magma can trap gas until pressure drives a violent eruption."
         ],
         "de": [
-            "Heiße Lava fließt aus einem Vulkan. Aber warum verlaufen manche Ausbrüche explosionsartig?",
-            "Aufsteigendes Magma enthält gelöste Gase, die sich bei sinkendem Druck ausdehnen.",
-            "Entweichen diese Gase heftig, können sie Magma zerteilen und explosive Ausbrüche antreiben."
+            "Ein Vulkan kann explosionsartig Gestein in den Himmel schleudern. Die Kraft entsteht tief unter der Erde.",
+            "Geschmolzenes Gestein, das Magma, steigt durch Auftrieb und Gasdruck auf. Nahe der Oberfläche sinkt der Druck und Gasblasen dehnen sich aus.",
+            "Aus dünnflüssigem Magma entweicht Gas leichter. Zähes Magma kann Gas einschließen, bis der Druck einen explosiven Ausbruch antreibt."
         ]
     },
     "iceberg_breakup": {
@@ -679,10 +679,15 @@ def verified_documentary_kind(topic: str) -> str | None:
     # These narrow source-reviewed explainers are keyed to the 2026-11-20
     # production #85 batch. Unrelated volcanoes, whale diets, other ice
     # questions and all other science still require independent review.
-    if (tokens & {"volcano", "volcanoes"} and
-            tokens & {"erupt", "erupts", "eruption"} and
-            tokens & {"suddenly", "sudden"} and
-            not tokens & {"island", "ocean", "underwater"}):
+    # Exact generic why/how questions in both languages, not questions
+    # about a named volcano, date, location, eruption forecast or impacts.
+    if (tokens & {"volcano", "volcanoes", "vulkan", "vulkane"}
+            and tokens & {"erupt", "erupts", "eruption", "bricht", "brechen"}
+            and (tokens & {"why", "how", "warum", "wieso", "wie", "suddenly", "sudden"})
+            and tokens <= {"why","how","do","does","a","the","volcano","volcanoes",
+                           "erupt","erupts","eruption","suddenly","sudden",
+                           "warum","wieso","wie","ein","der","vulkan","vulkane",
+                           "bricht","brechen","aus","plötzlich","pl","tzlich"}):
         return "volcano_eruption"
     if (tokens & {"iceberg", "icebergs"} and
             tokens & {"break", "breaking", "apart", "split", "calving"}):
@@ -842,11 +847,11 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
         # three filler shots when two source-reviewed scenes cover the cause.
         narration = (
             [
-                "Northern lights glow high in the night sky, especially near the poles.",
-                "Electrons collide with oxygen and nitrogen high in Earth's atmosphere. These gases release the colorful aurora light.",
+                "Those glowing ribbons are light from gases high above Earth. Energetic electrons follow Earth's magnetic field toward the polar regions.",
+                "When those electrons collide with oxygen and nitrogen, they transfer energy to the gases. As the gases release that energy, colorful light spreads across the night sky.",
             ] if language == "en" else [
-                "Polarlichter leuchten hoch am Nachthimmel, besonders in Polargebieten.",
-                "Elektronen stoßen hoch in der Atmosphäre mit Sauerstoff und Stickstoff zusammen. Dabei entsteht das farbige Licht.",
+                "Diese leuchtenden Schleier entstehen hoch über der Erde. Energiereiche Elektronen folgen dem Magnetfeld der Erde in Richtung der Polargebiete.",
+                "Dort stoßen die Elektronen mit Sauerstoff und Stickstoff zusammen und übertragen Energie auf die Gase. Wenn diese Energie als Licht abgegeben wird, leuchtet der Nachthimmel in Farben.",
             ])
     elif scene_count == 2 and kind == "lightning_thunder_delay":
         narration = (
@@ -970,6 +975,30 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
                 if language == "en" else
                 "Im Auge sinkt Luft ab. Doch nach der Ruhe können gefährliche Winde zurückkehren.",
             ]
+    # B-style pilot: same dossier mechanisms and shot counts, stronger spoken
+    # contrast and a causal payoff. Keep legacy texts when the editorial gate
+    # is disabled; these are test-branch candidates, not audience proof.
+    from editorial_standard import enabled
+    if enabled() and kind == "volcano_eruption" and scene_count == 4:
+        narration = ([
+            "A volcano can blast rock into the sky. Why are some eruptions so violent?",
+            "It starts underground. Molten rock, called magma, can rise because it is less dense than surrounding rock.",
+            "As magma rises, pressure falls and gas bubbles expand. In runny magma, gas escapes more easily.",
+            "But sticky magma can trap that gas. Pressure builds, and an eruption that might have been a lava flow can turn explosive.",
+        ] if language == "en" else [
+            "Bei einem Ausbruch kann ein Vulkan Gestein in den Himmel schleudern. Warum geschieht das nicht bei jedem Vulkan?",
+            "Tief unter der Erde kann geschmolzenes Gestein aufsteigen, weil es eine geringere Dichte hat als das Gestein ringsum. Es heißt Magma.",
+            "Beim Aufsteigen sinkt der Druck, und Gasblasen dehnen sich aus. Aus flüssigerem Magma entweicht Gas leichter.",
+            "Doch zähes Magma kann das Gas einschließen. Steigt der Druck, kann aus einem Lavafluss ein explosiver Ausbruch werden.",
+        ])
+    elif enabled() and kind == "northern_lights_glow" and scene_count == 2:
+        narration = ([
+            "Invisible electrons can light up the night sky. Earth's magnetic field guides these energetic particles toward the poles.",
+            "High above us, they collide with oxygen and nitrogen. The gases absorb energy and release it as light. That is what makes the polar sky glow.",
+        ] if language == "en" else [
+            "Winzige Elektronen lassen den Himmel leuchten. Das klingt erstaunlich, doch das Magnetfeld der Erde lenkt diese Teilchen zu den Polen.",
+            "Hoch über uns treffen die Elektronen auf Sauerstoff und Stickstoff. Die Gase nehmen Energie auf und geben sie als Licht ab. Aus unsichtbarer Energie wird ein sichtbarer Lichtschleier.",
+        ])
     scenes = [{
         "narration": sentence, "speaker": "A", "search_query": "",
         "image_prompt": "", "main_character": "", "object": ("volcano" if kind in ("volcanic_island", "lava_ocean_entry", "volcano_eruption") else
@@ -1003,6 +1032,9 @@ def ground_verified_documentary(data: dict, topic: str, language: str,
                                    "aurora borealis"),
         "emphasis": [], "emoji": "",
     } for sentence in narration]
+    if kind=="volcano_eruption" and len(scenes)==4:
+        for scene,query in zip(scenes,("volcano explosive eruption","volcano molten lava close up","volcano bubbling lava","volcano eruption lava fountain")):
+            scene["visual_search_query"]=query
     if scene_count == 2 and kind in _TWO_SCENE_VISUAL_QUERIES:
         for scene, query in zip(scenes, _TWO_SCENE_VISUAL_QUERIES[kind]):
             scene["visual_search_query"] = query

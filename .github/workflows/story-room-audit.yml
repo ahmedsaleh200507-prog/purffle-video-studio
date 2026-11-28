@@ -1,0 +1,78 @@
+name: Writers room text quality pilot
+# Discovery-first: short writing brief and richer research material.
+on:
+  push:
+    branches: [chatgpt/yellow-system-fixes]
+    paths:
+      - '.github/workflows/story-room-audit.yml'
+      - 'scripts/story_room.py'
+      - 'tests/test_story_room.py'
+      - 'scripts/story_references.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  text:
+    if: github.ref == 'refs/heads/chatgpt/yellow-system-fixes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - language: en
+            mode: short
+            topic: Why Do Octopuses Have Three Hearts?
+          - language: de
+            mode: short
+            topic: Warum leuchten Polarlichter?
+    env:
+      PYTHONPATH: scripts
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      PURFFLE_LOCAL_LLM: '0'
+      LANGUAGE: ${{ matrix.language }}
+      MODE: ${{ matrix.mode }}
+      TOPIC: ${{ matrix.topic }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install text only dependencies
+        run: pip install requests jsonschema pytest
+      - name: Compile and check writers room contracts
+        run: |
+          python -m compileall -q scripts/story_room.py
+          python -m pytest -q tests/test_story_room.py
+      - name: Generate and independently review narration
+        run: |
+          mkdir -p story-room-proof
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          from story_room import StoryRoom
+          from story_references import story_reference
+          topic,lang,mode=os.environ["TOPIC"],os.environ["LANGUAGE"],os.environ["MODE"]
+          reference=story_reference(topic,lang)
+          context=("Opening chapter of a longer documentary. Introduce the central question, offer early value, and transition naturally toward the deeper explanation. Do not conclude the entire film." if mode=="long" else "Complete standalone short story.")
+          result=StoryRoom().generate(topic,lang,reference,mode=mode,context=context,word_range=(80,130) if mode=="long" else None)
+          result["reference_text"]=reference
+          result["scope"]+=" Long pilot is an opening chapter, not a full-length documentary." if mode=="long" else ""
+          root=Path("story-room-proof")
+          (root/"report.json").write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
+          (root/"narration.txt").write_text(result["narration"],encoding="utf-8")
+          print("TEXT QUALITY PASS:",result["editorial_pass"])
+          print("MODEL TRACE:",json.dumps(result["trace"]))
+          print("FINAL EDITOR VERDICTS:",json.dumps(result["attempts"][-1]["verdicts"],ensure_ascii=False))
+          print("GENERATED NARRATION:",result["narration"])
+          if not result["editorial_pass"]:
+              raise SystemExit("Editorial rewrite budget exhausted")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: writers-room-${{ matrix.language }}-${{ matrix.mode }}-${{ strategy.job-index }}
+          path: story-room-proof/
+          retention-days: 7

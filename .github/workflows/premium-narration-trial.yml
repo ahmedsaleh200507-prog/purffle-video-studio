@@ -1,0 +1,11 @@
+name: Premium narration trial (disabled)
+# Paid narration is explicitly prohibited for this project.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  disabled:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Paid API narration is disabled. No API requests are made."

@@ -1,0 +1,119 @@
+name: English narrator audition
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/english-voice-audition.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: english-voice-audition-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  audition:
+    if: github.repository == 'ahmedsaleh200507-prog/purffle-video-studio'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '2'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install local CPU narration tools
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq -y install espeak-ng
+          pip install 'torch==2.6.0' --index-url https://download.pytorch.org/whl/cpu
+          pip install 'kokoro==0.9.4' 'soundfile==0.13.1'
+      - name: Generate four unapproved English voice candidates
+        run: |
+          python - <<'PY'
+          import hashlib,json,math,time
+          from pathlib import Path
+          import numpy as np
+          import soundfile as sf
+          import torch
+          from huggingface_hub import HfApi,hf_hub_download
+          from kokoro import KPipeline
+
+          torch.set_num_threads(2)
+          torch.set_num_interop_threads(1)
+          root=Path("english-audition")
+          root.mkdir()
+          repo="hexgrad/Kokoro-82M"
+          info=HfApi().model_info(repo)
+          assert info.card_data.license=="apache-2.0"
+          revision=info.sha
+          def fetch(name):
+              return Path(hf_hub_download(repo_id=repo,filename=name,revision=revision))
+          def sha(path):
+              h=hashlib.sha256()
+              with path.open("rb") as f:
+                  for block in iter(lambda:f.read(1048576),b""):
+                      h.update(block)
+              return h.hexdigest()
+          expected="496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4"
+          weights=fetch("kokoro-v1_0.pth")
+          assert sha(weights)==expected
+          # Use the checked repository snapshot, not an unrelated model.
+          from kokoro import KModel
+          import inspect
+          params=inspect.signature(KModel).parameters
+          kwargs={}
+          if "repo_id" in params: kwargs["repo_id"]=repo
+          if "config" in params: kwargs["config"]=str(fetch("config.json"))
+          if "model" in params: kwargs["model"]=str(weights)
+          elif "model_path" in params: kwargs["model_path"]=str(weights)
+          else: raise RuntimeError("Cannot bind audited model weights")
+          model=KModel(**kwargs).to("cpu").eval()
+          voices={"A":("a","am_michael","9a443b79"),"B":("a","am_fenrir","98e507ec"),"C":("a","am_puck","dd1d8973"),"D":("b","bm_george","f1bc8122")}
+          passages={
+            "short":"A volcano can blast rock high into the sky. The force starts deep underground. Molten rock is called magma. It can rise because it is less dense than surrounding rock. Near the surface, pressure drops and gas bubbles expand. Runny magma lets gas escape more easily. Sticky magma can trap that expanding gas, building pressure that drives an explosive eruption.",
+            "documentary":"A blue whale can be longer than a city bus. Yet it feeds on tiny animals called krill. It opens its enormous mouth, and the water flows back out through special plates. The krill stay inside. When the whale dives, it has to hold its breath. Its body stores oxygen in the blood and muscles. Then it returns to the surface to breathe again."
+          }
+          records=[]
+          pipelines={}
+          for label,(lang,voice,prefix) in voices.items():
+              if lang not in pipelines:
+                  pipelines[lang]=KPipeline(lang_code=lang,repo_id=repo,model=model,device="cpu")
+              pack=fetch("voices/"+voice+".pt")
+              digest=sha(pack)
+              assert digest.startswith(prefix),voice
+              embedding=torch.load(str(pack),weights_only=True,map_location="cpu")
+              for kind,text in passages.items():
+                  started=time.monotonic()
+                  parts=[]
+                  chunks=[]
+                  offset=0.
+                  for result in pipelines[lang](text,voice=embedding,speed=1.0):
+                      gs,ps,audio=result
+                      if audio is None or len(ps)>510: raise RuntimeError("Missing or truncated speech")
+                      a=audio.detach().cpu().numpy().reshape(-1)
+                      if not len(a) or not np.isfinite(a).all() or np.max(np.abs(a))<1e-5: raise RuntimeError("Invalid audio")
+                      token_rows=[]
+                      for t in (getattr(result,"tokens",None) or []):
+                          token_rows.append({"text":str(getattr(t,"text","")),"start":getattr(t,"start_ts",None),"end":getattr(t,"end_ts",None)})
+                      chunks.append({"text":gs,"offset":offset,"seconds":len(a)/24000,"model_duration_tokens":token_rows})
+                      offset+=len(a)/24000
+                      parts.append(a)
+                  if not parts: raise RuntimeError("No audio generated")
+                  signal=np.concatenate(parts)
+                  # Equal peak ceiling, no speed manipulation.
+                  signal=signal*.92/max(float(np.max(np.abs(signal))),1e-6)
+                  target=root/f"{label}-{kind}.wav"
+                  sf.write(target,signal,24000,subtype="PCM_16")
+                  row={"candidate":label,"voice":voice,"voice_sha256":digest,"passage":kind,"text":text,"seconds":len(signal)/24000,"render_seconds":round(time.monotonic()-started,3),"chunks":chunks,"status":"audition_only_not_production_approved"}
+                  records.append(row)
+                  print("[AUDITION]",label,kind,row["seconds"],row["render_seconds"],flush=True)
+          (root/"audit.json").write_text(json.dumps({"repo":repo,"revision":revision,"license":"Apache-2.0","model_sha256":expected,"records":records,"timing_limit":"Model-predicted token timestamps require independent validation before production."},indent=2,ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: english-narrator-audition
+          path: english-audition/
+          retention-days: 7

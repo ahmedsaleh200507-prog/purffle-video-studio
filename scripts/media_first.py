@@ -332,9 +332,12 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
         # One bounded wall-clock budget for ALL aliases of one spoken scene.
         # Otherwise each alias gets a fresh 75s provider scan and a ten-video
         # batch can exceed the runner timeout before reaching the next scene.
+        from multi_shot_runtime import enabled as multi_enabled
+        multi_mode=director_mode and multi_enabled() and 4<=scene_need<=14.8
         shot_budget_deadline = time.monotonic() + 210
+        single_deadline=shot_budget_deadline-130 if multi_mode else shot_budget_deadline
         for query in queries:
-            if time.monotonic() >= shot_budget_deadline:
+            if time.monotonic() >= single_deadline:
                 attempts.append({"scene": slot, "query": query,
                                  "status": "budget_exhausted"})
                 break
@@ -344,7 +347,7 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
                 payload["_visual_contract"] = contract
             # Keep total aliases inside the same scene budget; preserve
             # strict per-source rate limits and download/crop/license gates.
-            visuals._shot_deadline = shot_budget_deadline
+            visuals._shot_deadline = single_deadline
             start = len(visuals.report["scenes"])
             try:
                 # Use the factual scene slot, even if an earlier one failed.
@@ -369,6 +372,25 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
                              "source": item.source, "id": item.id})
             selected = True
             break
+        if multi_mode and not selected and time.monotonic()<shot_budget_deadline:
+            from multi_shot_runtime import collect
+            query=queries[0]
+            plan=_scene_data({**option,"visual_search_query":query})
+            payload={**plan,"_visual_contract":contract}
+            try:
+                item,row=collect(visuals,slot-1,query,payload,topic,scene_need,dest_dir,settings,shot_budget_deadline)
+                selected_rows.append(row)
+                items.append(item)
+                plans.append(plan)
+                attempts.append({"scene":slot,"query":query,"status":"selected","mode":"multi_shot",
+                    "required_seconds":scene_need,"source":item.source,"id":item.id,
+                    "shot_count":len(row["multi_shot"]["shots"])})
+                selected=True
+            except Exception as exc:
+                # Fail closed. Retain evidence; never substitute random clips.
+                from studio_runtime import _redact
+                attempts.append({"scene":slot,"query":query,"status":"multi_shot_rejected",
+                    "reason":_redact(str(exc))[:220]})
         if director_mode and not selected:
             attempts.append({
                 "scene": slot, "status": "unavailable",
@@ -401,7 +423,7 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
             contract = (options[original_slot - 1].get("_visual_contract")
                         if director_mode and 1 <= original_slot <= len(options) else None)
             row["index"] = index
-            row["visual_mode"] = "media_first_verified"
+            row["visual_mode"] = "media_first_verified_multishot" if row.get("multi_shot") else "media_first_verified"
             row["illustrative_not_exact_event"] = illustrative_status(contract)
         visuals.report["scenes"] = selected_rows
     # On failure leave ALL original attempt rows, indexes and rejections.
@@ -437,7 +459,8 @@ def prepare_verified_palette(topic, settings, llm=None, *, visuals=None,
              "license": m.extra.get("license"),
              "subject_screen": m.extra.get("match", {}).get("subject_screen"),
              "crop_focus_x": m.extra.get("match", {}).get("crop_focus_x"),
-             "director_contract": m.extra.get("match", {}).get("director_check")}
+             "director_contract": m.extra.get("match", {}).get("director_check"),
+             "multi_shot": m.extra.get("multi_shot")}
             for i, (p, m) in enumerate(zip(plans, items))],
         "attempts": attempts,
     }, ensure_ascii=False, indent=2, default=str), encoding="utf-8")

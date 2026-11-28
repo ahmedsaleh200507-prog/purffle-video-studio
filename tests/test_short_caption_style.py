@@ -35,4 +35,9 @@ class CaptionPolicyTests(unittest.TestCase):
         self.assertEqual(overlays.CENTER_Y["center"],.56)
         self.assertFalse(overlays.needs_ass(Settings()))
         self.assertTrue(overlays.needs_ass(Settings(width=1920,height=1080)))
+        wrapper = overlays.needs_ass
+        for _ in range(1200):
+            install_style(overlays)
+        self.assertIs(overlays.needs_ass, wrapper)
+        self.assertTrue(overlays.needs_ass(Settings(width=1920,height=1080)))
 if __name__=="__main__":unittest.main()

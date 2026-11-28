@@ -1,6 +1,6 @@
 # Purffle Video Studio V4
 
-Mevcut Purffle ve sabitlenmiş `purffle-shorts` motoru üzerinde: konu → denetlenmiş senaryo → gerçek görüntü arama/doğrulama → sabit Piper sesi → zamanlı altyazı → render → çıktı kontrolü. Ücretli üretim API'si veya otomatik yayın yoktur.
+Mevcut Purffle ve sabitlenmiş `purffle-shorts` motoru üzerinde: konu → denetlenmiş senaryo → gerçek görüntü arama/doğrulama → sabit yerel anlatıcı sesi → zamanlı altyazı → render → çıktı kontrolü. Ücretli üretim API'si veya otomatik yayın yoktur.
 
 ## Kullanım
 
@@ -43,7 +43,7 @@ Kaynak kısa kenarı en az 720 px. Dikey kırpmanın gerçek ölçeği raporlan�
 
 ## Ses ve kalite kontrolü
 
-Yalnız `en_US-joe-medium` (rdh tabanlı CC0 checkpoint) ve `de_DE-thorsten-medium` (CC0) Piper kullanılır. Model revision/hash denetimi ve yerel fonem örneklerinden kelime hizalaması korunur. Ses başarısızsa başka kimliğe geçilmez. Eski özel İngilizce referans araçları geçmiş artefaktlar için depodadır; aktif üretim bunları çağırmaz ve özel kayıt Secret'ını gerektirmez.
+Üretimin tüm girişlerinde İngilizce için kullanıcı tarafından dinlenip onaylanan Kokoro-82M `bm_george` (Apache-2.0), Almanca için Piper `de_DE-thorsten-medium` (CC0-1.0, cümle bağlamlı B sürümü) sabitlenmiştir. George model ve ses dosyasının tam revision/SHA256 değerleri kilitlidir; kelime zamanları bağımsız gerçek WAV ASR denetiminden geçer. Thorsten yerel fonem örneklerine dayalı hizalamayı korur. Eski Joe yalnız geçmiş A/B regresyon testlerinde kalır. Ses başarısızsa başka kimliğe geçilmez. Eski özel İngilizce referans araçları geçmiş artefaktlar için depodadır; aktif üretim bunları çağırmaz ve özel kayıt Secret'ını gerektirmez.
 
 FFprobe, boyut/FPS/ses/süre, kaynak hareket/CLIP ve ilk saniyelerin kalite kontrolüne ek olarak **tüm çıktı** decode edilir: siyah sahne ≥0,45 saniye, sessizlik ≥2,5 saniye, altyazı sınırları/sırası/kapsamı ve ses toplam süresi denetlenir. `output-qa.json` teknik sonucu kaydeder. Bunlar ASR veya bilimsel doğruluk kanıtı değildir. Shorts ekranında logo veya Purffle başlığı yoktur.
 

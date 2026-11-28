@@ -22,10 +22,13 @@ def install_style(overlays):
         active_scale=1.12,pop=False,font="anton",emphasis=None)
     overlays.CENTER_Y["center"]=.56
     original=overlays.needs_ass
+    if getattr(original, "_purffle_locked_caption_policy", False):
+        return
     def needs_ass(settings):
         if settings.language.split("-")[0] in ("en","de") and settings.width<settings.height:
             return False
         return original(settings)
+    needs_ass._purffle_locked_caption_policy = True
     overlays.needs_ass=needs_ass
 
 def recovery_captions(words,total,language,work):

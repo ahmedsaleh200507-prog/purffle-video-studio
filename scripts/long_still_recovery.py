@@ -139,6 +139,8 @@ def verify_photo(path,subject,query,matcher):
     from PIL import Image
     with Image.open(path) as im:
         frame=im.convert("RGB")
+    from source_overlay import check_photo
+    overlay=check_photo(frame)
     from video_first_policy import contrast_prompts
     captions=[f"A real photograph showing {query}.",f"A real photograph showing {subject}.",
               "An unrelated landscape or empty background.", "A drawing or illustration.",
@@ -149,7 +151,7 @@ def verify_photo(path,subject,query,matcher):
     if values[0]<.23 or values[1]<.20 or margin<.008:
         raise ValueError("Photo subject not verified in actual cropped image")
     from siglip_review import observe
-    return {"visual_check":"local_clip_photo_screening","visual_score":round(positive,4),
+    return {"source_overlay":overlay,"visual_check":"local_clip_photo_screening","visual_score":round(positive,4),
             "siglip_shadow_review":observe([frame],subject,query),
             "visual_margin":round(margin,4),"visual_role":"illustrative_photo"}
 
@@ -204,7 +206,8 @@ def stills(chapter,index,work,seen,*,size=(1920,1080),limit=4,require_verified=F
     return list(illustrations(chapter,index,directory))
 
 def render_recovery(index,audio,duration,chapter,work,seen,run):
-    photos=stills(chapter,index,work,seen)
+    photos=stills(chapter,index,work,seen,
+                  require_verified=os.environ.get("PURFFLE_VERIFIED_PHOTO_ONLY")=="1")
     directory=work/f"recovery-{index:02d}"
     directory.mkdir(parents=True,exist_ok=True)
     files=[]

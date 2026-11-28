@@ -7,6 +7,7 @@ The existing narration, evidence and media validators remain authoritative.
 from __future__ import annotations
 import json
 import os
+import re
 import time
 from types import SimpleNamespace
 
@@ -18,7 +19,10 @@ MODELS=(
     ("gemini","gemini-3.1-flash-lite"),
     ("groq","openai/gpt-oss-20b"),
 )
-URLS={"gemini":"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+OPENROUTER_WRITERS=(("openrouter","nvidia/nemotron-3-ultra-550b-a55b:free"),
+                    ("openrouter","baidu/ernie-5.5-flash-preview:free"))
+URLS={"openrouter":"https://openrouter.ai/api/v1/chat/completions",
+      "gemini":"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
       "groq":"https://api.groq.com/openai/v1/chat/completions"}
 KEYS={"gemini":"GEMINI_API_KEY","groq":"GROQ_API_KEY"}
 
@@ -51,6 +55,8 @@ class Router:
     def __init__(self,env=None,post=None,clock=None):
         env=os.environ if env is None else env
         self.keys={provider:env.get(name,"").strip() for provider,name in KEYS.items()}
+        self.keys["openrouter"]=(env.get("OPENROUTER_API_KEY","").strip()
+            if env.get("PURFFLE_OPENROUTER_FREE_CONFIRMED")=="1" and env.get("PURFFLE_RANKED_WRITERS")=="1" else "")
         self.local=env.get("PURFFLE_LOCAL_LLM","0")=="1"
         self.post=post
         self.clock=clock or time.monotonic
@@ -62,13 +68,21 @@ class Router:
         self.events.append({"model":model,"status":status})
         print("[TEXT MODEL]",model,status,flush=True)
 
-    def request(self,provider,model,*,messages,schema=None,max_tokens=4000,temperature=.2):
+    def request(self,provider,model,*,messages,schema=None,max_tokens=4000,temperature=.2,reasoning_effort="low"):
         import requests
         if not self.keys[provider]:
             raise ModelError(401)
         payload={"model":model,"messages":messages,"temperature":float(temperature),
                  "max_tokens":min(8192,max(64,int(max_tokens))),"stream":False}
-        if schema:
+        if provider=="openrouter":
+            if (provider,model) not in OPENROUTER_WRITERS or not schema or schema.get("properties")!={"narration":{"type":"string"}}:
+                raise ModelError(403,"writer_only_allowlist")
+            # This exact free endpoint already returned valid plain narration in the live pilot.
+            # Avoid imposing a provider-side JSON schema it may not support.
+            payload["messages"]=[*messages,{"role":"user","content":"Output only the final continuous narration as plain text. No JSON, thoughts, headings or notes."}]
+            payload["provider"]={"max_price":{"prompt":0,"completion":0,"image":0,"request":0}}
+            payload["max_tokens"]=max(4096,payload["max_tokens"])
+        elif schema:
             fmt={"name":"purffle_reply","schema":schema}
             if provider=="groq":
                 fmt["strict"]=True
@@ -77,7 +91,7 @@ class Router:
             payload["response_format"]={"type":"json_object"}
         # Low hidden reasoning helps preserve JSON output space under free TPM.
         if provider=="groq":
-            payload["reasoning_effort"]="low"
+            payload["reasoning_effort"]=reasoning_effort if model in ("openai/gpt-oss-120b","openai/gpt-oss-20b") else "low"
         sender=self.post or requests.post
         try:
             response=sender(URLS[provider],headers={"Authorization":"Bearer "+self.keys[provider],
@@ -103,6 +117,15 @@ class Router:
             content=choice["message"]["content"]
         except (ValueError,TypeError,KeyError,IndexError):
             raise ModelError(422) from None
+        if provider=="openrouter":
+            if not isinstance(content,str):
+                raise ModelError(422,"invalid_narration")
+            content=content.strip()
+            if not 50<=len(content.split())<=85 or re.search(r"<\s*/?\s*(?:thought|think|analysis|reasoning)\b|(?m:^[ \t]*(?:#{1,6}\s|[-*]\s|\d+\.\s))",content,re.I):
+                raise ModelError(422,"invalid_narration")
+            if content.startswith(("{","[")) or not content.endswith((".","!","?","”","\"")):
+                raise ModelError(422,"invalid_narration")
+            content=json.dumps({"narration":content},ensure_ascii=False)
         validate_json(content,schema)
         return content
 

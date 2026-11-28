@@ -197,6 +197,16 @@ def build_contract(scene, topic, index, *, _sentence=False):
         if relevant and re.search(pattern, primary_clause, re.I):
             chosen = (name, variants, positive, negative, keywords)
             break
+    # "Not erupting" or an extinct/dormant classification is not a visible
+    # eruption. A quiet image also cannot establish a volcano's status.
+    quiet_volcano = bool(re.search(r"volcan|vulkan", subject, re.I) and
+        re.search(r"\b(?:dormant|extinct|not erupting|not currently erupting|ruhend\w*|erloschen\w*|nicht ausbricht)\b",
+                  primary_clause, re.I))
+    if quiet_volcano:
+        chosen = ("quiet_volcanic_context", ("quiet volcanic mountain", "volcanic crater landscape"),
+                  "A quiet volcanic landscape with no active lava, ash eruption or lava fountain.",
+                  "A volcano actively erupting, throwing ash or glowing lava into the air.",
+                  ("volcanic", "volcano", "crater"))
     # For an invisible mechanism, stock footage is only an *illustration*.
     # Never insist on photons, gases inside magma or oxygen in lungs being
     # directly visible. Do not say illustrative video proves those mechanisms.
@@ -221,6 +231,8 @@ def build_contract(scene, topic, index, *, _sentence=False):
         elif family == "eruption" and subject == "volcano":
             search = ["volcano explosive eruption ash", "volcano eruption lava fountain",
                       "volcano erupting ash plume"]
+        elif family == "quiet_volcanic_context":
+            search = ["quiet volcanic mountain", "volcanic crater landscape", "volcano crater lake"]
         elif family == "breaching" and "whale" in subject:
             search = ["humpback whale breaching ocean", "whale jumping water",
                       "whale breaching splash"]
@@ -320,6 +332,8 @@ def metadata_allows(contract, provider_text):
     if not contract.get("event_required"):
         return True
     text = str(provider_text or "").casefold().replace("-", " ").replace("_", " ")
+    if contract.get("family")=="quiet_volcanic_context" and re.search(r"\b(?:erupt\w*|lava|ash plume|fountain|explosion)\b",text):
+        return False
     for group in contract.get("required_metadata_groups", []):
         if not any(re.search(r"\b" + re.escape(word) + r"\b", text) for word in group):
             return False
@@ -385,6 +399,8 @@ def visual_scores(contract, scores, *, opening=False):
                           for row, delta in zip(scores, scored))
     # Both conditions must hold in the SAME frame, not separate frames.
     passed = matching_frames >= 1
+    if contract.get("family") == "quiet_volcanic_context":
+        passed = matching_frames == len(scores)
     if composite:
         passed = passed and matching_frames >= 2
     # On scene 1 a late event cannot rescue a sky-only or dormant first
@@ -474,6 +490,12 @@ def inspect_action(path, duration, crop_focus, contract, *,
                         adjacent=_frame_at(path,next_t,crop_focus)
                         result["event_nearby_motion"]=motion_pair(frames[best],adjacent)
                         result["event_nearby_motion"]["sample_times"]=[round(t,3),round(next_t,3)]
+                        if os.environ.get("PURFFLE_ADVANCED_VISUALS")=="1":
+                            from advanced_visuals import residual_motion
+                            try:
+                                result["event_residual_motion"]=residual_motion(frames[best],adjacent)
+                            except Exception as exc:
+                                result["event_residual_motion"]={"state":"unavailable","error_type":type(exc).__name__}
                 except Exception as exc:
                     result["event_nearby_motion"]={"state":"unavailable","error_type":type(exc).__name__}
     return result

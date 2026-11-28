@@ -27,29 +27,28 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
             raise RuntimeError('MP4 has no narration audio stream')
     voice = str(metadata.get('voice', ''))
     language = str(metadata.get('language') or os.environ.get('LANGUAGE', 'en'))
-    expected_voice = {'en': 'en_US-joe-medium', 'de': 'de_DE-thorsten-medium'}.get(language)
-    if expected_voice is None or voice != 'piper:' + expected_voice:
-        raise RuntimeError('Narrator identity mismatch: fixed Piper Joe/Thorsten required')
-    if metadata.get('timing') != 'aligned':
-        raise RuntimeError('Narration lacks native sample alignment')
-    if voice.startswith('piper:'):
-        if voice_report is None or not voice_report.is_file():
-            raise RuntimeError('Local voice alignment/license report missing')
-        proof = json.loads(voice_report.read_text(encoding='utf-8'))
-        provenance = proof.get('provenance', {})
-        approved = {'en_US-joe-medium': 'CC0', 'de_DE-thorsten-medium': 'CC0-1.0'}
-        model = voice.partition(':')[2]
-        from local_voice import provenance as expected_provenance
-        lang = language
-        expected = expected_provenance(lang)
-        if (model not in approved or proof.get('state') != 'ready' or proof.get('engine') != 'piper'
-                or proof.get('voice') != model or proof.get('timing') != 'aligned'
-                or provenance.get('alignment') != 'native_phoneme_samples'
-                or provenance.get('model') != model
-                or provenance.get('license', {}).get('id') != approved[model]
-                or any(provenance.get(k) != expected[k] for k in ('model_sha256', 'model_revision', 'model_url'))
-                or provenance.get('license', {}).get('url') != expected['license']['url']):
-            raise RuntimeError('Local voice alignment/license provenance invalid')
+    from local_voice import provenance as expected_provenance
+    expected=expected_provenance(language)
+    model=expected["model"]
+    engine=expected["engine"]
+    if voice!=engine+":"+model or metadata.get("timing")!="aligned":
+        raise RuntimeError("Narrator identity or timing mismatch: locked narrator required")
+    if voice_report is None or not voice_report.is_file():
+        raise RuntimeError("Local voice alignment/license report missing")
+    proof=json.loads(voice_report.read_text(encoding="utf-8"))
+    provenance=proof.get("provenance",{})
+    if (proof.get("state")!="ready" or proof.get("engine")!=engine
+            or proof.get("voice")!=model or proof.get("timing")!="aligned"):
+        raise RuntimeError("Local narrator report invalid")
+    if engine=="kokoro":
+        from george_voice import verify_provenance
+        verify_provenance(provenance)
+    elif (provenance.get("alignment")!="native_phoneme_samples"
+          or provenance.get("model")!=model
+          or provenance.get("license",{}).get("id")!=expected["license"]["id"]
+          or provenance.get("license",{}).get("url")!=expected["license"]["url"]
+          or any(provenance.get(k)!=expected[k] for k in ("model_sha256","model_revision","model_url"))):
+        raise RuntimeError("Local voice alignment/license provenance invalid")
     if not captions.is_file() or '-->' not in captions.read_text(encoding='utf-8'):
         raise RuntimeError('Synchronized captions missing')
     report = json.loads(footage_report.read_text(encoding='utf-8'))
@@ -86,6 +85,9 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
         raise RuntimeError('insufficient_native_resolution: portrait crop upscale exceeds quality limit')
     if len({scene['sha256'] for scene in scenes}) != len(scenes):
         raise RuntimeError('Duplicate footage repeated across scenes')
+    if any(scene.get('multi_shot') is not None for scene in scenes):
+        from multi_shot_runtime import validate_final_records
+        validate_final_records(scenes)
     return info, report
 
 
@@ -162,162 +164,238 @@ def main():
                                      os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                 raise
 
+            from production_narration import enabled as creative_enabled, review_reference, rewrite_short
+            creative = creative_enabled()
+            review_evidence = review_reference(evidence, os.environ['VIDEO_TOPIC'], s.language) if creative else evidence
             stage = 'grounded_script'
             review_feedback_text = ''
             review_scene_target = None
-            for attempt in range(3):
-                # The normalizer obtains precise, source-checked facts before
-                # anybody searches for clips. A visual query can never
-                # introduce an unsourced scientific claim into the speech.
-                from visual_director import use_story_scene_target
-                from fact_checked_topics import (verified_documentary_kind,
-                                                 _lightning_repeated_topic)
-                # An existing exact-source three-scene factual variant is
-                # preferable to demanding four independent stock clips.
+            single_pass = creative and os.getenv('PURFFLE_SINGLE_PASS_NARRATION') == '1'
+            max_attempts = 2 if single_pass else 3
+            previous_screenplay = None
+            keep_indices = ()
+            story_first = single_pass and os.getenv('PURFFLE_STORY_FIRST') == '1'
+            if story_first:
+                from story_first import produce_short_story
                 topic = os.environ['VIDEO_TOPIC']
-                verified_kind = verified_documentary_kind(topic)
-                # When the approved source facts fit two short scenes, do
-                # not insist on a third unrelated filler clip. Production
-                # #89 found two genuine HD aurora clips and failed at 2/3.
-                # #91: the five scarce-footage dossiers have complete
-                # concise two-scene factual variants, not a truncated 3-shot
-                # story. Requiring a third stock clip needlessly failed 4/5
-                # of those scenes. Never shorten a topic without an approved
-                # full explanatory script.
-                concise_kinds = {
-                    "mirror_condensation", "iceberg_breakup",
-                    "whale_breaching", "lightning_thunder_delay",
-                    "ocean_glow_bioluminescence",
-                }
-                target_count = (2 if verified_kind == "northern_lights_glow"
-                                else 2 if verified_kind in concise_kinds
-                                else 3 if (verified_kind or
-                                           _lightning_repeated_topic(topic))
-                                else review_scene_target)
-                try:
-                    with (use_story_scene_target(target_count),
-                          use_evidence(evidence),
-                          use_review_feedback(review_feedback_text)):
-                        # For fixed, official-source-backed explainers,
-                        # drafting a random Groq script only to overwrite
-                        # every sentence wastes thousands of free tokens.
-                        # Unknown topics still use model drafts and strict
-                        # independent source-quote review.
-                        from official_draft import approved_dossier_draft
-                        cached_draft = approved_dossier_draft(
-                            topic, s.language, evidence,
-                            scene_count=target_count or 3)
-                        if cached_draft is not None:
-                            screenplay, pick, writer = cached_draft
-                            print('[SOURCE DOSSIER] Factual source-reviewed '
-                                  'draft; zero Groq script tokens', flush=True)
+                stage = 'story_first_narration'
+                screenplay, pick, writer = produce_short_story(
+                    topic, s.language, review_evidence, studio.llm, target)
+            else:
+                for attempt in range(max_attempts):
+                    # The normalizer obtains precise, source-checked facts before
+                    # anybody searches for clips. A visual query can never
+                    # introduce an unsourced scientific claim into the speech.
+                    from visual_director import use_story_scene_target
+                    from fact_checked_topics import (verified_documentary_kind,
+                                                     _lightning_repeated_topic)
+                    # An existing exact-source three-scene factual variant is
+                    # preferable to demanding four independent stock clips.
+                    topic = os.environ['VIDEO_TOPIC']
+                    verified_kind = verified_documentary_kind(topic)
+                    # When the approved source facts fit two short scenes, do
+                    # not insist on a third unrelated filler clip. Production
+                    # #89 found two genuine HD aurora clips and failed at 2/3.
+                    # #91: the five scarce-footage dossiers have complete
+                    # concise two-scene factual variants, not a truncated 3-shot
+                    # story. Requiring a third stock clip needlessly failed 4/5
+                    # of those scenes. Never shorten a topic without an approved
+                    # full explanatory script.
+                    concise_kinds = {
+                        "mirror_condensation", "iceberg_breakup",
+                        "whale_breaching", "lightning_thunder_delay",
+                        "ocean_glow_bioluminescence",
+                    }
+                    from editorial_pacing import enabled as pacing_enabled
+                    target_count = (4 if pacing_enabled() and verified_kind == "volcano_eruption"
+                                    else 2 if verified_kind == "northern_lights_glow"
+                                    else 2 if verified_kind in concise_kinds
+                                    else 3 if (verified_kind or
+                                               _lightning_repeated_topic(topic))
+                                    else review_scene_target)
+                    try:
+                        if single_pass and previous_screenplay is not None:
+                            screenplay = previous_screenplay
                         else:
-                            screenplay, pick, writer = studio.draft(
-                                topic, style='facts')
-                except (ValueError, TypeError) as draft_error:
-                    # The Groq JSON generator sometimes omits a mandatory
-                    # scene action/key. Never fabricate one or waive the
-                    # six-field visual schema; redraft inside the same
-                    # bounded three-attempt factual/storyboard loop.
-                    if attempt >= 2:
-                        raise
-                    logging.warning(
-                        'Structured script rejected; requesting complete '
-                        'scene fields (%s)', str(draft_error)[:180])
-                    stage = 'grounded_script'
-                    continue
-                try:
-                    from science_fact_guard import validate_unsourced_quantities
-                    validate_unsourced_quantities(
-                        screenplay, os.environ['VIDEO_TOPIC'])
-                    from retention_storyboard import audit_storyboard
-                    storyboard_audit = audit_storyboard(
-                        os.environ['VIDEO_TOPIC'], screenplay, s.language)
-                    stage = 'science_review'
-                    screen_narration(
-                        screenplay, evidence, studio.llm,
-                        path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
-                    break
-                except RuntimeError as script_error:
-                    if evidence.method == 'curated_editor_reviewed':
-                        # A mismatched predefined statement cannot be fixed
-                        # by paying the LLM to invent an alternative: fail
-                        # closed and report the dossier integrity error.
-                        raise
-                    # An unavailable/malformed reviewer is a tool failure,
-                    # not an unsupported factual claim. Another newly written
-                    # storyboard cannot fix that tool and wastes free API
-                    # quota; keep the failure honest and stop immediately.
-                    if str(script_error).startswith('science_review_unavailable:'):
-                        raise
-                    if (str(script_error).startswith(
-                            'science_claim_unverified: unsupported narration scene')):
-                        feedback_path = os.environ.get(
-                            'SCIENCE_REPORT', 'science-report.json')
-                        review_feedback_text = rejected_claim_feedback(
-                            feedback_path, screenplay)
-                        # Use fewer genuinely supported factual statements
-                        # instead of inventing four separate 'facts' when the
-                        # available references can only support two or three.
-                        # Still require a complete answer and independent
-                        # sentence-level source review on every next attempt.
-                        from science_sources import source_revision_scene_count
-                        revision_count = source_revision_scene_count(
-                            feedback_path, screenplay)
-                        if revision_count is not None:
-                            review_scene_target = revision_count
-                        # Preserve why earlier scripts failed. A later 429
-                        # overwrote science-report.json with an empty checks
-                        # list, erasing the exact unsupported scene evidence.
-                        # Keep at most two bounded same-job review snapshots
-                        # in the normal finished/<video> artifact directory.
-                        try:
-                            source_report = Path(feedback_path)
-                            if source_report.is_file():
-                                snapshot = source_report.with_name(
-                                    source_report.stem + f'-attempt-{attempt + 1}'
-                                    + source_report.suffix)
-                                snapshot.write_bytes(source_report.read_bytes())
-                        except OSError:
-                            pass  # Diagnostic archival never bypasses QA.
-                    if attempt >= 2:
-                        # The real V5 #102 proof screened two of four scenes
-                        # as true, then discarded them because the other two
-                        # contained unsourced assertions. Reuse *only* fully
-                        # approved source-checked scenes, with their original
-                        # exact narration and visual intent. Do NOT add a new
-                        # LLM science story. The new concise storyboard must
-                        # pass editorial, numerical, and independent science
-                        # review before any video can be accepted.
-                        if not str(script_error).startswith(
-                                'science_claim_unverified: unsupported narration scene'):
+                            with (use_story_scene_target(target_count),
+                                  use_evidence(evidence),
+                                  use_review_feedback(review_feedback_text)):
+                                # For fixed, official-source-backed explainers,
+                                # drafting a random Groq script only to overwrite
+                                # every sentence wastes thousands of free tokens.
+                                # Unknown topics still use model drafts and strict
+                                # independent source-quote review.
+                                from official_draft import approved_dossier_draft
+                                cached_draft = approved_dossier_draft(
+                                    topic, s.language, evidence,
+                                    scene_count=target_count or 3)
+                                if cached_draft is not None:
+                                    screenplay, pick, writer = cached_draft
+                                    print('[SOURCE DOSSIER] Factual source-reviewed '
+                                          'draft; zero Groq script tokens', flush=True)
+                                else:
+                                    screenplay, pick, writer = studio.draft(
+                                        topic, style='facts')
+                    except (ValueError, TypeError) as draft_error:
+                        # The Groq JSON generator sometimes omits a mandatory
+                        # scene action/key. Never fabricate one or waive the
+                        # six-field visual schema; redraft inside the same
+                        # bounded three-attempt factual/storyboard loop.
+                        if attempt >= max_attempts - 1:
                             raise
-                        from science_salvage import salvage_approved_narration
-                        salvaged = salvage_approved_narration(
-                            screenplay, feedback_path)
-                        if salvaged is None:
-                            raise
-                        print('[SCIENCE RECOVERY] Retain only genuinely '
-                              'source-screened narration scenes; recheck '
-                              'concise storyboard', flush=True)
-                        validate_unsourced_quantities(
-                            salvaged, os.environ['VIDEO_TOPIC'])
+                        logging.warning(
+                            'Structured script rejected; requesting complete '
+                            'scene fields (%s)', str(draft_error)[:180])
+                        stage = 'grounded_script'
+                        continue
+                    try:
+                        if creative:
+                            stage = 'creative_narration'
+                            screenplay, writer = rewrite_short(screenplay, topic, s.language, review_evidence,
+                                                               feedback=review_feedback_text, keep_indices=keep_indices)
+                        if creative:
+                            # Preserve actual generated words even when a later gate rejects the video.
+                            payload = {'topic': topic, 'language': s.language,
+                                       'narration': [str(scene.narration) for scene in screenplay.scenes],
+                                       'evidence_method': review_evidence.method,
+                                       'writer': str(writer), 'scope': 'candidate; not yet approved'}
+                            write_json(target.with_name(f'narration-attempt-{attempt+1}.json'), payload)
+                            write_json(target.with_name('narration.json'), payload)
+                        from science_fact_guard import validate_unsourced_quantities
+                        # The source-aware reviewer checks quantities in the new path;
+                        # a regex cannot decide whether a sourced number is true.
+                        if not single_pass:
+                            validate_unsourced_quantities(
+                                screenplay, os.environ['VIDEO_TOPIC'])
+                        from retention_storyboard import audit_storyboard
                         storyboard_audit = audit_storyboard(
-                            os.environ['VIDEO_TOPIC'], salvaged, s.language)
+                            os.environ['VIDEO_TOPIC'], screenplay, s.language)
                         stage = 'science_review'
+                        if os.environ.get('PURFFLE_NARRATION_ONLY') == '1' and not creative:
+                            write_json(target.with_name('narration.json'), {
+                                'topic': topic, 'language': s.language,
+                                'narration': [str(scene.narration) for scene in screenplay.scenes],
+                                'evidence_method': review_evidence.method,
+                                'scope': 'candidate; consult quality report for acceptance'})
                         screen_narration(
-                            salvaged, evidence, studio.llm,
+                            screenplay, review_evidence, studio.llm,
                             path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
-                        screenplay = salvaged
                         break
-                    logging.warning(
-                        'Source/factuality/storyboard screen rejected draft (%s); '
-                        'requesting one more source-grounded script',
-                        str(script_error)[:200])
-                    stage = 'grounded_script'
+                    except RuntimeError as script_error:
+                        if single_pass:
+                            previous_screenplay = screenplay
+                            keep_indices = ()
+                        if evidence.method == 'curated_editor_reviewed' and not creative:
+                            # A mismatched predefined statement cannot be fixed
+                            # by paying the LLM to invent an alternative: fail
+                            # closed and report the dossier integrity error.
+                            raise
+                        # An unavailable/malformed reviewer is a tool failure,
+                        # not an unsupported factual claim. Another newly written
+                        # storyboard cannot fix that tool and wastes free API
+                        # quota; keep the failure honest and stop immediately.
+                        if str(script_error).startswith('science_review_unavailable:'):
+                            raise
+                        if (str(script_error).startswith(
+                                'science_claim_unverified: unsupported narration scene')):
+                            feedback_path = os.environ.get(
+                                'SCIENCE_REPORT', 'science-report.json')
+                            review_feedback_text = rejected_claim_feedback(
+                                feedback_path, screenplay)
+                            # Use fewer genuinely supported factual statements
+                            # instead of inventing four separate 'facts' when the
+                            # available references can only support two or three.
+                            # Still require a complete answer and independent
+                            # sentence-level source review on every next attempt.
+                            from science_sources import source_revision_scene_count
+                            revision_count = source_revision_scene_count(
+                                feedback_path, screenplay)
+                            if not single_pass and revision_count is not None:
+                                review_scene_target = revision_count
+                            # Preserve why earlier scripts failed. A later 429
+                            # overwrote science-report.json with an empty checks
+                            # list, erasing the exact unsupported scene evidence.
+                            # Keep at most two bounded same-job review snapshots
+                            # in the normal finished/<video> artifact directory.
+                            try:
+                                source_report = Path(feedback_path)
+                                if source_report.is_file():
+                                    snapshot = source_report.with_name(
+                                        source_report.stem + f'-attempt-{attempt + 1}'
+                                        + source_report.suffix)
+                                    snapshot.write_bytes(source_report.read_bytes())
+                            except OSError:
+                                pass  # Diagnostic archival never bypasses QA.
+                        if str(script_error).startswith(('retention_storyboard_invalid:', 'editorial_')):
+                            # Fixed internal verdict labels, never arbitrary model instructions.
+                            review_feedback_text="EDITORIAL REVISION: Correct the failed narrative criteria: "+str(script_error)[:220]+". Keep every claim source-supported and answer the original topic."
+                        if attempt >= max_attempts - 1:
+                            if creative:
+                                raise  # Do not replace rejected creative text with a stale script.
+                            # The real V5 #102 proof screened two of four scenes
+                            # as true, then discarded them because the other two
+                            # contained unsourced assertions. Reuse *only* fully
+                            # approved source-checked scenes, with their original
+                            # exact narration and visual intent. Do NOT add a new
+                            # LLM science story. The new concise storyboard must
+                            # pass editorial, numerical, and independent science
+                            # review before any video can be accepted.
+                            if not str(script_error).startswith(
+                                    'science_claim_unverified: unsupported narration scene'):
+                                raise
+                            from science_salvage import salvage_approved_narration
+                            salvaged = salvage_approved_narration(
+                                screenplay, feedback_path)
+                            if salvaged is None:
+                                raise
+                            print('[SCIENCE RECOVERY] Retain only genuinely '
+                                  'source-screened narration scenes; recheck '
+                                  'concise storyboard', flush=True)
+                            validate_unsourced_quantities(
+                                salvaged, os.environ['VIDEO_TOPIC'])
+                            storyboard_audit = audit_storyboard(
+                                os.environ['VIDEO_TOPIC'], salvaged, s.language)
+                            stage = 'science_review'
+                            screen_narration(
+                                salvaged, review_evidence, studio.llm,
+                                path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
+                            screenplay = salvaged
+                            break
+                        logging.warning(
+                            'Source/factuality/storyboard screen rejected draft (%s); '
+                            'requesting one more source-grounded script',
+                            str(script_error)[:200])
+                        stage = 'grounded_script'
 
             from short_recovery import save_reviewed_script
             save_reviewed_script(screenplay, s.language, os.environ['VIDEO_TOPIC'])
+            # Audit only: production writer and factual gates, no footage, voice or video.
+            if os.environ.get('PURFFLE_NARRATION_ONLY') == '1':
+                stage = 'narration_only_editorial_review'
+                if os.environ.get('PURFFLE_EDITORIAL_ANSWER_GATE') != '1' or os.environ.get('PURFFLE_EDITORIAL_STANDARD') != '1':
+                    raise RuntimeError('Narration audit requires both editorial gates')
+                from editorial_standard import audit_structure
+                texts = [str(scene.narration) for scene in screenplay.scenes]
+                if not story_first:
+                    write_json(target.with_name('narration.json'), {
+                        'topic': os.environ['VIDEO_TOPIC'], 'language': s.language,
+                        'narration': texts, 'evidence_method': review_evidence.method,
+                        'writer': str(writer), 'scope': 'accepted narration'})
+                structure = audit_structure(texts, s.language, mode='short', advisory=single_pass)
+                # Curated factual dossiers skip ordinary model editorial review.
+                # Judge their actual spoken words independently in this audit.
+                report = json.loads(Path(os.environ.get('SCIENCE_REPORT', 'science-report.json')).read_text())
+                editorial = report.get('topic_review') or {}
+                if editorial.get('state') != 'model_screened_topic_answer':
+                    from science_sources import review_topic_answer
+                    editorial = review_topic_answer(screenplay, review_evidence, studio.llm)
+                write_json(target.with_name('narration-quality.json'), {
+                    'structure': structure, 'editorial': editorial,
+                    'scope': 'script only; no audio, footage or audience metrics'})
+                result.update(status='narration_reviewed', stage='narration_only_complete',
+                              test_result='validated_narration_only')
+                return 0
+
             stage = 'visual_director_preflight'
             # Script comes first, so the required real-video count is exactly
             # the number of actual factual sentences. No empty/duplicated
@@ -393,46 +471,61 @@ def main():
                 if repaired is not None:
                     screenplay = repaired
                 else:
+                    if creative:
+                        raise  # Visual recovery must not silently replace reviewed creative speech.
                     # An approved fixed-science dossier must not be rewritten
                     # with untrusted model claims merely to obtain footage.
                     # Subject/license/CLIP gates still fail closed.
                     if evidence.method == 'curated_editor_reviewed':
-                        raise
-                    print('[FOOTAGE RECOVERY] One source-grounded storyboard '
-                          'revision after failed visual preflight', flush=True)
-                    stage = 'grounded_visual_replan'
-                    with (use_story_scene_target(script_scene_count),
-                          use_evidence(evidence), use_footage_feedback(feedback)):
-                        alternative, alt_pick, alt_writer = studio.draft(
-                            os.environ['VIDEO_TOPIC'], style='facts')
-                    if len(alternative.scenes) != script_scene_count:
-                        raise RuntimeError(
-                            'visual_replan_scene_count_mismatch')
-                    if all(
-                        str(a.visual_search_query).casefold() ==
-                        str(b.visual_search_query).casefold()
-                        for a, b in zip(alternative.scenes, screenplay.scenes)
-                    ):
-                        raise RuntimeError(
-                            'visual_replan_repeated_unavailable_queries')
-                    # A new factual script still needs independent source
-                    # screening. Visual-only repair above never changes speech.
-                    validate_unsourced_quantities(
-                        alternative, os.environ['VIDEO_TOPIC'])
-                    storyboard_audit = audit_storyboard(
-                        os.environ['VIDEO_TOPIC'], alternative, s.language)
-                    stage = 'science_review'
-                    screen_narration(
-                        alternative, evidence, studio.llm,
-                        path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
-                    save_reviewed_script(alternative, s.language, os.environ['VIDEO_TOPIC'])
-                    stage = 'visual_director_preflight'
-                    palette = prepare_verified_palette(
-                        os.environ['VIDEO_TOPIC'], s, storyboard=alternative,
-                        min_scenes=script_scene_count,
-                        max_scenes=script_scene_count,
-                        clip_seconds=10.0)
-                    screenplay, pick, writer = alternative, alt_pick, alt_writer
+                        if not (pacing_enabled() and verified_kind=="volcano_eruption" and script_scene_count==4):
+                            raise
+                        # Fall back to the already proven three-scene exact
+                        # dossier rather than weakening any footage gate.
+                        print("[EDITORIAL PACING] Four-shot plan unavailable; try complete three-shot dossier",flush=True)
+                        from official_draft import approved_dossier_draft
+                        screenplay,pick,writer=approved_dossier_draft(topic,s.language,evidence,scene_count=3)
+                        script_scene_count=3
+                        validate_unsourced_quantities(screenplay,topic)
+                        storyboard_audit=audit_storyboard(topic,screenplay,s.language)
+                        screen_narration(screenplay,review_evidence,studio.llm,path=os.environ.get('SCIENCE_REPORT','science-report.json'))
+                        save_reviewed_script(screenplay,s.language,topic)
+                        palette=prepare_verified_palette(topic,s,storyboard=screenplay,min_scenes=3,max_scenes=3,clip_seconds=10.0)
+                    else:
+                        print('[FOOTAGE RECOVERY] One source-grounded storyboard '
+                              'revision after failed visual preflight', flush=True)
+                        stage = 'grounded_visual_replan'
+                        with (use_story_scene_target(script_scene_count),
+                              use_evidence(evidence), use_footage_feedback(feedback)):
+                            alternative, alt_pick, alt_writer = studio.draft(
+                                os.environ['VIDEO_TOPIC'], style='facts')
+                        if len(alternative.scenes) != script_scene_count:
+                            raise RuntimeError(
+                                'visual_replan_scene_count_mismatch')
+                        if all(
+                            str(a.visual_search_query).casefold() ==
+                            str(b.visual_search_query).casefold()
+                            for a, b in zip(alternative.scenes, screenplay.scenes)
+                        ):
+                            raise RuntimeError(
+                                'visual_replan_repeated_unavailable_queries')
+                        # A new factual script still needs independent source
+                        # screening. Visual-only repair above never changes speech.
+                        validate_unsourced_quantities(
+                            alternative, os.environ['VIDEO_TOPIC'])
+                        storyboard_audit = audit_storyboard(
+                            os.environ['VIDEO_TOPIC'], alternative, s.language)
+                        stage = 'science_review'
+                        screen_narration(
+                            alternative, review_evidence, studio.llm,
+                            path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
+                        save_reviewed_script(alternative, s.language, os.environ['VIDEO_TOPIC'])
+                        stage = 'visual_director_preflight'
+                        palette = prepare_verified_palette(
+                            os.environ['VIDEO_TOPIC'], s, storyboard=alternative,
+                            min_scenes=script_scene_count,
+                            max_scenes=script_scene_count,
+                            clip_seconds=10.0)
+                        screenplay, pick, writer = alternative, alt_pick, alt_writer
             validate_narration_timing(palette, screenplay, s.language)
             from retention_storyboard import choose_duration_seconds, save_storyboard_report
             fact_count = len(getattr(evidence, 'sources', []) or [])
@@ -460,6 +553,9 @@ def main():
                                   media_map=palette.media_map,
                                   credits=palette.credits)
         else:
+            from production_narration import enabled as creative_enabled
+            if creative_enabled():
+                raise RuntimeError('Creative narration requires the source-reviewed production path')
             made = studio.make(os.environ['VIDEO_TOPIC'], upload=False)
         if not made.ok or not made.video:
             raise RuntimeError(made.error or made.status or 'Upstream production failed')
@@ -493,6 +589,19 @@ def main():
             expected_size=(s.width, s.height),
             expected_duration=float(voice_data['duration']) + END_PAD,
             expected_text=expected_text)
+        from retention_storyboard import validate_short_duration
+        validate_short_duration(full_qa['duration'],
+            storyboard_audit.get('planned_duration_seconds') if os.environ.get('PURFFLE_MEDIA_FIRST','1')=='1' else None)
+        from editorial_standard import enabled,final_timing
+        if enabled():
+            full_qa["editorial_timing"]=final_timing(folder/"captions.srt",full_qa["duration"],mode="short")
+        from editorial_pacing import enabled as pacing_enabled,pacing_report
+        if pacing_enabled() and os.environ.get('PURFFLE_MEDIA_FIRST','1')=='1':
+            lengths=[item.extra.get("editorial_segment_seconds") for item in palette.items]
+            if lengths and all(v is not None for v in lengths):
+                full_qa["editorial_pacing"]=pacing_report(lengths)
+            else:
+                full_qa["editorial_pacing"]={"state":"segment_measurement_unavailable"}
         write_json(target.with_name('output-qa.json'), full_qa)
         result.update(status='ok', stage='complete', mp4=str(video), output_probe=info,
                       footage_report=os.environ['FOOTAGE_REPORT'],
@@ -503,8 +612,8 @@ def main():
                           'RETENTION_REPORT', str(target.with_name('retention-report.json')))
                           if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1' else None,
                       science_report=os.environ.get('SCIENCE_REPORT', 'science-report.json'),
-                      science_screening=evidence.method if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1' else 'legacy_unreviewed',
-                      test_result='validated_output', sources=sorted({x['source'] for x in footage['scenes']}))
+                      science_screening=review_evidence.method if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1' else 'legacy_unreviewed',
+                      test_result='validated_output', sources=sorted({s['source'] for x in footage['scenes'] for s in (x.get('multi_shot',{}).get('shots') or [x])}))
     except Exception as exc:
         logging.exception('Video production failed')
         result.update(error=str(exc), exception_type=type(exc).__name__, stage=stage)

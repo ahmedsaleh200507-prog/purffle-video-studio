@@ -1,0 +1,47 @@
+name: Two bilingual Shorts proof with Pixabay and multi-shot
+on:
+  push:
+    branches: [chatgpt/yellow-system-fixes]
+    paths: ['.github/workflows/pixabay-multishot-shorts-proof.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: purffle-eight-free-shorts-proof
+  cancel-in-progress: false
+jobs:
+  preflight:
+    if: github.repository == 'ahmedsaleh200507-prog/purffle-video-studio' && github.ref == 'refs/heads/chatgpt/yellow-system-fixes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: scripts
+      GEMINI_FREE: ${{ vars.PURFFLE_GEMINI_FREE_CONFIRMED }}
+      GROQ_FREE: ${{ vars.PURFFLE_GROQ_FREE_CONFIRMED }}
+      OPENROUTER_FREE: ${{ vars.PURFFLE_OPENROUTER_FREE_CONFIRMED }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require owner-confirmed free accounts
+        run: |
+          test "$GEMINI_FREE" = 1 && test "$GROQ_FREE" = 1 && test "$OPENROUTER_FREE" = 1
+      - run: pip install 'pytest>=8,<10' 'Pillow>=10,<14' requests 'jsonschema>=4.20,<5' 'PyYAML>=6,<7'
+      - run: python -m compileall -q scripts
+      - run: python -m pytest -q tests/test_root_production.py tests/test_science_salvage.py tests/test_science_sources.py tests/test_long_generic.py tests/test_long_batch_slot.py tests/test_long_script.py tests/test_long_video_pipeline.py tests/test_aggregate_results.py tests/test_ranked_free_writers.py tests/test_multi_shot.py tests/test_multi_shot_runtime.py tests/test_free_stock_probe.py tests/test_pixel_first_policy.py tests/test_empty_footage_batches.py tests/test_v4_footage_search.py
+  stock_verification:
+    needs: preflight
+    uses: ./.github/workflows/free-stock-proof.yml
+    secrets: inherit
+  production:
+    needs: [preflight, stock_verification]
+    uses: ./.github/workflows/videos.yml
+    with:
+      free_canary: true
+      pixel_first: false
+      multi_shot: true
+      single_pass_narration: true
+      video_1: 'en|Why Do Volcanoes Erupt?'
+      video_2: 'de|Warum brechen Vulkane aus?'
+    secrets: inherit

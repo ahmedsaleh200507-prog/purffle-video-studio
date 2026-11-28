@@ -120,7 +120,12 @@ def candidates(path,registry,spec,queries,need,allowed_sources):
         except (ValueError,TypeError,KeyError):
             continue
     output=[]
-    for _,r in sorted(rows,key=lambda v:(-v[0],-v[1]["saved_at"]))[:3]:
+    ordered=sorted(rows,key=lambda v:(-v[0],-v[1]["saved_at"]))
+    from advanced_visuals import rank_library
+    rank=rank_library([r for _,r in ordered],spec.visual_search_query)
+    if rank is not None:
+        ordered=[ordered[i] for i,_ in rank]
+    for _,r in ordered[:3]:
         item=registry._item(r["source"],r["id"],r["url"],spec.visual_search_query,0,
                             r["text"],r["license"],r["width"],r["height"],r["duration"])
         if item is not None:

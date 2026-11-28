@@ -12,12 +12,16 @@ def save_reviewed_script(screenplay,language,topic,destination=None):
     if not dest:
         return
     from production_checkpoint import write
+    from editorial_standard import ANSWER_GATE_VERSION
+    from production_narration import enabled as creative_enabled, VERSION as CREATIVE_VERSION
     scenes=[]
     for scene in screenplay.scenes:
         plan={k:str(getattr(scene,k,"") or "") for k in
               ("main_character","object","action","location","time","visual_search_query")}
         scenes.append({**plan,"narration":str(scene.narration),"visual_subject":plan["object"]})
-    write(Path(dest),{"topic":topic,"language":language,"scenes":scenes,"reviewed":True})
+    write(Path(dest),{"topic":topic,"language":language,"scenes":scenes,"reviewed":True,
+                      "creative_version":CREATIVE_VERSION if creative_enabled() else None,
+                      "answer_gate_version":ANSWER_GATE_VERSION if os.environ.get("PURFFLE_EDITORIAL_ANSWER_GATE")=="1" else 0})
 
 def recover_approved_dossier(topic,language,target):
     """Zero text API calls for exact, previously source-reviewed subjects only."""
@@ -32,7 +36,7 @@ def recover_approved_dossier(topic,language,target):
     evidence=discover_evidence(topic,language)
     if evidence.method!="curated_editor_reviewed":
         raise RuntimeError("No official fixed offline dossier")
-    count=2 if kind in {"mirror_condensation","iceberg_breakup","whale_breaching",
+    count=4 if kind=="volcano_eruption" else 2 if kind in {"mirror_condensation","iceberg_breakup","whale_breaching",
                           "lightning_thunder_delay","ocean_glow_bioluminescence",
                           "northern_lights_glow"} else 3
     draft=approved_dossier_draft(topic,language,evidence,scene_count=count)
@@ -87,12 +91,25 @@ def _recover_short(topic,language,target):
     from geography_policy import scene_requirement,require_geography
     from output_qa import validate_timeline
     target=Path(target).resolve()
-    if not (target/"reviewed-script.json").is_file():
+    from fact_checked_topics import verified_documentary_kind
+    from production_narration import enabled as creative_enabled, VERSION as CREATIVE_VERSION
+    if creative_enabled():
+        if not (target/"reviewed-script.json").is_file():
+            raise RuntimeError("No reviewed creative narration available for recovery")
+    elif verified_documentary_kind(topic) or not (target/"reviewed-script.json").is_file():
         recover_approved_dossier(topic,language,target)
     data=json.loads((target/"reviewed-script.json").read_text(encoding="utf8"))
     if (data.get("reviewed") is not True or data.get("topic")!=topic
             or data.get("language")!=language or not 2<=len(data.get("scenes",[]))<=6):
         raise RuntimeError("No matching source-reviewed narration available")
+    if creative_enabled() and data.get("creative_version")!=CREATIVE_VERSION:
+        raise RuntimeError("Recovery narration predates creative writer")
+    if os.environ.get("PURFFLE_EDITORIAL_ANSWER_GATE")=="1":
+        from editorial_standard import ANSWER_GATE_VERSION
+        if data.get("answer_gate_version")!=ANSWER_GATE_VERSION:
+            raise RuntimeError("Recovery script predates exact-question editorial check")
+        from retention_storyboard import audit_storyboard
+        audit_storyboard(topic,None,language,scenes=data["scenes"])
     try:
         previous=json.loads((target/"footage-report.json").read_text(encoding="utf8"))
     except (OSError,ValueError):
@@ -126,6 +143,8 @@ def _recover_short(topic,language,target):
         if not scene["visual_subject"] or not scene["visual_search_query"]:
             raise RuntimeError("Reviewed script has no concrete scene subject")
         speech=synthesize(scene["narration"],work/f"voice-{i}",SimpleNamespace(language=language))
+        from studio_runtime import _validate_free_speech
+        _validate_free_speech(speech,provenance(language)["engine"],language)
         duration=float(speech.duration)
         real_word_captions(speech,offset)  # independently validate native word timing
         caption_words.extend(Word(w.text,offset+float(w.start),offset+float(w.end)) for w in speech.words)
@@ -173,6 +192,8 @@ def _recover_short(topic,language,target):
                 match=matcher.match(candidate,spec,metadata=source_metadata,duration=duration)
                 chosen_focus=float(row.get("match",{}).get("crop_focus_x",.5))
                 frames=_first_frames(candidate,focus=chosen_focus,seconds=(.15,duration*.45,max(.2,duration*.85)))
+                from source_overlay import check_source
+                check_source(candidate,duration,chosen_focus)
                 verify_crop_subject(frames,spec,matcher)
                 verify_visible_event_or_illustrative_subject(candidate,duration,chosen_focus,contract,match,scorer=matcher._similarities,opening=i==1)
                 chosen=candidate
@@ -273,6 +294,13 @@ def _recover_short(topic,language,target):
     try:
         qa=validate_timeline(out,captions,expected_size=(1080,1920),expected_duration=offset,
                              expected_text=" ".join(scene["narration"] for scene in data["scenes"]))
+        from retention_storyboard import validate_short_duration
+        validate_short_duration(qa["duration"])
+        from editorial_standard import enabled,final_timing
+        if enabled():
+            from shorts_final_qa import audit_rendered_opening
+            qa["editorial_timing"]=final_timing(captions,qa["duration"],mode="short")
+            qa["final_opening_qa"]=audit_rendered_opening(out)
     except Exception:
         out.unlink(missing_ok=True)
         raise
@@ -287,7 +315,7 @@ def _recover_short(topic,language,target):
             "quality_mode":("reviewed_narration_with_graphic_fallback" if any(c.get("media_type")=="illustration" for c in credits)
                             else "verified_mixed_media_review" if mix["target_met"] else "photo_heavy_or_low_video_share_review"),
             "graphic_uses":sum(c.get("media_type")=="illustration" for c in credits),
-            "media_mix":mix,"narrator_mode":"piper:"+provenance(language)["model"],
+            "media_mix":mix,"narrator_mode":provenance(language)["engine"]+":"+provenance(language)["model"],
             "photo_uses":sum(c.get("media_type")=="photo" for c in credits),
             "video_uses":sum(c.get("media_type")=="video" for c in credits),
             "error":"Mixed-media fallback; review before publication"}

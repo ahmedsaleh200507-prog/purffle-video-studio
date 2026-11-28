@@ -709,10 +709,15 @@ class SceneMatcher:
             scale = self._model.logit_scale.exp()
             return (output.logits_per_image / scale).cpu().tolist()
 
-    def match(self, path: Path, spec: SceneSpec, metadata="", *, duration=None) -> dict:
+    def match(self, path: Path, spec: SceneSpec, metadata="", *, duration=None, allow_sparse_metadata=False) -> dict:
         if not isinstance(spec, SceneSpec):
             spec = SceneSpec.from_dict(spec)
-        metadata_score = self.validate_metadata(spec, metadata)
+        metadata_state="validated"
+        if allow_sparse_metadata:
+            from pixel_first_policy import metadata_rank
+            metadata_score,metadata_state=metadata_rank(self,spec,metadata)
+        else:
+            metadata_score = self.validate_metadata(spec, metadata)
         if duration is None:
             duration = float(json.loads(_run(["ffprobe", "-v", "error", *_INPUT_GUARDS, "-show_entries", "format=duration", "-of", "json", str(path)]))["format"]["duration"])
         frames = [_frame(path, max(0, min(float(duration) - .15, t)), 448, preserve_aspect=True)
@@ -772,11 +777,14 @@ class SceneMatcher:
         best = max(range(3), key=lambda i: crop_scores[i][0])
         from visual_language_review import observe as observe_vlm
         try:
-            vlm_review = observe_vlm(frames, spec.object, spec.visual_search_query)
+            if os.environ.get("PURFFLE_ADVANCED_VISUALS")=="1" and os.environ.get("PURFFLE_SMART_CROP")=="1":
+                vlm_review={"state":"deferred_to_actual_crop"}
+            else:
+                vlm_review = observe_vlm(frames, spec.object, spec.visual_search_query)
         except Exception as exc:
             vlm_review = {"state":"unavailable","error_type":type(exc).__name__}
         return {"visual_language_review": vlm_review,
-                "metadata_score": round(metadata_score, 4), "visual_score": round(visual_score, 4),
+                "metadata_state":metadata_state,"metadata_score": round(metadata_score, 4), "visual_score": round(visual_score, 4),
                 "object_score": round(object_score, 4), "visual_margin": round(visual_margin, 4),
                 "threshold": self.threshold, "model": os.environ.get("PURFFLE_CLIP_MODEL", "openai/clip-vit-base-patch32"),
                 "sample_scores": positive_scores, "crop_focus_x": centers[best],

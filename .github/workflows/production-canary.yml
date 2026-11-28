@@ -1,0 +1,21 @@
+name: Bilingual real Shorts canary
+# Revision 5: George PCM ASR bypasses incompatible PyAV; fixed source-reviewed recovery scene count.
+on:
+  push:
+    branches: [chatgpt/yellow-system-fixes]
+    paths:
+      - '.github/workflows/production-canary.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: purffle-bilingual-production-canary
+  cancel-in-progress: false
+jobs:
+  production:
+    if: github.repository == 'ahmedsaleh200507-prog/purffle-video-studio' && github.ref == 'refs/heads/chatgpt/yellow-system-fixes'
+    uses: ./.github/workflows/videos.yml
+    with:
+      video_1: 'en|Why Do Volcanoes Erupt?'
+      video_2: 'de|Warum leuchten Polarlichter?'
+    secrets: inherit

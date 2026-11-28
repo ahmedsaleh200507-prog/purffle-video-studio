@@ -29,7 +29,8 @@ def test_only_audited_free_models_are_available():
     assert de['alignment'] == 'native_phoneme_samples'
     assert len(de['model_sha256']) == 64
     assert local_voice.REVISION in de['model_url']
-    assert local_voice.provenance('en')['model'] == 'en_US-joe-medium'
+    assert local_voice.provenance('en')['model'] == 'bm_george'
+    assert local_voice._piper_provenance('en')['model'] == 'en_US-joe-medium'
     with pytest.raises(RuntimeError, match='only de/en'):
         local_voice.provenance('fr')
     de['license']['id'] = 'changed'
@@ -66,7 +67,7 @@ def test_unknown_phoneme_is_rejected_instead_of_dropped():
 
 def test_nonempty_native_speech_has_exact_caption_words(tmp_path, monkeypatch):
     monkeypatch.setattr(local_voice, '_load_voice', lambda lang: fake_voice())
-    speech = local_voice.synthesize('Fish 100 swim.', tmp_path, SimpleNamespace(language='de'))
+    speech = local_voice._synthesize_piper('Fish 100 swim.', tmp_path, SimpleNamespace(language='de'))
     assert speech.engine == 'piper' and speech.timing == 'aligned'
     assert [w.text for w in speech.words] == ['Fish', '100', 'swim.']
     assert speech.words[-1].end < speech.duration
@@ -80,7 +81,7 @@ def test_nonempty_native_speech_has_exact_caption_words(tmp_path, monkeypatch):
 def test_no_alignment_or_silent_audio_never_returns_success(tmp_path, monkeypatch, voice, reason):
     monkeypatch.setattr(local_voice, '_load_voice', lambda lang: voice)
     with pytest.raises(RuntimeError, match=reason):
-        local_voice.synthesize('Fish swim.', tmp_path, SimpleNamespace(language='de'))
+        local_voice._synthesize_piper('Fish swim.', tmp_path, SimpleNamespace(language='de'))
     assert not (tmp_path / 'voice-piper.wav').exists()
     assert not (tmp_path / 'voice-piper.wav.part').exists()
 
@@ -93,3 +94,78 @@ def test_corrupted_cached_model_is_not_loaded(tmp_path):
         with pytest.raises(OSError):
             local_voice._download('https://huggingface.co/test', file, 'f'*64, 3)
     assert not list(tmp_path.glob('*.part'))
+
+
+def test_sentence_groups_dont_cut_at_arbitrary_24_words():
+    tokens=["word"]*29+["end."]+["Next","sentence."]
+    assert [len(g) for g in local_voice._sentence_groups(tokens)]==[30,2]
+
+def test_context_uses_sentence_phonemes_and_keeps_native_ranges():
+    voice=fake_voice()
+    original=voice.phonemize
+    voice.phonemize=lambda text: [list("fash swim.")] if text=="fish swim." else original(text)
+    ids,spans=local_voice._context_ids(voice,["fish","swim."])
+    assert ids!=local_voice._token_ids(voice,["fish","swim."])[0]
+    intervals=local_voice._word_samples([100]*len(ids),ids,spans,len(ids)*100)
+    assert len(intervals)==2 and intervals[0][1]<intervals[1][0]
+
+def test_context_ambiguous_expansion_is_not_guessed():
+    voice=fake_voice()
+    original=voice.phonemize
+    voice.phonemize=lambda text: [list("fish one hundred swim.")] if text=="fish 100 swim." else original(text)
+    ids,spans=local_voice._context_ids(voice,["fish","100","swim."])
+    assert len(spans)==3
+    voice.phonemize=lambda text: [list("fish hundred swim.")] if text=="fish 100 swim." else original(text)
+    with pytest.raises(ValueError,match="ambiguous contextual word grouping"):
+        local_voice._context_ids(voice,["fish","100","swim."])
+
+def test_natural_voice_reports_real_alignment_and_single_gain(tmp_path,monkeypatch):
+    monkeypatch.setenv("PURFFLE_NATURAL_VOICE","1")
+    monkeypatch.setattr(local_voice,"_load_voice",lambda lang:fake_voice())
+    speech=local_voice._synthesize_piper("Fish swim. Birds fly.",tmp_path,SimpleNamespace(language="en"))
+    assert [w.text for w in speech.words]==["Fish","swim.","Birds","fly."]
+    assert speech.provenance["contextual_sentences"]==2
+    assert speech.provenance["isolated_pronunciation_fallback_sentences"]==0
+    assert speech.provenance["normalization"]=="one_gain_full_narration"
+    assert speech.provenance["audio_samples"]==round(speech.duration*22050)
+
+
+def test_weak_english_articles_keep_actual_context_phonemes():
+    voice=fake_voice()
+    voice.config.phoneme_id_map.update({c:[100+i] for i,c in enumerate("eɪɐænðəˈ")})
+    utterances={"A":"ˈeɪ","an":"ˈæn","the":"ðˈə","A an the":"ɐ ɐn ðə"}
+    voice.phonemize=lambda text:[list(utterances[text])]
+    ids,spans=local_voice._context_ids(voice,["A","an","the"])
+    assert len(spans)==3
+    assert voice.config.phoneme_id_map["ɐ"][0] in ids
+    assert voice.config.phoneme_id_map["æ"][0] not in ids
+
+def test_multi_clause_context_preserves_punctuation_and_word_order():
+    voice=fake_voice()
+    voice.config.phoneme_id_map[","]=[200]
+    original=voice.phonemize
+    voice.phonemize=lambda text: [list("fish ,"),list("birds fly.")] if text=="fish, birds fly." else original(text)
+    ids,spans=local_voice._context_ids(voice,["fish,","birds","fly."])
+    assert len(spans)==3 and 200 in ids
+    assert spans[0][1]<spans[1][0]
+
+def test_unrelated_context_never_silently_reverts_to_isolated_words(tmp_path,monkeypatch):
+    voice=fake_voice()
+    original=voice.phonemize
+    voice.phonemize=lambda text:[list("wrong word.")] if text=="Fish swim." else original(text)
+    monkeypatch.setattr(local_voice,"_load_voice",lambda lang:voice)
+    monkeypatch.setenv("PURFFLE_NATURAL_VOICE","1")
+    with pytest.raises(RuntimeError,match="natural_voice_alignment_unverified"):
+        local_voice._synthesize_piper("Fish swim.",tmp_path,SimpleNamespace(language="en"))
+    assert not (tmp_path/"voice-piper.wav").exists()
+
+def test_quiet_margin_trim_never_touches_word_samples():
+    audio=np.zeros(2000,dtype=np.float32)
+    audio[500:1500]=.5
+    trimmed,timings,removed=local_voice._trim_quiet_margins(audio,[(500,1500)],1000)
+    assert removed==740 and len(trimmed)==1260
+    assert timings==[(100,1100)]
+    assert np.array_equal(trimmed[100:1100],audio[500:1500])
+    audio[0:50]=.5
+    trimmed,timings,removed=local_voice._trim_quiet_margins(audio,[(500,1500)],1000)
+    assert removed==340 and timings==[(500,1500)]

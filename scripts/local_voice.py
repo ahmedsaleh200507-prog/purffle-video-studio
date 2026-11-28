@@ -1,9 +1,8 @@
 """Free local English/German neural speech with native, measured phoneme word timings.
 
-Only the audited Joe and Thorsten Piper voices may be loaded. Tokens
-are phonemized individually, then synthesized together, so original caption
-words (including expanded numbers) retain exact phoneme-ID ranges. Timing comes
-from the model's native sample counts; unsupported alignment fails explicitly.
+Only the audited Joe and Thorsten Piper voices may be loaded. Contextual
+sentence phonemization is preferred when original caption token boundaries
+can be mapped safely. Timing comes from measured model sample counts.
 """
 from __future__ import annotations
 
@@ -56,7 +55,18 @@ def _voice_key(language):
     return language
 
 
+def george_enabled(language):
+    return language=="en"  # Approved identity is not an optional environment switch.
+
 def provenance(language):
+    if george_enabled(language):
+        from george_voice import provenance as george_provenance
+        return george_provenance()
+    return _piper_provenance(language)
+
+
+def _piper_provenance(language):
+    """Historical Piper audit only; English production never calls this."""
     key = _voice_key(language)
     if key not in VOICES:
         raise RuntimeError('Local narration supports only de/en')
@@ -173,7 +183,7 @@ def _download_verified_sidecar(url, target, *, model, role):
 
 
 def _voice_files(language):
-    info = provenance(language)
+    info = _piper_provenance(language)
     voice = VOICES[_voice_key(language)]
     root = (Path(os.environ.get('PURFFLE_PIPER_CACHE', '.cache/piper'))
             / info['model_revision'])
@@ -238,6 +248,145 @@ def _token_ids(voice, tokens):
     return ids, spans
 
 
+VOICE_FLOW_VERSION="sentence_context_v2"
+
+def flow_enabled():
+    return os.getenv("PURFFLE_NATURAL_VOICE")=="1"
+
+def _sentence_groups(tokens,limit=60):
+    """Keep sentence boundaries; split an exceptionally long sentence at a clause."""
+    pending=[]
+    for token in tokens:
+        pending.append(token)
+        if token.rstrip("\"”’')]").endswith((".", "!", "?")):
+            yield pending
+            pending=[]
+        elif len(pending)>=limit:
+            cuts=[i+1 for i,t in enumerate(pending) if i>=limit//2 and t.endswith((",", ";", ":"))]
+            cut=cuts[-1] if cuts else limit
+            yield pending[:cut]
+            pending=pending[cut:]
+    if pending:
+        yield pending
+
+def _context_phonemes(voice,text):
+    """eSpeak may return multiple comma/semicolon clauses for one sentence."""
+    result=[]
+    for clause in voice.phonemize(text):
+        clause=list(clause)
+        if not clause:
+            continue
+        if result and result[-1]!=" " and clause[0]!=" ":
+            result.append(" ")
+        result.extend(clause)
+    return result
+
+# Punctuation and stress remain in the actual synthesized sequence. They
+# are ignored only when comparing the spelling of a contextual word.
+_COMPARE_IGNORED=set("ˈˌ.,!?;:…—–\"'“”‘’()[]")
+_WEAK_EN={
+    "a":{"eɪ","ə","ɐ","a"},
+    "an":{"æn","ən","ɐn"},
+    "the":{"ðə","ði","ðiː","ðɪ","ðɐ"},
+    "to":{"tu","tuː","tə","tʊ","tɐ"},
+    "of":{"ʌv","əv","ɒv","ɑv","ɐv","ə"},
+    "and":{"ænd","ənd","ɐnd","ən","n"},
+    "can":{"kæn","kən","kɐn"},
+    "than":{"ðæn","ðən","ðɐn"},
+    "for":{"fɔɹ","fɔːɹ","fɚ","fəɹ","fɔr","fər","fɔː"},
+    "you":{"ju","juː","jə","jʊ"},
+    "your":{"jɔɹ","jɔːɹ","jɚ","jʊɹ","jəɹ"},
+    "are":{"ɑɹ","ɑːɹ","ɚ","əɹ"},
+    "was":{"wʌz","wɒz","wəz","wɐz"},
+    "at":{"æt","ət","ɐt"},
+    "as":{"æz","əz","ɐz"},
+    "that":{"ðæt","ðət","ðɐt"},
+    "from":{"fɹʌm","fɹəm","fɹɒm","fɹɐm"},
+    "it":{"ɪt","ɪɾ","ɪʔ"},
+}
+
+def _comparison(groups):
+    return "".join(p for g in groups for p in g if p not in _COMPARE_IGNORED)
+
+def _group_positions(phonemes):
+    """Only audible lexical groups count; standalone punctuation belongs
+    to the previous group. Preserve actual positions in the unmodified stream."""
+    ranges=[]
+    start=None
+    for i,p in enumerate([*phonemes," "]):
+        if p!=" " and start is None:
+            start=i
+        elif p==" " and start is not None:
+            if _comparison([phonemes[start:i]]):
+                ranges.append((start,i))
+            elif ranges:
+                ranges[-1]=(ranges[-1][0],i)
+            start=None
+    return ranges
+
+def _context_ids(voice,tokens):
+    """Map real contextual phonemes to original tokens without guessed times.
+
+    Clause boundaries, punctuation, and documented English weak forms are
+    handled explicitly. Unknown or ambiguous word mappings still fail.
+    """
+    from difflib import SequenceMatcher
+    phonemes=_context_phonemes(voice," ".join(tokens))
+    positions=_group_positions(phonemes)
+    groups=[phonemes[a:b] for a,b in positions]
+    expected=[]
+    for token in tokens:
+        local=_context_phonemes(voice,token)
+        expected.append([local[a:b] for a,b in _group_positions(local)])
+    if any(not g for g in expected) or sum(map(len,expected))!=len(groups):
+        raise ValueError("ambiguous contextual word grouping")
+    mapping=voice.config.phoneme_id_map
+    ids=list(mapping["^"])+list(mapping["_"])
+    bounds=[len(ids)]
+    for p in phonemes:
+        if p not in mapping or not mapping[p]:
+            raise ValueError("context phoneme unavailable")
+        ids.extend(mapping[p]); ids.extend(mapping["_"])
+        bounds.append(len(ids))
+    spans=[]
+    cursor=0
+    for token,local in zip(tokens,expected):
+        n=len(local)
+        actual=groups[cursor:cursor+n]
+        a,b=_comparison(local),_comparison(actual)
+        weak=_WEAK_EN.get(token.casefold().strip(".,!?;:\"'()[]"),set())
+        # Explicit variants, not a blanket relaxed threshold for short words.
+        related=a==b or (n==1 and a in weak and b in weak)
+        if not related:
+            related=bool(a and b and SequenceMatcher(None,a,b,autojunk=False).ratio()>=.60)
+        if not related:
+            raise ValueError("ambiguous contextual token alignment")
+        spans.append((bounds[positions[cursor][0]],bounds[positions[cursor+n-1][1]]))
+        cursor+=n
+    ids.extend(mapping["$"])
+    if len(ids)>8000:
+        raise ValueError("context phoneme budget exceeded")
+    return ids,spans
+
+def _context_chunks(voice,tokens):
+    """Try full sentence first. Only use a real clause boundary for repair;
+    never revert to word-isolated pronunciation in natural mode."""
+    try:
+        ids,spans=_context_ids(voice,tokens)
+        return [(tokens,ids,spans)]
+    except ValueError as original:
+        cuts=[i+1 for i,t in enumerate(tokens[:-1]) if t.endswith((",", ";", ":"))]
+        if not cuts:
+            raise original
+        chunks=[]
+        start=0
+        for end in [*cuts,len(tokens)]:
+            part=tokens[start:end]
+            ids,spans=_context_ids(voice,part)
+            chunks.append((part,ids,spans))
+            start=end
+        return chunks
+
 def _word_samples(samples, ids, spans, audio_samples):
     """Validate and sum actual model sample counts, with no timing estimates."""
     counts = [int(value) for value in samples]
@@ -256,13 +405,56 @@ def _word_samples(samples, ids, spans, audio_samples):
     return words
 
 
+def _trim_quiet_margins(audio,timings,sample_rate,*,first=False,last=False):
+    """Shorten excess quiet ONLY outside all measured word spans.
+
+    Never time-stretch, remove spoken samples or shift captions by an estimate.
+    Keep a natural pause and refuse to trim if the proposed edge is audible.
+    """
+    import numpy as np
+    n=len(audio)
+    if not timings or n==0:
+        return audio,timings,0
+    # Leave breathing room between complete clauses/sentences.
+    head=max(0,timings[0][0]-round(sample_rate*(.16 if first else .10)))
+    tail=max(0,n-timings[-1][1]-round(sample_rate*(.20 if last else .16)))
+    peak=float(np.max(np.abs(audio)))
+    def quiet(part):
+        return (not len(part) or
+                (float(np.max(np.abs(part)))<=max(1e-6,.018*peak)
+                 and float(np.sqrt(np.mean(part*part)))<=max(1e-7,.006*peak)))
+    if head and not quiet(audio[:head]):
+        head=0
+    if tail and not quiet(audio[n-tail:]):
+        tail=0
+    if not head and not tail:
+        return audio,timings,0
+    end=n-tail
+    return audio[head:end],[(a-head,b-head) for a,b in timings],head+tail
+
+def _gap_summary(words,duration):
+    gaps=[max(0.,b.start-a.end) for a,b in zip(words,words[1:])]
+    internal=[g for g,a in zip(gaps,words) if not a.text.rstrip("\"”’')]").endswith((".", "!", "?", ",", ";", ":"))]
+    return {"measured_max_word_gap_seconds":round(max(gaps,default=0.),3),
+            "measured_max_nonpunctuation_gap_seconds":round(max(internal,default=0.),3),
+            "measured_gaps_over_half_second":sum(g>.5 for g in gaps),
+            "spoken_words_per_minute":round(60*len(words)/duration,1)}
+
 def synthesize(text, out, settings):
     """Produce an upstream Speech; failures never return silent/estimated audio."""
+    if george_enabled(settings.language):
+        from george_voice import synthesize as george_synthesize
+        return george_synthesize(text,out,settings)
+    return _synthesize_piper(text,out,settings,flow=True)
+
+
+def _synthesize_piper(text,out,settings,*,flow=None):
+    """Piper backend for German B, and historical direct unit tests."""
     import numpy as np
     from purffle_shorts.timing import Word, tokenize
     from purffle_shorts.tts import Speech
     language = settings.language
-    info = provenance(language)
+    info = _piper_provenance(language)
     tokens = tokenize(text, language)
     if not tokens or len(tokens) > 400 or len(text) > 6000:
         raise RuntimeError('Local narration requires 1–400 words and at most6000characters')
@@ -273,14 +465,32 @@ def synthesize(text, out, settings):
     target = out / 'voice-piper.wav'
     temp = out / 'voice-piper.wav.part'
     words, total_samples = [], 0
+    flow=flow_enabled() if flow is None else flow
+    chunks=list(_sentence_groups(tokens)) if flow else [tokens[i:i+24] for i in range(0,len(tokens),24)]
+    contextual,fallback=0,0
+    signals=[]
+    repair_splits=0
+    trimmed_samples=0
+    if flow:
+        prepared=[]
+        for chunk in chunks:
+            try:
+                parts=_context_chunks(voice,chunk)
+            except ValueError as exc:
+                raise RuntimeError("natural_voice_alignment_unverified: "+str(exc)) from exc
+            repair_splits+=len(parts)-1
+            prepared.extend(parts)
+        chunks=prepared
+    else:
+        chunks=[(chunk,*_token_ids(voice,chunk)) for chunk in chunks]
     try:
         with wave.open(str(temp), 'wb') as wav:
             wav.setparams((1, 2, sample_rate, 0, 'NONE', 'not compressed'))
             # Bound individual ONNX inference allocations while keeping natural
             # phrase punctuation and a single native timeline for the whole WAV.
-            for begin in range(0, len(tokens), 24):
-                chunk_tokens = tokens[begin:begin+24]
-                ids, spans = _token_ids(voice, chunk_tokens)
+            for chunk_index,(chunk_tokens,ids,spans) in enumerate(chunks):
+                if flow:
+                    contextual+=1
                 result = voice.phoneme_ids_to_audio(ids, include_alignments=True)
                 if not isinstance(result, tuple) or len(result) != 2 or result[1] is None:
                     raise RuntimeError('Voice model did not provide native phoneme alignments')
@@ -292,13 +502,25 @@ def synthesize(text, out, settings):
                 peak = float(np.max(np.abs(audio)))
                 if not math.isfinite(peak) or peak < 1e-5 or float(np.sqrt(np.mean(audio*audio))) < 1e-5:
                     raise RuntimeError('Local voice returned silent audio')
-                audio = np.clip(audio / peak * .95, -1, 1)
-                wav.writeframes((audio * 32767).astype(np.int16).tobytes())
+                if flow:
+                    audio,timings,removed=_trim_quiet_margins(audio,timings,sample_rate,
+                        first=chunk_index==0,last=chunk_index==len(chunks)-1)
+                    trimmed_samples+=removed
+                    signals.append(audio)
+                else:
+                    audio = np.clip(audio / peak * .95, -1, 1)
+                    wav.writeframes((audio * 32767).astype(np.int16).tobytes())
                 words.extend(Word(token, (total_samples+a)/sample_rate, (total_samples+b)/sample_rate)
                              for token, (a, b) in zip(chunk_tokens, timings))
                 total_samples += len(audio)
                 if total_samples / sample_rate > 180:
                     raise RuntimeError('Local narration duration budget exceeded')
+            if flow:
+                # A single gain across the narration avoids sentence-wise
+                # peak normalization jumps; never change sample timings.
+                gain=.95/max(float(np.max(np.abs(a))) for a in signals)
+                for audio in signals:
+                    wav.writeframes((np.clip(audio*gain,-1,1)*32767).astype(np.int16).tobytes())
         if len(words) != len(tokens):
             raise RuntimeError('Caption tokens were lost during native alignment')
         temp.replace(target)
@@ -306,6 +528,15 @@ def synthesize(text, out, settings):
         temp.unlink(missing_ok=True)
     info.update(sample_rate=sample_rate, audio_samples=total_samples, word_count=len(words),
                 timing='aligned', timing_source='native_phoneme_samples')
+    if flow:
+        info.update(method='Sentence-context phonemization with explicit original-token mapping and native sample counts',
+                    voice_flow_version=VOICE_FLOW_VERSION,contextual_sentences=contextual,
+                    isolated_pronunciation_fallback_sentences=fallback,sentence_chunks=len(chunks),
+                    contextual_clause_repairs=repair_splits,
+                    normalization='one_gain_full_narration',
+                    trimmed_quiet_margin_samples=trimmed_samples,
+                    **_gap_summary(words,total_samples/sample_rate))
+        print(f'[VOICE FLOW] contextual={contextual} fallback={fallback} chunks={len(chunks)}',flush=True)
     speech = Speech(target, words, total_samples/sample_rate, 'piper', info['model'], 'aligned')
     speech.provenance = info
     print(f"[VOICE] engine=piper model={info['model']} native_words={len(words)} duration={speech.duration:.3f}", flush=True)

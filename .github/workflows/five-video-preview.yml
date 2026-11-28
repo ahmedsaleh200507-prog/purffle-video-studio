@@ -1,0 +1,19 @@
+name: Five curiosity-first video previews
+on:
+  push:
+    branches: [chatgpt/yellow-system-fixes]
+    paths: ['.github/workflows/five-video-preview.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    uses: ./.github/workflows/videos.yml
+    with:
+      single_pass_narration: true
+      video_1: 'en|Why do airplanes leave white trails?'
+      video_2: 'de|Warum haben Katzen Schnurrhaare?'
+      video_3: 'en|Why did the Roman Colosseum have underground tunnels?'
+      video_4: 'de|Warum schwimmt ein Schiff aus Stahl?'
+      video_5: 'en|Why is the Moon covered in craters?'
+    secrets: inherit

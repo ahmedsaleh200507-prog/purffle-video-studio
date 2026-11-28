@@ -23,7 +23,9 @@ def approved_dossier_draft(topic, language, evidence, *, scene_count=3):
         {"topic": topic}, topic, language, scene_count=scene_count)
     # Uses the already-installed strict structured-scene normalizer, which
     # requires real filmable object/action/query for every factual scene.
-    story = script_module.normalize(payload, topic, "facts", language)
+    from visual_director import use_story_scene_target
+    with use_story_scene_target(scene_count):
+        story = script_module.normalize(payload, topic, "facts", language)
     if len(story.scenes) != scene_count:
         raise ValueError("curated dossier scene count does not match storyboard")
     return story, Topic(topic, "manual"), "approved_official_dossier"

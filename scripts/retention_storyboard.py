@@ -90,7 +90,9 @@ def storyboard_writer_brief(scene_count: int, planned_seconds: int | None = None
         choose_duration_seconds("educational documentary", scene_count)
         if scene_count >= 2 else 12)
     beats = editorial_phase_windows(proposed)
+    from editorial_standard import CORE_BRIEF
     return (
+        CORE_BRIEF + " " +
         "MANDATORY FLEXIBLE FOUR-PHASE SHORTS STORY STRUCTURE. "
         "The topic and validated facts determine the length: NO mandatory "
         "30-second runtime, and no filler to match a target. "
@@ -103,7 +105,7 @@ def storyboard_writer_brief(scene_count: int, planned_seconds: int | None = None
         f"CURIOSITY — by around {beats[1]['end_seconds']}s give the "
         "first meaningful fact without delaying the answer. "
         f"DEVELOPMENT — until around {beats[2]['end_seconds']}s, "
-        "advance with fresh science and genuinely relevant shots. "
+        "advance the subject-specific story with fresh supported evidence, events, facts or insights and genuinely relevant shots. "
         "PAYOFF — in the remaining final segment, answer clearly and "
         "finish on a meaningful image, with no CTA or fake cliffhanger. "
         f"You have {scene_count} verified shots, not necessarily four beats "
@@ -111,8 +113,9 @@ def storyboard_writer_brief(scene_count: int, planned_seconds: int | None = None
         "A 1-shot preview has all four beats in one shot. "
         "With three shots, hook and curiosity share the first shot; "
         "later shots advance and resolve the question. "
+        "Prefer short natural spoken sentences, simple explanations of technical terms, and meaningful visual changes as the story progresses. When evidence and available footage support it, use three to six distinct shots, normally around three to seven seconds each; allow longer shots for a meaningful continuous event and fewer shots when appropriate. Do not cut merely to satisfy a timer. "
         "Do not loop footage or stretch narration to a specified length. "
-        "Write a UNIQUE source-grounded explanation for THIS topic, "
+        "Write a UNIQUE source-grounded narrative for THIS topic, "
         "avoid interchangeable or repetitive mass-produced shock-bait, "
         "and retain the independent facts and footage review."
     )
@@ -130,26 +133,41 @@ def audit_storyboard(topic: str, screenplay, language="en", *, scenes=None, plan
         str(scene["narration"] if isinstance(scene, dict) else getattr(scene, "narration", "")).strip()
         for scene in source
     ]
-    if not 2 <= len(texts) <= 6 or any(len(_words(t)) < 5 for t in texts):
+    import os
+    advisory=os.getenv("PURFFLE_SINGLE_PASS_NARRATION")=="1"
+    findings=[]
+    def flag(reason):
+        if not advisory:
+            raise RuntimeError("retention_storyboard_invalid: "+reason)
+        findings.append(reason)
+    if not 2 <= len(texts) <= 6 or any(not _words(t) for t in texts):
         raise RuntimeError("retention_storyboard_invalid: scenes missing or too short")
+    if any(len(_words(t)) < 5 for t in texts):
+        flag("scene shorter than five words")
     opening = texts[0].casefold()
     first_phrase = " ".join(_words(opening)[:8])
     intros = _DE_INTROS if str(language).startswith("de") else _EN_INTROS
     if any(opening.startswith(intro) for intro in intros):
-        raise RuntimeError("retention_storyboard_invalid: generic intro before useful hook")
+        flag("generic intro before useful hook")
     if any(term in " ".join(texts).casefold() for term in _BAD_ENDINGS):
-        raise RuntimeError("retention_storyboard_invalid: generic engagement CTA")
+        flag("generic engagement CTA")
     # The opening must not simply read the video's existing question aloud.
     topic_tokens, hook_tokens = _words(topic), _words(texts[0])
     if (topic_tokens and len(hook_tokens) > 5
             and topic_tokens == hook_tokens[:len(topic_tokens)]):
-        raise RuntimeError("retention_storyboard_invalid: full title repeated as intro")
+        flag("full title repeated as intro")
     for one, two in zip(texts, texts[1:]):
-        if SequenceMatcher(None, _words(one), _words(two)).ratio() >= .88:
+        if _words(one)==_words(two):
             raise RuntimeError("retention_storyboard_invalid: repeated scene narration")
+        if SequenceMatcher(None, _words(one), _words(two)).ratio() >= .88:
+            flag("similar adjacent scenes")
     if len(_words(texts[-1])) < 7:
-        raise RuntimeError("retention_storyboard_invalid: no substantive final answer")
+        flag("no substantive final answer")
+    from editorial_standard import enabled, audit_structure
+    shared=audit_structure(texts,language,mode="short",advisory=advisory) if enabled() else None
     return {
+        "shared_editorial_standard":shared,
+        "advisory_findings":findings,
         "state": "editorial_screen_passed",
         "version": "shorts_four_phase_adaptive_v2",
         "duration_policy": "topic_and_verified_footage_adaptive_not_fixed",
@@ -187,3 +205,17 @@ def save_storyboard_report(filename, audit: dict, *, duration_seconds=None):
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return p
+
+
+def validate_short_duration(actual_seconds, planned_seconds=None):
+    """Do not classify an undersized or padded export as a completed Short."""
+    actual=float(actual_seconds)
+    if not math.isfinite(actual) or not 16.0<=actual<=60.0:
+        raise RuntimeError("short_duration_invalid: expected 16–60 seconds of genuine narration and footage")
+    if planned_seconds is not None:
+        planned=float(planned_seconds)
+        if not math.isfinite(planned) or planned<=0:
+            raise ValueError("Invalid editorial duration target")
+        if actual < planned*.75:
+            raise RuntimeError("short_duration_invalid: export below 75 percent of planned duration")
+    return actual

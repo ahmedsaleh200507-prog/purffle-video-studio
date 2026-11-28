@@ -283,6 +283,10 @@ def _fallback_search_queries(topic: str, language: str) -> tuple[str, ...]:
                     if language == "en" else
                     ["Rayleigh-Streuung", "Himmelsblau", "Atmosphärische Optik"])
     if language == "en":
+        if re.search(r"\bsharks?\b",text):
+            queries += ["shark", "ram ventilation", "fish respiration"]
+        if "lightning" in text and re.search(r"\b(ocean|sea|water)\b",text):
+            queries += ["lightning", "lightning strike"]
         if "octopus" in text or "octopuses" in text:
             queries += ["octopus", "octopus anatomy"]
         if "humpback" in text or "whale" in text:
@@ -294,6 +298,10 @@ def _fallback_search_queries(topic: str, language: str) -> tuple[str, ...]:
                 "smoke" in text or "cloud" in text or "plume" in text):
             queries += ["Rocket engine", "Rocket exhaust", "Water deluge system"]
     else:
+        if re.search(r"\bhai(?:e|en)?\b",text):
+            queries += ["Haie", "Kiemenatmung"]
+        if "blitz" in text and re.search(r"\b(meer|ozean|wasser)\b",text):
+            queries += ["Blitz", "Gewitter"]
         if "nilkrokodil" in text or "salzwasserkrokodil" in text:
             queries += ["Nilkrokodil", "Leistenkrokodil", "Krokodile"]
         if "bergzieg" in text:
@@ -334,6 +342,9 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
             "id": f"official-{i}", "title": kind.replace("_", " "),
             "url": url, "tier": "editor_reviewed_official_dossier",
         } for i, url in enumerate(_OFFICIAL[kind], 1)), "curated_editor_reviewed")
+    if os.getenv("PURFFLE_SINGLE_PASS_NARRATION") == "1":
+        from narration_sources import discover
+        return discover(topic, language, session=session)
     search = _search_text(topic)
     if not search:
         raise RuntimeError("science_sources_unavailable: topic has no usable search terms")
@@ -491,14 +502,19 @@ def evidence_prompt(bundle: Evidence) -> str:
         "supported by this text. DO NOT invent an anecdote, person, study, "
         "historical case, measurement, causal explanation, quote, or conclusion.",
         "Do not present source descriptions as direct video observations.",
+        "Answer the exact topic question, not a neighboring encyclopedia topic. For WHY/HOW, include the actual mechanism, not definitions or examples alone. Open with a vivid true contrast or consequence; deliver the answer promptly. Never invent a sensational claim to attract clicks.",
         "OUTPUT REQUIREMENT: Narrate without digits, numerical measurements, "
         "precise heights, distances, speeds, dates, percentages or other quantities. "
         "Use qualitative wording even when a reference has exact figures. "
         "Every factual assertion must be supported by the provided excerpts.",
         "If uncertain, give a simpler statement directly supported by the excerpts.",
     ]
+    if bundle.method == "creative_dossier_reference":
+        lines = ["REFERENCE NOTES FOR CREATIVE NARRATION REVIEW: reviewed factual dossier text and "
+                 "research summaries, not verbatim external source quotations. Check the actual claims "
+                 "against these notes; use exact excerpts from the notes for review anchors."]
     cards = source_fact_cards(bundle)
-    if cards:
+    if cards and os.getenv("PURFFLE_SINGLE_PASS_NARRATION") != "1":
         lines.extend([
             "SOURCE-OWNED FACT CARDS (literal sentences from the retrieved "
             "reference excerpts, NOT externally verified truth):",
@@ -520,7 +536,7 @@ def _normalize_quote(text):
     return re.sub(r"\s+", " ", str(text).strip()).casefold()
 
 
-def _report(path: Path, bundle: Evidence | None, state: str, *, checks=(), error=""):
+def _report(path: Path, bundle: Evidence | None, state: str, *, checks=(), error="", topic_review=None):
     payload = {
         "state": state,
         "method": bundle.method if bundle else "none",
@@ -530,6 +546,8 @@ def _report(path: Path, bundle: Evidence | None, state: str, *, checks=(), error
                     for item in bundle.sources] if bundle else [],
         "scene_checks": list(checks),
     }
+    if topic_review is not None:
+        payload["topic_review"] = topic_review
     if error:
         payload["error"] = error[:400]
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -566,7 +584,7 @@ def _validate_model_scene_checks(checks, scenes, bundle):
             and _normalize_quote(quote) in _normalize_quote(source.get("excerpt", "")))
         narration = str(scenes[i - 1].narration).casefold()
         absolutes = re.findall(r"\b(always|never|only|immer|niemals|nur)\b", narration)
-        if absolutes and not all(word in quote.casefold() for word in absolutes):
+        if absolutes and os.getenv("PURFFLE_SINGLE_PASS_NARRATION") != "1" and not all(word in quote.casefold() for word in absolutes):
             anchored = False
         accepted.append({
             "scene": i, "source_id": str(item.get("source_id") or "")[:40],
@@ -729,6 +747,36 @@ def _review_scenes_individually(llm, system, source_text, scenes):
     return output
 
 
+def review_topic_answer(script,bundle,llm):
+    """Independent editorial gate; does not replace factual source screening."""
+    from editorial_standard import AUDIENCE_BRIEF, VERSION
+    keys=("answers_question","opening_specific","payoff_complete","early_value",
+          "coherent_progression","natural_spoken_language","sustained_specific_interest")
+    schema={"type":"object","properties":{**{k:{"type":"boolean"} for k in keys},
+        "reason":{"type":"string"}},"required":[*keys,"reason"],"additionalProperties":False}
+    narration="\n".join(f"Scene {i}: {s.narration}" for i,s in enumerate(script.scenes,1))
+    result=_strict_science_review_json(llm,
+        "You are an independent bilingual documentary editor, not the writer. "
+        "A why/how question must explain the actual cause or mechanism; classifications or examples alone do not answer it. "
+        "A what-if must distinguish premise from consequences. "+AUDIENCE_BRIEF+
+        " Judge the actual spoken words. natural_spoken_language requires clear idiomatic narration; "
+        "sustained_specific_interest requires real new subject-specific insight at each beat, not generic suspense or list-like facts. "
+        "Do not claim to predict audience retention or demand sensationalism. Return JSON only.",
+        "Exact requested topic: "+bundle.topic+"\nTitle: "+str(getattr(script,"title",""))+"\nNarration:\n"+narration,schema)
+    if (not isinstance(result,dict) or set(result)!=set(keys)|{"reason"}
+            or any(type(result.get(k)) is not bool for k in keys)
+            or not isinstance(result["reason"],str)):
+        raise RuntimeError("science_review_unavailable: invalid_topic_review")
+    failed=[k for k in keys if not result[k]]
+    blocking = [k for k in failed if k in ("answers_question","payoff_complete")] if os.getenv("PURFFLE_SINGLE_PASS_NARRATION") == "1" else failed
+    if blocking:
+        raise RuntimeError("retention_storyboard_invalid: exact topic answer/editorial gate failed: "+",".join(blocking))
+    return {"state":"model_screened_topic_answer","version":VERSION,
+            **{k:result[k] for k in keys},
+            "advisory_findings":failed if not blocking else [],
+            "scope":"editorial judgment, not viewer retention prediction"}
+
+
 def screen_narration(script, bundle: Evidence, llm, *, path=None):
     """Check a cited passage per scene; a missing/mismatched quote blocks TTS.
 
@@ -767,7 +815,20 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
                 _report(report, bundle, "failed",
                         error="curated narration differs from official-source-backed dossier")
                 raise RuntimeError("science_claim_unverified: nonapproved curated factual claims")
-        _report(report, bundle, "curated_editor_reviewed")
+        topic_review={"state":"exact_curated_dossier","scope":"approved topic-specific script; not a retention prediction"}
+        # B-style pilot dossiers must pass the actual editorial gate too.
+        # Exact factual wording is not proof of an engaging spoken story.
+        if (kind in ("volcano_eruption", "northern_lights_glow")
+                and os.getenv("PURFFLE_EDITORIAL_ANSWER_GATE")=="1"):
+            if llm is None:
+                _report(report,bundle,"failed",error="pilot editorial reviewer unavailable")
+                raise RuntimeError("science_review_unavailable: pilot editorial reviewer missing")
+            try:
+                topic_review=review_topic_answer(script,bundle,llm)
+            except RuntimeError as exc:
+                _report(report,bundle,"failed",error=str(exc)[:250])
+                raise
+        _report(report, bundle, "curated_editor_reviewed",topic_review=topic_review)
         return
     scenes = getattr(script, "scenes", [])
     if not scenes:
@@ -776,6 +837,9 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
     if llm is None:
         _report(report, bundle, "failed", error="no independent model review")
         raise RuntimeError("science_claim_unverified: model reviewer missing")
+    if os.getenv("PURFFLE_SINGLE_PASS_NARRATION") == "1":
+        from narration_review import review_short
+        return review_short(script,bundle,llm,report)
     schema = {"type": "object", "properties": {
         "checks": {"type": "array",
             "items": {"type": "object", "properties": {
@@ -796,6 +860,16 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         "explicit support. Return JSON only. If supported, quote a short "
         "verbatim excerpt from the provided source (at least 20 characters). "
         "Do NOT fabricate citations or text. Reject unsupported claims.")
+    if os.getenv("PURFFLE_SINGLE_PASS_NARRATION") == "1":
+        system = (
+            "Review nonfiction narration for material factual errors or unsupported factual claims. "
+            "Use the actual reference passages, not your memory. Consider ordinary-language paraphrases, "
+            "translations, directly supported inferences, and nonliteral imagery; do not demand identical "
+            "wording or technical detail. Reject invented specifics, misleading absolutes, false mechanisms, "
+            "or unsupported core claims. Consider all provided excerpts together. For each supported scene "
+            "return its strongest literal source quote of 20 to 300 characters and the corresponding source_id. "
+            "Quotes must appear in the provided text. A quote is an anchor, not a proof by itself. "
+            "Return JSON only. Be concise; distinguish missing evidence from contradiction.")
     source_text = evidence_prompt(bundle)
     script_text = "\n".join(f"SCENE {i}: {x.narration}"
                             for i, x in enumerate(scenes, 1))
@@ -822,7 +896,14 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
             _report(report, bundle, "failed", checks=accepted,
                     error="source passage cannot substantiate all scene claims")
             raise RuntimeError("science_claim_unverified: unsupported narration scene")
-        _report(report, bundle, "model_screened_reference", checks=accepted)
+        topic_review=None
+        if os.getenv("PURFFLE_EDITORIAL_ANSWER_GATE")=="1":
+            try:
+                topic_review=review_topic_answer(script,bundle,llm)
+            except RuntimeError as exc:
+                _report(report,bundle,"failed",checks=accepted,error=str(exc)[:150])
+                raise
+        _report(report, bundle, "model_screened_reference", checks=accepted,topic_review=topic_review)
     except RuntimeError as exc:
         if str(exc).startswith("science_review_unavailable:"):
             _report(report, bundle, "failed",

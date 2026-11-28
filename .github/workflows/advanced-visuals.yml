@@ -1,0 +1,109 @@
+name: Advanced visual tools
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/advanced_visuals.py'
+      - 'scripts/visual_consensus.py'
+      - 'scripts/visual_director.py'
+      - 'scripts/crop_subject_policy.py'
+      - 'scripts/action_window.py'
+      - 'scripts/object_framing.py'
+      - 'scripts/verified_library.py'
+      - 'requirements-advanced-visuals.txt'
+      - 'tests/test_advanced_visuals.py'
+      - '.github/workflows/advanced-visuals.yml'
+permissions:
+  contents: read
+concurrency:
+  group: advanced-visuals-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: scripts
+      OMP_NUM_THREADS: '2'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements-advanced-visuals.txt 'pytest>=8,<10' requests 'Pillow>=10,<14'
+      - name: Install FFmpeg and OpenCV runtime
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update -qq
+          sudo apt-get -o Acquire::Retries=3 install -y -qq ffmpeg libgl1 libglib2.0-0t64
+      - run: python -m pytest -q tests/test_advanced_visuals.py
+      - run: python -m unittest discover -s tests -p test_action_window.py
+      - run: python -m unittest discover -s tests -p test_object_framing.py
+      - run: python -m unittest discover -s tests -p test_verified_library.py
+      - name: Real footage scene analysis
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          from video_contrast_audit import fixture
+          from advanced_visuals import scene_intervals,residual_motion
+          from media_validation import _frame
+          path=Path("audit-person.avi")
+          fixture(path)
+          spans=scene_intervals(path,8)
+          assert spans and all(0<=a<b<=8 for a,b in spans)
+          print("[REAL SCENES]",json.dumps(spans))
+          pairs=[(_frame(path,t,320,preserve_aspect=True),_frame(path,t+.24,320,preserve_aspect=True)) for t in (.2,1.,2.,3.)]
+          motions=[residual_motion(a,b) for a,b in pairs]
+          assert all(residual_motion(a,a)["localized_motion"] is False for a,b in pairs)
+          assert any(m["state"]=="observed" for m in motions)
+          print("[REAL OPTICAL FLOW]",json.dumps(motions))
+          PY
+  real_tracking:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: scripts
+      PURFFLE_SMART_CROP: '1'
+      PURFFLE_ADVANCED_VISUALS: '1'
+      OMP_NUM_THREADS: '2'
+      TOKENIZERS_PARALLELISM: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r requirements-advanced-visuals.txt 'transformers==4.57.1' 'Pillow>=10.1,<14' requests 'sentencepiece>=0.2,<1'
+      - name: Install FFmpeg and OpenCV runtime
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update -qq
+          sudo apt-get -o Acquire::Retries=3 install -y -qq ffmpeg libgl1 libglib2.0-0t64
+      - name: Grounding DINO plus region verification plus ByteTrack on actual footage
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,time,torch
+          from video_contrast_audit import fixture
+          from media_validation import _frame
+          from object_framing import propose
+          torch.set_num_threads(2)
+          path=Path("audit-person.avi")
+          fixture(path)
+          w,h=_frame(path,.2,640,preserve_aspect=True).size
+          report=propose(path,3.0,"person",w,h,1080,1920,deadline=time.monotonic()+180)
+          print("[REAL TRACKING]",json.dumps(report),flush=True)
+          Path("tracking-report.json").write_text(json.dumps(report,indent=2))
+          assert report["bytetrack_shadow"]["state"]=="observed"
+          assert len(report["sample_times"])>=3
+          tracks=report["bytetrack_shadow"]["tracks"]
+          assert any(len(t)>=3 for t in tracks.values()), "No association across at least three verified anchors"
+          print("[TRACK COVERAGE]",json.dumps({"tracks":len(tracks),"longest":max(map(len,tracks.values())),"samples":report["bytetrack_shadow"]["sample_count"],"dense_samples":report["bytetrack_shadow"].get("dense_sample_count",0)}))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: actual-tracking-report
+          path: tracking-report.json
+          if-no-files-found: warn

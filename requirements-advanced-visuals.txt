@@ -1,0 +1,6 @@
+# Optional CPU vision tools, evaluated separately before production activation.
+# ByteTrack: MIT (via Supervision); PySceneDetect: BSD-3-Clause; FAISS: MIT.
+supervision==0.27.0
+scenedetect==0.6.6
+faiss-cpu==1.11.0
+numpy>=1.26,<2.3
