@@ -46,6 +46,10 @@ on:
         type: string
   workflow_call:
     inputs:
+      free_canary:
+        type: boolean
+        required: false
+        default: false
       single_pass_narration:
         type: boolean
         required: false
@@ -119,10 +123,15 @@ jobs:
             input: video_10
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      PURFFLE_LOCAL_LLM: '1'
-      PURFFLE_LOCAL_QUALITY: '1'
+      GROQ_API_KEY: ${{ (!inputs.free_canary || vars.PURFFLE_GROQ_FREE_CONFIRMED == '1') && secrets.GROQ_API_KEY || '' }}
+      GEMINI_API_KEY: ${{ (!inputs.free_canary || vars.PURFFLE_GEMINI_FREE_CONFIRMED == '1') && secrets.GEMINI_API_KEY || '' }}
+      OPENROUTER_API_KEY: ${{ inputs.free_canary && vars.PURFFLE_OPENROUTER_FREE_CONFIRMED == '1' && secrets.OPENROUTER_API_KEY || '' }}
+      PURFFLE_OPENROUTER_FREE_CONFIRMED: ${{ vars.PURFFLE_OPENROUTER_FREE_CONFIRMED }}
+      PURFFLE_STORY_FIRST: ${{ inputs.free_canary && '1' || '0' }}
+      PURFFLE_RANKED_WRITERS: ${{ inputs.free_canary && '1' || '0' }}
+      PURFFLE_CONDITIONAL_EDIT: ${{ inputs.free_canary && '1' || '0' }}
+      PURFFLE_LOCAL_LLM: ${{ inputs.free_canary && '0' || '1' }}
+      PURFFLE_LOCAL_QUALITY: ${{ inputs.free_canary && '0' || '1' }}
       PURFFLE_CLOUD_MODEL_ROUTER: '1'
       PURFFLE_SIGLIP_REVIEW: '1'
       PURFFLE_VLM_SHADOW: '1'
@@ -135,14 +144,14 @@ jobs:
       PURFFLE_EDITORIAL_PACING: '1'
       PURFFLE_SOURCE_TEXT_GATE: '1'
       PURFFLE_ADVANCED_VISUALS: '0'  # enabled after optional dependency checks
-      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-      COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
-      COVER2: ${{ secrets.COVER2 }}
-      NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
-      VECTEEZY_API_KEY: ${{ secrets.VECTEEZY_API_KEY }}
+      PIXABAY_API_KEY: ${{ !inputs.free_canary && secrets.PIXABAY_API_KEY || '' }}
+      PEXELS_API_KEY: ${{ !inputs.free_canary && secrets.PEXELS_API_KEY || '' }}
+      COVERR_API_KEY: ${{ !inputs.free_canary && secrets.COVERR_API_KEY || '' }}
+      COVER2: ${{ !inputs.free_canary && secrets.COVER2 || '' }}
+      NPS_API_KEY: ${{ !inputs.free_canary && secrets.NPS_API_KEY || '' }}
+      VECTEEZY_API_KEY: ${{ !inputs.free_canary && secrets.VECTEEZY_API_KEY || '' }}
       PURFFLE_COVERR_MAX_CALLS: '5'
-      EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
+      EUROPEANA_API_KEY: ${{ !inputs.free_canary && secrets.EUROPEANA_API_KEY || '' }}
       LLM_PROVIDER: groq
       LLM_MODEL: openai/gpt-oss-20b
       SCRIPT_REVIEW: 'off'
@@ -151,7 +160,7 @@ jobs:
       # working video indexes before tiny fixed catalogs or slower archives.
       # Remaining providers are still checked when the first ones have no
       # verified, relevant HD clip; license and CLIP checks stay unchanged.
-      VISUAL_SOURCES: pexels,pixabay,usgs-video,nps-video,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video,vecteezy-video
+      VISUAL_SOURCES: ${{ inputs.free_canary && 'usgs-video,freenaturestock-video,nasa-video,wikimedia-video,archive-video' || 'pexels,pixabay,usgs-video,nps-video,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video,vecteezy-video' }}
       # Fixed George/Thorsten; no alternate voice or private model setup.
       PURFFLE_NARRATOR_LOCK: '1'
       TTS_ENGINE: piper
@@ -355,7 +364,7 @@ jobs:
           PURFFLE_STRICT: '1'
         run: python scripts/batch.py
       - name: Recover verified real media after production errors
-        if: always() && steps.selected.outputs.render == 'true'
+        if: always() && steps.selected.outputs.render == 'true' && !inputs.free_canary
         env:
           SLOT_TOPIC: ${{ inputs[matrix.input] }}
           SLOT_INDEX: ${{ matrix.slot }}

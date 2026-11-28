@@ -2,9 +2,10 @@
 Frame observations are not full motion ground truth. No paid API or production imports.
 """
 import json
+import io
 import tempfile
 from pathlib import Path
-from media_validation import VideoDownloader
+from media_validation import VideoDownloader, _frame
 from visual_ensemble_proof import source
 from visual_multitime_proof import FRESH,make_preview
 from temporal_vision_pilot import local_engine,infer,parse_short_answer
@@ -25,6 +26,19 @@ def verdict(name,answers):
     if answers[0] is True and answers[1] is True:
         return "candidate"
     return "reject_or_abstain"
+
+def independent_text_screen(path):
+    """Full-frame text evidence before any portrait crop or own captions."""
+    from source_overlay import _text
+    evidence=[]
+    for t in (.25,1.1,2.0):
+        frame=_frame(path,t,960,preserve_aspect=True)
+        buf=io.BytesIO()
+        frame.save(buf,format="PNG")
+        evidence.append(_text(buf.getvalue()))
+    return {"text_frames":sum(bool(e) for e in evidence),"samples":len(evidence),
+            "title_or_overlay_detected":sum(bool(e) for e in evidence)>=2,
+            "scope":"repeated high-confidence multi-word lines; not proof of no text"}
 
 def main():
     import torch
@@ -54,8 +68,12 @@ def main():
                             answers.append(parse_short_answer(a))
                         except ValueError:
                             answers.append(None)
+                    text_screen=independent_text_screen(clip)
+                    # OCR is independent of the VLM title-card opinion; fail closed if OCR fails.
+                    fused=[answers[0],answers[1],text_screen["title_or_overlay_detected"]]
                     row={"start":start,"length":2.5,"answers":answers,"raw":raw,
-                         "decision":verdict(name,answers),"review_note":info["notes"][i]}
+                         "text_screen":text_screen,"fused_answers":fused,
+                         "decision":verdict(name,fused),"review_note":info["notes"][i]}
                     rows.append(row)
                     print("INTERVAL REVIEW",name,json.dumps(row),flush=True)
                 results[name]={"state":"evaluated","source":meta,"rows":rows}
