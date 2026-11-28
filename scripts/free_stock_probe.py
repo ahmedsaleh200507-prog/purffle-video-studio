@@ -61,7 +61,9 @@ def main():
     report["reachable"]=verified
     Path("free-stock-report.json").write_text(json.dumps(report,indent=2))
     print("FREE STOCK SUMMARY",json.dumps(report),flush=True)
-    return 0 if configured==2 and verified==2 else 1
+    # Pixabay is the required provider for this proof. Pexels is optional;
+    # if explicitly configured, report its status but never require its key.
+    return 0 if report['providers']['pixabay']['state']=='reachable' else 1
 
 if __name__=="__main__":
     raise SystemExit(main())

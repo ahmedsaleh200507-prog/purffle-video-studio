@@ -98,7 +98,12 @@ def verify_pixels(path,need,focus,contract,matcher,*,deadline,ask=None,secondary
             if remaining<15:
                 return {"verified":False,"reason":"review_budget_exhausted","evidence":evidence}
             p=subprocess.run([sys.executable,str(Path(__file__).resolve()),str(preview),json.dumps([r["queries"] for r in evidence])],
-                capture_output=True,text=True,check=True,timeout=min(105,remaining))
+                capture_output=True,text=True,check=False,timeout=min(105,remaining))
+            if p.returncode:
+                # Report only diagnostic exception classes, never arbitrary child output.
+                classes=re.findall(r'(?m)^([A-Za-z_][\w.]*(?:Error|Exception)):',p.stderr)
+                return {'verified':False,'reason':'qwen_child_failed','returncode':p.returncode,
+                        'exception_types':classes[-5:],'evidence':evidence}
             answers=json.loads(p.stdout.splitlines()[-1])
     if len(answers)!=len(evidence):
         return {"verified":False,"reason":"invalid_qwen_evidence","evidence":evidence}
