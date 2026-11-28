@@ -45,7 +45,7 @@ jobs:
         run: |
           python -m compileall -q scripts tests/test_production_narration.py
           python -m pytest -q tests/test_production_narration.py tests/test_story_room.py tests/test_root_production.py
-      - name: Exercise the real production text path on five subjects
+      - name: Exercise the real production text path on five subjects in both languages
         env:
           PURFFLE_STRICT: '1'
         run: |
@@ -57,7 +57,12 @@ jobs:
               ("de","Warum haben Katzen Schnurrhaare?"),
               ("en","Why did the Roman Colosseum have underground tunnels?"),
               ("de","Warum schwimmt ein Schiff aus Stahl?"),
-              ("en","Why is the Moon covered in craters?")
+              ("en","Why is the Moon covered in craters?"),
+              ("de","Warum hinterlassen Flugzeuge weiße Streifen?"),
+              ("en","Why do cats have whiskers?"),
+              ("de","Warum hatte das Kolosseum unterirdische Gänge?"),
+              ("en","Why does a steel ship float?"),
+              ("de","Warum ist der Mond voller Krater?")
           ]
           failed=0
           for i,(lang,topic) in enumerate(cases,1):
@@ -76,7 +81,7 @@ jobs:
               if (root/"science-report.json").is_file():
                   print("SOURCE SCREEN:",i,(root/"science-report.json").read_text(),flush=True)
               print("TEST RESULT:",i,topic,success,result.get("stage"),flush=True)
-          print("TOTAL ACCEPTED:",5-failed,"/5",flush=True)
+          print("TOTAL ACCEPTED:",len(cases)-failed,f"/{len(cases)}",flush=True)
           sys.exit(1 if failed else 0)
           PY
       - uses: actions/upload-artifact@v4

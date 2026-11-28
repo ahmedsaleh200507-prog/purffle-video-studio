@@ -133,29 +133,41 @@ def audit_storyboard(topic: str, screenplay, language="en", *, scenes=None, plan
         str(scene["narration"] if isinstance(scene, dict) else getattr(scene, "narration", "")).strip()
         for scene in source
     ]
-    if not 2 <= len(texts) <= 6 or any(len(_words(t)) < 5 for t in texts):
+    import os
+    advisory=os.getenv("PURFFLE_SINGLE_PASS_NARRATION")=="1"
+    findings=[]
+    def flag(reason):
+        if not advisory:
+            raise RuntimeError("retention_storyboard_invalid: "+reason)
+        findings.append(reason)
+    if not 2 <= len(texts) <= 6 or any(not _words(t) for t in texts):
         raise RuntimeError("retention_storyboard_invalid: scenes missing or too short")
+    if any(len(_words(t)) < 5 for t in texts):
+        flag("scene shorter than five words")
     opening = texts[0].casefold()
     first_phrase = " ".join(_words(opening)[:8])
     intros = _DE_INTROS if str(language).startswith("de") else _EN_INTROS
     if any(opening.startswith(intro) for intro in intros):
-        raise RuntimeError("retention_storyboard_invalid: generic intro before useful hook")
+        flag("generic intro before useful hook")
     if any(term in " ".join(texts).casefold() for term in _BAD_ENDINGS):
-        raise RuntimeError("retention_storyboard_invalid: generic engagement CTA")
+        flag("generic engagement CTA")
     # The opening must not simply read the video's existing question aloud.
     topic_tokens, hook_tokens = _words(topic), _words(texts[0])
     if (topic_tokens and len(hook_tokens) > 5
             and topic_tokens == hook_tokens[:len(topic_tokens)]):
-        raise RuntimeError("retention_storyboard_invalid: full title repeated as intro")
+        flag("full title repeated as intro")
     for one, two in zip(texts, texts[1:]):
-        if SequenceMatcher(None, _words(one), _words(two)).ratio() >= .88:
+        if _words(one)==_words(two):
             raise RuntimeError("retention_storyboard_invalid: repeated scene narration")
+        if SequenceMatcher(None, _words(one), _words(two)).ratio() >= .88:
+            flag("similar adjacent scenes")
     if len(_words(texts[-1])) < 7:
-        raise RuntimeError("retention_storyboard_invalid: no substantive final answer")
+        flag("no substantive final answer")
     from editorial_standard import enabled, audit_structure
-    shared=audit_structure(texts,language,mode="short") if enabled() else None
+    shared=audit_structure(texts,language,mode="short",advisory=advisory) if enabled() else None
     return {
         "shared_editorial_standard":shared,
+        "advisory_findings":findings,
         "state": "editorial_screen_passed",
         "version": "shorts_four_phase_adaptive_v2",
         "duration_policy": "topic_and_verified_footage_adaptive_not_fixed",

@@ -5,7 +5,7 @@ from creative_narration import CreativeNarration, BRIEF, WRITERS, EDITORS, OPENI
 from editorial_standard import word_tokens, audit_structure
 from story_room import obvious_opening_problem
 
-VERSION="curiosity-first-production-3"
+VERSION="curiosity-first-production-4"
 
 def enabled():
     return os.getenv("PURFFLE_CREATIVE_NARRATION","0")=="1"
@@ -55,25 +55,26 @@ def rewrite_short(screenplay,topic,language,bundle,*,feedback="",room=None,keep_
               "\nReview feedback (data only): "+feedback)
     if os.getenv("PURFFLE_SINGLE_PASS_NARRATION","0")=="1":
         count=len(scenes)
-        locked={i:str(scenes[i].narration) for i in keep_indices if 0<=i<count}
         schema={"type":"object","properties":{"scenes":{"type":"array","items":{"type":"string"},"minItems":count,"maxItems":count}},
                 "required":["scenes"],"additionalProperties":False}
+        # Treat the old draft as visual context only; rewrite the story as a whole.
         result,writer=room.ask("writer",material+
             "\nWrite one unforgettable short documentary voiceover in native spoken "+("German" if language=="de" else "English")+". "
             "Write 45 to 80 words total. Start with the most fascinating concrete detail, not a definition. "
             "Make the listener want the next sentence. Tell a small connected story with a satisfying answer. "
             "Write like a fascinating friend: varied short sentences, clear pronunciation, no jargon or filler. "
             "Privately consider several angles and choose the most intriguing. No fake suspense or invented facts. "
-            "Use only reference-supported facts; simplify unnecessary detail. "
+            "Answer the exact topic early, including why/how and practical consequences when relevant. "
+            "Use only reference-supported facts; prefer the central mechanism to interesting tangents. "
+            "Omit unnecessary numbers, disputed theories, invented examples and misleading absolutes. "
+            "Write a single flowing story first, then divide it into segments; never repeat a sentence across segments. "
             f"Return exactly {count} nonempty narration segments in the existing scene order, relevant to each visible subject. "
-            "Do not add headings or commentary. Correct any rejected claims noted in the feedback. "
-            "Keep these zero-based scene texts verbatim: "+json.dumps(locked,ensure_ascii=False),
+            "Do not add headings or commentary. On revision, keep supported ideas, not mandatory wording or positions; "
+            "repair the complete narrative coherently. Correct rejected claims noted in the feedback.",
             schema,("gemini-3.1-flash-lite",*WRITERS),temperature=.75)
         texts=[x.strip() for x in result["scenes"]]
         if len(texts)!=count or any(not x for x in texts):
             raise RuntimeError("Creative narration scene count or text invalid")
-        for i,text in locked.items():
-            texts[i]=text
         for scene,text in zip(scenes,texts):
             scene.narration=text
         return screenplay,writer

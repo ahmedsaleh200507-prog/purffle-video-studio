@@ -837,6 +837,9 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
     if llm is None:
         _report(report, bundle, "failed", error="no independent model review")
         raise RuntimeError("science_claim_unverified: model reviewer missing")
+    if os.getenv("PURFFLE_SINGLE_PASS_NARRATION") == "1":
+        from narration_review import review_short
+        return review_short(script,bundle,llm,report)
     schema = {"type": "object", "properties": {
         "checks": {"type": "array",
             "items": {"type": "object", "properties": {

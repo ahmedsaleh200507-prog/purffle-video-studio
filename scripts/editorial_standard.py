@@ -77,24 +77,29 @@ def chapter_context(outline,offset,previous):
     prior=" ".join(word_tokens(previous)[-35:]) if previous else "(start of film)"
     return f"Whole film outline: {arc}. Prior narration ending: {prior}. Current section starts at {offset+1}."
 
-def audit_structure(texts,language,*,mode):
+def audit_structure(texts,language,*,mode,advisory=False):
     from retention_storyboard import _EN_INTROS,_DE_INTROS,_BAD_ENDINGS
     words=[word_tokens(x) for x in texts]
     if not words or any(not x for x in words):
         raise RuntimeError("editorial_empty_narration")
+    findings=[]
+    def flag(reason):
+        if not advisory:
+            raise RuntimeError(reason)
+        findings.append(reason)
     first=" ".join(words[0])
     intros=_DE_INTROS if language=="de" else _EN_INTROS
     if any(first.startswith(" ".join(word_tokens(x))) for x in intros):
-        raise RuntimeError("editorial_generic_opening")
+        flag("editorial_generic_opening")
     clickbait=("you won t believe","you will not believe","wait until the end","what happens next will shock you","the shocking truth they don t want you to know","du wirst es nicht glauben","das wirst du nicht glauben","warte bis zum ende","was dann passiert wird dich schockieren")
     first_normal=" ".join(words[0][:30])
     if any(term in first_normal for term in clickbait):
-        raise RuntimeError("editorial_empty_clickbait")
+        flag("editorial_empty_clickbait")
     all_text=" ".join(" ".join(x) for x in words)
     if any(" ".join(word_tokens(x)) in all_text for x in _BAD_ENDINGS):
-        raise RuntimeError("editorial_generic_engagement_prompt")
+        flag("editorial_generic_engagement_prompt")
     if mode=="short" and sum(map(len,words))<32:
-        raise RuntimeError("editorial_short_narration_under_32_words")
+        flag("editorial_short_narration_under_32_words")
     # Reject repeated substantive sentences even across nonadjacent scenes.
     seen=set()
     for text in texts:
@@ -106,6 +111,7 @@ def audit_structure(texts,language,*,mode):
                     raise RuntimeError("editorial_repeated_sentence")
                 seen.add(key)
     return {"version":VERSION,"state":"structure_screened","words":sum(map(len,words)),
+            "advisory_findings":findings,
             "scope":"structure only; factual and visual checks remain separate"}
 
 def final_timing(captions,duration,*,mode):

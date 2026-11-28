@@ -45,7 +45,7 @@ def test_curated_rewrites_do_not_use_exact_dossier_approval():
     assert result.sources[0]["excerpt"]
 
 
-def test_single_pass_locks_supported_scenes(monkeypatch):
+def test_single_pass_never_overwrites_model_scenes(monkeypatch):
     monkeypatch.setenv("PURFFLE_SINGLE_PASS_NARRATION","1")
     scenes=[SimpleNamespace(narration="This wording stays.",object="clock"),
             SimpleNamespace(narration="Incorrect wording.",object="gears")]
@@ -55,7 +55,7 @@ def test_single_pass_locks_supported_scenes(monkeypatch):
             return {"scenes":["Changed by the model.","A spring turns the gears."]},"writer"
     evidence=Evidence("Mechanical clocks",({"id":"1","title":"Clock","excerpt":"A spring turns the gears."},),"model_screened_reference")
     rewrite_short(SimpleNamespace(scenes=scenes),"Mechanical clocks","en",evidence,room=Single(),keep_indices=(0,))
-    assert [x.narration for x in scenes]==["This wording stays.","A spring turns the gears."]
+    assert [x.narration for x in scenes]==["Changed by the model.","A spring turns the gears."]
 
 def test_focused_passages_include_article_body():
     from narration_sources import passages
@@ -73,3 +73,44 @@ def test_bilingual_review_anchor_not_literal_narration_word(monkeypatch):
     assert _validate_model_scene_checks(checks,[SimpleNamespace(narration="Das Licht entsteht nur in Gegenwart von Sauerstoff.")],evidence)[0]["supported"]
     checks[0]["quote"]="Invented quote that does not exist."
     assert not _validate_model_scene_checks(checks,[SimpleNamespace(narration="Das Licht entsteht nur in Gegenwart von Sauerstoff.")],evidence)[0]["supported"]
+
+def test_material_review_distinguishes_facts_from_style(monkeypatch,tmp_path):
+    from narration_review import review_short, WEIGHTS
+    import science_sources
+    from types import SimpleNamespace
+    import json
+    import pytest
+    script=SimpleNamespace(scenes=[SimpleNamespace(narration="A spring stores energy."),SimpleNamespace(narration="It turns gears.")])
+    evidence=Evidence("How does a clock work?",({"id":"ref-1","title":"Clock","excerpt":"A spring stores energy and drives gears."},),"model_screened_reference")
+    verdict={"answers_question":True,"checks":[
+        {"scene":1,"status":"supported","source_ids":["ref-1"],"reason":"Direct support"},
+        {"scene":2,"status":"minor_issue","source_ids":["ref-1"],"reason":"Simplified wording"}],
+        "scores":dict.fromkeys(WEIGHTS,4),"reason":"Plain delivery."}
+    monkeypatch.setattr(science_sources,"_strict_science_review_json",lambda *args:verdict)
+    path=tmp_path/"science.json"
+    review_short(script,evidence,object(),path)
+    report=json.loads(path.read_text())
+    assert report["state"]=="model_screened_reference"
+    assert report["topic_review"]["weighted_score"]==40
+    assert report["scene_checks"][1]["supported"] is True
+    verdict["checks"][1]["status"]="material_issue"
+    with pytest.raises(RuntimeError,match="unsupported narration scene"):
+        review_short(script,evidence,object(),path)
+    verdict["checks"][1]["status"]="supported"
+    verdict["checks"][1]["source_ids"]=["invented"]
+    with pytest.raises(RuntimeError,match="science_review_unavailable"):
+        review_short(script,evidence,object(),path)
+    verdict["checks"][1]["source_ids"]=["ref-1"]
+    verdict["answers_question"]=False
+    with pytest.raises(RuntimeError,match="exact topic answer"):
+        review_short(script,evidence,object(),path)
+
+
+def test_single_pass_advisory_structure(monkeypatch):
+    from retention_storyboard import audit_storyboard
+    import pytest
+    monkeypatch.setenv("PURFFLE_SINGLE_PASS_NARRATION","1")
+    data=[{"narration":"A spring stores energy when wound."},{"narration":"It turns gears."}]
+    assert audit_storyboard("How does a clock work?",None,scenes=data)["advisory_findings"]
+    with pytest.raises(RuntimeError,match="repeated scene"):
+        audit_storyboard("Clocks",None,scenes=[data[0],data[0]])

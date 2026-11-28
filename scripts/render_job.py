@@ -251,13 +251,16 @@ def main():
                         write_json(target.with_name(f'narration-attempt-{attempt+1}.json'), payload)
                         write_json(target.with_name('narration.json'), payload)
                     from science_fact_guard import validate_unsourced_quantities
-                    validate_unsourced_quantities(
-                        screenplay, os.environ['VIDEO_TOPIC'])
+                    # The source-aware reviewer checks quantities in the new path;
+                    # a regex cannot decide whether a sourced number is true.
+                    if not single_pass:
+                        validate_unsourced_quantities(
+                            screenplay, os.environ['VIDEO_TOPIC'])
                     from retention_storyboard import audit_storyboard
                     storyboard_audit = audit_storyboard(
                         os.environ['VIDEO_TOPIC'], screenplay, s.language)
                     stage = 'science_review'
-                    if os.environ.get('PURFFLE_NARRATION_ONLY') == '1':
+                    if os.environ.get('PURFFLE_NARRATION_ONLY') == '1' and not creative:
                         write_json(target.with_name('narration.json'), {
                             'topic': topic, 'language': s.language,
                             'narration': [str(scene.narration) for scene in screenplay.scenes],
@@ -296,13 +299,7 @@ def main():
                         from science_sources import source_revision_scene_count
                         revision_count = source_revision_scene_count(
                             feedback_path, screenplay)
-                        if single_pass:
-                            try:
-                                rows = json.loads(Path(feedback_path).read_text(encoding='utf-8')).get('scene_checks', [])
-                                keep_indices = tuple(row['scene']-1 for row in rows if row.get('supported') is True)
-                            except (OSError, ValueError, KeyError, TypeError):
-                                keep_indices = ()
-                        elif revision_count is not None:
+                        if not single_pass and revision_count is not None:
                             review_scene_target = revision_count
                         # Preserve why earlier scripts failed. A later 429
                         # overwrote science-report.json with an empty checks
@@ -370,8 +367,9 @@ def main():
                 texts = [str(scene.narration) for scene in screenplay.scenes]
                 write_json(target.with_name('narration.json'), {
                     'topic': os.environ['VIDEO_TOPIC'], 'language': s.language,
-                    'narration': texts, 'evidence_method': review_evidence.method})
-                structure = audit_structure(texts, s.language, mode='short')
+                    'narration': texts, 'evidence_method': review_evidence.method,
+                    'writer': str(writer), 'scope': 'accepted narration'})
+                structure = audit_structure(texts, s.language, mode='short', advisory=single_pass)
                 # Curated factual dossiers skip ordinary model editorial review.
                 # Judge their actual spoken words independently in this audit.
                 report = json.loads(Path(os.environ.get('SCIENCE_REPORT', 'science-report.json')).read_text())

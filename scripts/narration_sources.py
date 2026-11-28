@@ -20,7 +20,7 @@ def search_plan(topic,language,room=None):
     try:
         result,_=room.ask("research","Find the exact encyclopedia article topic that answers this question, not its broad subject. "
             "Return a short English Wikipedia article/search phrase, a short article/search phrase in the requested language, "
-            "and a short English phrase identifying the specific phenomenon or mechanism. "
+            "and a short English phrase identifying the direct mechanism or practical purpose, not a disputed theory or peripheral detail. "
             "These are search hints only, not factual claims. No URLs. "
             f"Language: {language}. Question: {topic}",SCHEMA,PREFERRED,temperature=.1)
         en,native,focus=(str(result[k]).strip()[:100] for k in ("english","native","focus"))
@@ -93,22 +93,28 @@ def discover(topic,language,*,session=None,room=None):
                 if not title or page.get("missing") or len(extract)<100: continue
                 title_score=_match(_terms(query),_terms(title))
                 if not title_score: continue
-                for score,order,p in passages(extract,query,focus,topic):
-                    candidates.append((score+3*title_score-2*query_index-hit_index,lang,title,order,p))
+                ranked=passages(extract,query,focus,topic)
+                # Reserve the exact search hit introduction as well as focused body sections.
+                lead=re.sub(r"\s+"," ",extract.split("\n\n",1)[0]).strip()
+                if query_index<=1 and hit_index==0 and len(lead)>=100:
+                    if len(lead)>2200: lead=lead[:2200].rsplit(" ",1)[0]
+                    candidates.append((10000-query_index,lang,title,0,lead))
+                for score,order,p in ranked:
+                    candidates.append((score+3*title_score-8*query_index-hit_index,lang,title,order,p))
     candidates.sort(key=lambda x:-x[0])
     chosen=[]
     seen=set()
     per_article={}
     for score,lang,title,order,p in candidates:
         key=(lang,title)
-        if p in seen or per_article.get(key,0)>=2: continue
+        if p in seen or per_article.get(key,0)>=3: continue
         seen.add(p)
         per_article[key]=per_article.get(key,0)+1
         chosen.append({"id":f"ref-{len(chosen)+1}","title":title,
             "url":f"https://{lang}.wikipedia.org/wiki/{quote(title.replace(' ','_'),safe='()')}",
             "tier":"community_edited_reference","license":"CC BY-SA (see linked article and history)",
             "excerpt":p})
-        if len(chosen)>=4: break
+        if len(chosen)>=6: break
     if not chosen:
         raise RuntimeError("science_sources_unavailable: no focused reference passages")
     print("[REFERENCE PLAN]",json.dumps({"topic":topic,"queries":queries,"focus":focus,
