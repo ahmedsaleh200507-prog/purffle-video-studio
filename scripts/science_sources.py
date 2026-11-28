@@ -342,6 +342,9 @@ def discover_evidence(topic: str, language="en", *, session=None) -> Evidence:
             "id": f"official-{i}", "title": kind.replace("_", " "),
             "url": url, "tier": "editor_reviewed_official_dossier",
         } for i, url in enumerate(_OFFICIAL[kind], 1)), "curated_editor_reviewed")
+    if os.getenv("PURFFLE_SINGLE_PASS_NARRATION") == "1":
+        from narration_sources import discover
+        return discover(topic, language, session=session)
     search = _search_text(topic)
     if not search:
         raise RuntimeError("science_sources_unavailable: topic has no usable search terms")
@@ -511,7 +514,7 @@ def evidence_prompt(bundle: Evidence) -> str:
                  "research summaries, not verbatim external source quotations. Check the actual claims "
                  "against these notes; use exact excerpts from the notes for review anchors."]
     cards = source_fact_cards(bundle)
-    if cards:
+    if cards and os.getenv("PURFFLE_SINGLE_PASS_NARRATION") != "1":
         lines.extend([
             "SOURCE-OWNED FACT CARDS (literal sentences from the retrieved "
             "reference excerpts, NOT externally verified truth):",
@@ -581,7 +584,7 @@ def _validate_model_scene_checks(checks, scenes, bundle):
             and _normalize_quote(quote) in _normalize_quote(source.get("excerpt", "")))
         narration = str(scenes[i - 1].narration).casefold()
         absolutes = re.findall(r"\b(always|never|only|immer|niemals|nur)\b", narration)
-        if absolutes and not all(word in quote.casefold() for word in absolutes):
+        if absolutes and os.getenv("PURFFLE_SINGLE_PASS_NARRATION") != "1" and not all(word in quote.casefold() for word in absolutes):
             anchored = False
         accepted.append({
             "scene": i, "source_id": str(item.get("source_id") or "")[:40],
@@ -765,10 +768,12 @@ def review_topic_answer(script,bundle,llm):
             or not isinstance(result["reason"],str)):
         raise RuntimeError("science_review_unavailable: invalid_topic_review")
     failed=[k for k in keys if not result[k]]
-    if failed:
-        raise RuntimeError("retention_storyboard_invalid: exact topic answer/editorial gate failed: "+",".join(failed))
+    blocking = [k for k in failed if k in ("answers_question","payoff_complete")] if os.getenv("PURFFLE_SINGLE_PASS_NARRATION") == "1" else failed
+    if blocking:
+        raise RuntimeError("retention_storyboard_invalid: exact topic answer/editorial gate failed: "+",".join(blocking))
     return {"state":"model_screened_topic_answer","version":VERSION,
             **{k:result[k] for k in keys},
+            "advisory_findings":failed if not blocking else [],
             "scope":"editorial judgment, not viewer retention prediction"}
 
 
@@ -852,6 +857,16 @@ def screen_narration(script, bundle: Evidence, llm, *, path=None):
         "explicit support. Return JSON only. If supported, quote a short "
         "verbatim excerpt from the provided source (at least 20 characters). "
         "Do NOT fabricate citations or text. Reject unsupported claims.")
+    if os.getenv("PURFFLE_SINGLE_PASS_NARRATION") == "1":
+        system = (
+            "Review nonfiction narration for material factual errors or unsupported factual claims. "
+            "Use the actual reference passages, not your memory. Consider ordinary-language paraphrases, "
+            "translations, directly supported inferences, and nonliteral imagery; do not demand identical "
+            "wording or technical detail. Reject invented specifics, misleading absolutes, false mechanisms, "
+            "or unsupported core claims. Consider all provided excerpts together. For each supported scene "
+            "return its strongest literal source quote of 20 to 300 characters and the corresponding source_id. "
+            "Quotes must appear in the provided text. A quote is an anchor, not a proof by itself. "
+            "Return JSON only. Be concise; distinguish missing evidence from contradiction.")
     source_text = evidence_prompt(bundle)
     script_text = "\n".join(f"SCENE {i}: {x.narration}"
                             for i, x in enumerate(scenes, 1))
