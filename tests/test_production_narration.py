@@ -14,12 +14,13 @@ class Room:
         assert kwargs["avoid"]=="writer"
         return self.output,"editor"
 
-def test_short_changes_only_narration():
+def test_short_changes_only_narration(monkeypatch):
+    monkeypatch.delenv('PURFFLE_SINGLE_PASS_NARRATION',raising=False)
     scenes=[SimpleNamespace(narration="A mechanical clock uses a spring.",object="clock",visual_search_query="clock mechanism"),
             SimpleNamespace(narration="The spring drives gears.",object="gears",visual_search_query="clock gears")]
     script=SimpleNamespace(scenes=scenes)
     texts=["A clock can run without electricity. Its spring stores energy when you wind it.",
-           "As the spring unwinds, it turns a set of gears that control the movement of the hands."]
+           "As the spring unwinds, it turns a set of gears that control the steady movement of the clock hands around its face."]
     room=Room({"chosen":"a","scenes":texts})
     evidence=Evidence("Mechanical clocks",({"id":"1","title":"Reference","excerpt":"A clock can run without electricity. A wound spring stores energy and turns gears."},),"model_screened_reference")
     result,model=rewrite_short(script,"Mechanical clocks","en",evidence,room=room)
@@ -42,3 +43,33 @@ def test_curated_rewrites_do_not_use_exact_dossier_approval():
     result=review_reference(bundle,bundle.topic,"en")
     assert result.method=="creative_dossier_reference"
     assert result.sources[0]["excerpt"]
+
+
+def test_single_pass_locks_supported_scenes(monkeypatch):
+    monkeypatch.setenv("PURFFLE_SINGLE_PASS_NARRATION","1")
+    scenes=[SimpleNamespace(narration="This wording stays.",object="clock"),
+            SimpleNamespace(narration="Incorrect wording.",object="gears")]
+    class Single:
+        def ask(self,role,prompt,schema,preferred,**kwargs):
+            assert role=="writer" and "This wording stays." in prompt
+            return {"scenes":["Changed by the model.","A spring turns the gears."]},"writer"
+    evidence=Evidence("Mechanical clocks",({"id":"1","title":"Clock","excerpt":"A spring turns the gears."},),"model_screened_reference")
+    rewrite_short(SimpleNamespace(scenes=scenes),"Mechanical clocks","en",evidence,room=Single(),keep_indices=(0,))
+    assert [x.narration for x in scenes]==["This wording stays.","A spring turns the gears."]
+
+def test_focused_passages_include_article_body():
+    from narration_sources import passages
+    unrelated="Aircraft have many different structures and use wings to generate lift. Their designs vary widely."
+    relevant="Contrails form when water vapor in jet exhaust condenses into ice crystals in cold air at high altitude."
+    result=passages(unrelated+"\n\n== Contrails ==\n"+relevant,"contrails","ice crystals jet exhaust","white trails")
+    assert result[0][2]==relevant
+
+def test_bilingual_review_anchor_not_literal_narration_word(monkeypatch):
+    from science_sources import _validate_model_scene_checks
+    monkeypatch.setenv("PURFFLE_SINGLE_PASS_NARRATION","1")
+    excerpt="The light is emitted only in the presence of oxygen."
+    evidence=Evidence("Light",({"id":"1","excerpt":excerpt},),"model_screened_reference")
+    checks=[{"scene":1,"source_id":"1","quote":excerpt,"supported":True,"reason":"Translation."}]
+    assert _validate_model_scene_checks(checks,[SimpleNamespace(narration="Das Licht entsteht nur in Gegenwart von Sauerstoff.")],evidence)[0]["supported"]
+    checks[0]["quote"]="Invented quote that does not exist."
+    assert not _validate_model_scene_checks(checks,[SimpleNamespace(narration="Das Licht entsteht nur in Gegenwart von Sauerstoff.")],evidence)[0]["supported"]
