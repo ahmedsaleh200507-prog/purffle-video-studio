@@ -60,7 +60,7 @@ def endpoint(provider,model,env):
         return f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/v1/chat/completions"
     return URLS[provider]
 
-def request(provider,model,messages,env,*,post=None,sleep=time.sleep):
+def request(provider,model,messages,env,*,post=None,sleep=time.sleep,attempts=2):
     import requests
     url=endpoint(provider,model,env)
     if not url:
@@ -72,7 +72,9 @@ def request(provider,model,messages,env,*,post=None,sleep=time.sleep):
         assert model.endswith(":free")
         payload["provider"]={"max_price":{"prompt":0,"completion":0,"image":0,"request":0}}
     sender=post or requests.post
-    for attempt in range(2):
+    if attempts not in (1,2):
+        raise ValueError("unsupported attempt budget")
+    for attempt in range(attempts):
         try:
             response=sender(url,headers={"Authorization":"Bearer "+env[KEYS[provider]],"Content-Type":"application/json"},
                             json=payload,timeout=(10,100))
@@ -80,7 +82,7 @@ def request(provider,model,messages,env,*,post=None,sleep=time.sleep):
             raise ModelError(503,"network") from None
         status=int(response.status_code)
         if status!=200:
-            if attempt==0 and status in (429,503):
+            if attempt+1<attempts and status in (429,503):
                 # Never log raw error bodies or credentials.
                 daily=False
                 if status==429:

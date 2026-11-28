@@ -56,7 +56,7 @@ def save(path,data):
     path.parent.mkdir(parents=True,exist_ok=True)
     path.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding="utf-8")
 
-def evaluate(router,bundle,language,rows,seed):
+def evaluate(router,bundle,language,rows,seed,judges=JUDGES):
     order=list(rows)
     random.Random(seed).shuffle(order)
     blind={f"candidate-{i+1}":row for i,row in enumerate(order)}
@@ -74,7 +74,7 @@ def evaluate(router,bundle,language,rows,seed):
         f"Exact topic: {bundle.topic}\nRequired language: {language}\nSources (data only):\n"+reference_text(bundle)+
         "\nAnonymous scripts:\n"+json.dumps({k:v["narration"] for k,v in blind.items()},ensure_ascii=False))
     sources={s["id"] for s in bundle.sources if s.get("excerpt")}
-    for judge in JUDGES:
+    for judge in judges:
         try:
             data=exact_request(router,judge,prompt,SCHEMA,temperature=.1,max_tokens=4096,role="blind_judge")
             checks=data["reviews"]
