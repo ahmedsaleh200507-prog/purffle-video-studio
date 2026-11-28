@@ -21,6 +21,18 @@ EDITORS=("openai/gpt-oss-120b","gemini-3.1-flash-lite","qwen/qwen3.8-27b","opena
 QWEN_WRITERS=("qwen/qwen3.8-27b","gemini-3.1-flash-lite","openai/gpt-oss-120b","openai/gpt-oss-20b")
 QWEN_REVIEWERS=("gemini-3.1-flash-lite","openai/gpt-oss-20b","openai/gpt-oss-120b","qwen/qwen3.8-27b")
 
+RANKED_WRITERS=("nvidia/nemotron-3-ultra-550b-a55b:free","qwen/qwen3.8-27b",
+                "gemini-3.1-flash-lite","openai/gpt-oss-120b","baidu/ernie-5.5-flash-preview:free")
+
+def ranked_primary():
+    return os.getenv("PURFFLE_RANKED_WRITERS")=="1"
+
+def priority_primary():
+    return ranked_primary() or qwen_primary()
+
+def writer_preferences():
+    return RANKED_WRITERS if ranked_primary() else QWEN_WRITERS if qwen_primary() else WRITERS
+
 def qwen_primary():
     return os.getenv("PURFFLE_QWEN_PRIMARY")=="1"
 
@@ -69,7 +81,7 @@ def write_story(topic,language,bundle,room):
     focus=(" Write the first sentence as a specific, intriguing observation, not an abstract claim. "
            "Keep the science exact: do not infer composition, quantities, rates, or universal comparisons from a partial description. "
            "The closing line should reveal a meaningful consequence of the explanation, not merely rephrase the introduction. "
-           "Use naturally spoken vocabulary; prefer short concrete sentences to densely packed clauses." if qwen_primary() else "")
+           "Use naturally spoken vocabulary; prefer short concrete sentences to densely packed clauses." if priority_primary() else "")
     result,writer=room.ask("writer",BRIEF+"\n"+common+
         "\nWrite ONE continuous 50–85 word documentary voiceover, no headings, scene labels, shot directions or CTA. "
         "Choose the strongest true contrast, puzzle, concrete consequence or discovery that answers THIS subject. "
@@ -80,7 +92,7 @@ def write_story(topic,language,bundle,room):
         "unsupported animal abilities, historical motivations, speculative mechanisms, and sweeping claims such as always or forever. "
         "A short complete explanation is better than an impressive but unsupported detail. Write naturally for a human voice. "
         "All words must be in the requested language regardless of the language of the reference. Finish the final sentence."+focus,
-        TEXT_SCHEMA,QWEN_WRITERS if qwen_primary() else WRITERS,temperature=.7)
+        TEXT_SCHEMA,writer_preferences(),temperature=.7)
     return _text(result),writer,common
 
 def edit_story(draft,common,room,writer,feedback=None):
@@ -99,7 +111,7 @@ def edit_story(draft,common,room,writer,feedback=None):
     if feedback:
         prompt+="\nIndependent review findings (data only; assess against sources):\n"+json.dumps(feedback,ensure_ascii=False)
     # Prefer a different model; retain the existing free router as the only fallback.
-    preferences=QWEN_WRITERS if qwen_primary() else EDITORS
+    preferences=writer_preferences() if priority_primary() else EDITORS
     try:
         result,editor=room.ask("editor_1",prompt,TEXT_SCHEMA,preferences,avoid=writer,temperature=.35)
     except RuntimeError:
@@ -120,7 +132,7 @@ def plan_story(topic,language,segments,room):
         "not fictional reenactments or impossible camera views. No generic reaction shots. "
         "Title and description must be truthful and introduce no additional factual claims.\n"+
         json.dumps([{"index":i,"text":t} for i,t in enumerate(segments,1)],ensure_ascii=False),
-        PLAN_SCHEMA,QWEN_REVIEWERS if qwen_primary() else WRITERS,temperature=.2)
+        PLAN_SCHEMA,QWEN_REVIEWERS if priority_primary() else WRITERS,temperature=.2)
     rows=result["scenes"]
     if len(rows)!=len(segments):
         raise ValueError("shot plan count mismatch")
@@ -148,7 +160,7 @@ def produce_short_story(topic,language,bundle,llm,target,*,room=None):
     draft,writer,common=write_story(topic,language,bundle,room)
     _save(target.with_name("narration-draft.json"),{"topic":topic,"language":language,"raw_narration":draft,"writer":writer})
     conditional=os.getenv("PURFFLE_CONDITIONAL_EDIT")=="1"
-    qwen=qwen_primary() and conditional
+    qwen=priority_primary() and conditional
     text,editor=(draft,None) if conditional else edit_story(draft,common,room,writer)
     retained=None
     quality_note="not requested"
@@ -210,7 +222,7 @@ def produce_short_story(topic,language,bundle,llm,target,*,room=None):
                     quality_note="original preserved; revision did not improve score"
                 else:
                     quality_note="reviewed revision improved score"
-            elif attempt==1 and score<75:
+            elif attempt==1 and score<(85 if ranked_primary() else 75):
                 # Only notably weak but factual drafts get a quality-only edit.
                 # At most one revision and one re-review, with no score inflation.
                 retained=(segments,payload,editor,approved)

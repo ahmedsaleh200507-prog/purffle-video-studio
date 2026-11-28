@@ -12,6 +12,8 @@ if os.getenv("PURFFLE_STORY_FIRST")=="1" and os.getenv("PURFFLE_SINGLE_PASS_NARR
     VERSION="story-first-production-1"
     if os.getenv("PURFFLE_QWEN_PRIMARY")=="1" and os.getenv("PURFFLE_CONDITIONAL_EDIT")=="1":
         VERSION="story-first-qwen-conditional-2"
+    if os.getenv("PURFFLE_RANKED_WRITERS")=="1" and os.getenv("PURFFLE_CONDITIONAL_EDIT")=="1":
+        VERSION="story-first-ranked-free-3"
 
 def enabled():
     return os.getenv("PURFFLE_CREATIVE_NARRATION","0")=="1"

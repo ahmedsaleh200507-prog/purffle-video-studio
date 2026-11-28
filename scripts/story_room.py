@@ -7,7 +7,7 @@ import json
 import re
 import os
 from editorial_standard import audit_structure, word_tokens
-from cloud_model_router import Router, MODELS, ModelError
+from cloud_model_router import Router, MODELS, ModelError, OPENROUTER_WRITERS
 
 VERSION = "story-room-discovery-first"
 WRITERS = ("openai/gpt-oss-120b", "gemini-3.6-flash", "gemini-3.1-flash-lite")
@@ -99,8 +99,10 @@ class StoryRoom:
 
     def ask(self, role, prompt, schema, preferred, *, avoid=None, temperature=.3):
         excluded = set(avoid) if isinstance(avoid,(tuple,list,set)) else ({avoid} if avoid else set())
-        restricted=os.getenv("PURFFLE_QWEN_PRIMARY")=="1" and role in ("writer","editor_1","planner","review")
-        pairs = sorted((p for p in MODELS if p[1] not in excluded and (not restricted or p[1] in preferred)), key=lambda p: (False,
+        ranked=os.getenv("PURFFLE_RANKED_WRITERS")=="1"
+        restricted=(ranked or os.getenv("PURFFLE_QWEN_PRIMARY")=="1") and role in ("writer","editor_1","planner","review")
+        available=MODELS+OPENROUTER_WRITERS if ranked and role in ("writer","editor_1") else MODELS
+        pairs = sorted((p for p in available if p[1] not in excluded and (not restricted or p[1] in preferred)), key=lambda p: (False,
             preferred.index(p[1]) if p[1] in preferred else len(preferred)))
         messages=[{"role":"system","content":"You are an experienced nonfiction documentary writer or editor. Return JSON only."},
                   {"role":"user","content":prompt}]
