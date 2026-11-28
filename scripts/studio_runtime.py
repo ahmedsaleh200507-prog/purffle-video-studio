@@ -1086,6 +1086,13 @@ def strict_prepare_segment(item, seconds, idx, settings, work):
         raise RuntimeError("Render refused unvalidated footage or generated/still content")
     if item.duration < seconds + 0.05:
         raise RuntimeError("Source too short; refusing footage loop")
+    if item.extra.get("multi_shot"):
+        from multi_shot_runtime import validate_bundle
+        from multi_shot import digest
+        bundle=item.extra["multi_shot"]
+        validate_bundle(bundle,bundle["shots"][0]["director_contract"])
+        if digest(item.path)!=bundle["sha256"]:
+            raise RuntimeError("Multi-shot bytes changed after verification")
     W, H, F = settings.width, settings.height, settings.fps
     measured_scale = _native_portrait_scale(
         {"width": item.width, "height": item.height}, W, H)

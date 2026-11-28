@@ -85,6 +85,9 @@ def validate_result(video: Path, metadata: dict, captions: Path, footage_report:
         raise RuntimeError('insufficient_native_resolution: portrait crop upscale exceeds quality limit')
     if len({scene['sha256'] for scene in scenes}) != len(scenes):
         raise RuntimeError('Duplicate footage repeated across scenes')
+    if any(scene.get('multi_shot') is not None for scene in scenes):
+        from multi_shot_runtime import validate_final_records
+        validate_final_records(scenes)
     return info, report
 
 
@@ -610,7 +613,7 @@ def main():
                           if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1' else None,
                       science_report=os.environ.get('SCIENCE_REPORT', 'science-report.json'),
                       science_screening=review_evidence.method if os.environ.get('PURFFLE_MEDIA_FIRST', '1') == '1' else 'legacy_unreviewed',
-                      test_result='validated_output', sources=sorted({x['source'] for x in footage['scenes']}))
+                      test_result='validated_output', sources=sorted({s['source'] for x in footage['scenes'] for s in (x.get('multi_shot',{}).get('shots') or [x])}))
     except Exception as exc:
         logging.exception('Video production failed')
         result.update(error=str(exc), exception_type=type(exc).__name__, stage=stage)

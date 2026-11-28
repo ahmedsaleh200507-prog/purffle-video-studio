@@ -46,6 +46,10 @@ on:
         type: string
   workflow_call:
     inputs:
+      multi_shot:
+        type: boolean
+        required: false
+        default: false
       pixel_first:
         type: boolean
         required: false
@@ -138,6 +142,7 @@ jobs:
       PURFFLE_LOCAL_QUALITY: ${{ inputs.free_canary && '0' || '1' }}
       PURFFLE_CLOUD_MODEL_ROUTER: '1'
       PURFFLE_SIGLIP_REVIEW: '1'
+      PURFFLE_MULTI_SHOT: ${{ inputs.multi_shot && '1' || '0' }}
       PURFFLE_PIXEL_FIRST: ${{ inputs.pixel_first && '1' || '0' }}
       PURFFLE_VLM_SHADOW: '1'
       PURFFLE_EDITORIAL_ANSWER_GATE: '1'
