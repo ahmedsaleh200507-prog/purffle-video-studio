@@ -46,6 +46,10 @@ on:
         type: string
   workflow_call:
     inputs:
+      single_pass_narration:
+        type: boolean
+        required: false
+        default: false
       video_1:
         type: string
         required: true
@@ -125,6 +129,7 @@ jobs:
       PURFFLE_EDITORIAL_ANSWER_GATE: '1'
       PURFFLE_EDITORIAL_STANDARD: '1'
       PURFFLE_CREATIVE_NARRATION: '1'
+      PURFFLE_SINGLE_PASS_NARRATION: ${{ inputs.single_pass_narration && '1' || '0' }}
       PURFFLE_NATURAL_VOICE: '1'
       PURFFLE_ENGLISH_NARRATOR: george
       PURFFLE_EDITORIAL_PACING: '1'
