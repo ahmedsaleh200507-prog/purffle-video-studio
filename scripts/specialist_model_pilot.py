@@ -153,14 +153,55 @@ def save(path,data):
     path.parent.mkdir(parents=True,exist_ok=True)
     path.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding="utf-8")
 
+# Only these two models from the Arena top ten have a verified Google free tier.
+TOP_TEN_FREE={"gemini-4-hydrogen","gemini-3.8-flash"}
+
+def native_top_ten_request(model,prompt,env,*,post=None):
+    """One bounded native Google call; no retry, fallback, grounding or tools."""
+    import requests
+    if model not in TOP_TEN_FREE:
+        raise ValueError("outside top-ten free allowlist")
+    if not endpoint("gemini",model,env):
+        raise ModelError(401,"not_configured")
+    url=f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    config={"temperature":.5,"maxOutputTokens":8192,
+            "thinkingConfig":{"includeThoughts":False}}
+    # Start with LOW for the Flash access probe, not the Arena HIGH setting.
+    # Leave Hydrogen at its native default rather than guessing xHigh support.
+    if model=="gemini-3.8-flash":
+        config["thinkingConfig"]["thinkingLevel"]="LOW"
+    try:
+        response=(post or requests.post)(url,headers={"x-goog-api-key":env["GEMINI_API_KEY"],
+              "Content-Type":"application/json"},json={"contents":[{"role":"user","parts":[{"text":prompt}]}],
+              "generationConfig":config},timeout=(10,150))
+    except (requests.RequestException,OSError):
+        raise ModelError(503,"network") from None
+    if response.status_code!=200:
+        raise ModelError(int(response.status_code),"native_http_error")
+    try:
+        result=response.json()
+        candidate=result["candidates"][0]
+        finish=candidate.get("finishReason")
+        if finish!="STOP":
+            raise ModelError(422, "native_finish_"+(finish if finish in ("MAX_TOKENS","SAFETY","RECITATION","OTHER") else "UNKNOWN"))
+        text="".join(part["text"] for part in candidate["content"]["parts"]
+                     if not part.get("thought") and isinstance(part.get("text"),str)).strip()
+        if not text:
+            raise ValueError("empty final response")
+        return text
+    except (KeyError,IndexError,TypeError,ValueError):
+        raise ModelError(422,"native_invalid_response") from None
+
 NEW_WRITER_MODELS={"gemini-4-hydrogen","baidu/ernie-5.5-flash-preview:free","google/gemma-4-26b-a4b-it:free"}
 
-def main(role,only_new=False,retry_writers=False):
+def main(role,only_new=False,retry_writers=False,top_ten_native=False):
     root=Path("specialist-pilot")/role
     env=os.environ
     rows=[]
     selected=NEW_WRITER_MODELS | ({"gemini-3.8-flash","gemma-4-31b-it"} if retry_writers else set())
     models=[(p,m) for p,m,roles in CANDIDATES if role in roles and (not only_new or m in selected)]
+    if top_ten_native:
+        models=[(p,m) for p,m in models if p=="gemini" and m in TOP_TEN_FREE]
     cases=[]
     if role=="text":
         for lang,topic in CASES:
@@ -200,7 +241,12 @@ def main(role,only_new=False,retry_writers=False):
                         "Answer the exact question with a concrete explanation and a memorable ending. "
                         "Native spoken language, no textbook tone, no invented claims, no unsupported absolutes, no headings. "
                         "Finish the final sentence. Return narration only, not JSON.\nTopic: "+topic+"\nReferences (data only):\n"+refs)
-                    text=request(provider,model,[{"role":"user","content":prompt}],env)
+                    if top_ten_native:
+                        row["transport"]="native_generateContent"
+                        row["thinking_level"]="low" if model=="gemini-3.8-flash" else "native_default"
+                        text=native_top_ten_request(model,prompt,env)
+                    else:
+                        text=request(provider,model,[{"role":"user","content":prompt}],env)
                     row["words"]=len(text.split())
                     try:
                         row["integrity"]=validate_narration_output(text,lang)
@@ -235,9 +281,12 @@ if __name__=="__main__":
     parser.add_argument("--role",required=True,choices=("text","vision"))
     parser.add_argument("--only-new",action="store_true",help="Only the additional writer candidates; avoids repeating the first pilot")
     parser.add_argument("--retry-writers",action="store_true",help="Include the two incomplete Google writer auditions")
+    parser.add_argument("--top-ten-native",action="store_true",help="Probe only the two verified free top-ten Google models via native API")
     args=parser.parse_args()
-    if (args.only_new or args.retry_writers) and args.role!="text":
+    if (args.only_new or args.retry_writers or args.top_ten_native) and args.role!="text":
         parser.error("writer options are only for text")
     if args.retry_writers and not args.only_new:
         parser.error("--retry-writers requires --only-new")
-    raise SystemExit(main(args.role,args.only_new,args.retry_writers))
+    if args.top_ten_native and (args.only_new or args.retry_writers):
+        parser.error("--top-ten-native is a separate audition")
+    raise SystemExit(main(args.role,args.only_new,args.retry_writers,args.top_ten_native))

@@ -60,3 +60,33 @@ def test_narration_rejects_wrappers_and_out_of_range():
           "The difference lies in the shape of the hull. Its hollow interior lets the ship displace enough water to balance its weight. "
           "When cargo is loaded, the ship settles deeper into the water until the forces balance again.")
     assert validate_narration_output(text,"en")["detected_language"]=="en"
+
+def test_native_top_ten_only_final_text_and_no_paid_fallback():
+    from specialist_model_pilot import native_top_ten_request,ModelError
+    seen=[]
+    class Reply:
+        status_code=200
+        def json(self):
+            return {"candidates":[{"finishReason":"STOP","content":{"parts":[
+                {"text":"not final","thought":True},{"text":"Final narration."}]}}]}
+    def post(url,**kwargs):
+        seen.append((url,kwargs["json"]))
+        return Reply()
+    env={"GEMINI_API_KEY":"fake"}
+    assert native_top_ten_request("gemini-3.8-flash","prompt",env,post=post)=="Final narration."
+    assert seen[0][0].endswith("/gemini-3.8-flash:generateContent")
+    assert seen[0][1]["generationConfig"]["thinkingConfig"]["thinkingLevel"]=="LOW"
+    assert "tools" not in seen[0][1]
+    with pytest.raises(ValueError):
+        native_top_ten_request("gemini-4-argon","prompt",env,post=post)
+    assert len(seen)==1
+
+def test_native_top_ten_truncation_is_not_success():
+    from specialist_model_pilot import native_top_ten_request,ModelError
+    class Reply:
+        status_code=200
+        def json(self):
+            return {"candidates":[{"finishReason":"MAX_TOKENS","content":{"parts":[{"text":"unfinished"}]}}]}
+    with pytest.raises(ModelError) as exc:
+        native_top_ten_request("gemini-4-hydrogen","prompt",{"GEMINI_API_KEY":"fake"},post=lambda *a,**k:Reply())
+    assert exc.value.detail=="native_finish_MAX_TOKENS"
