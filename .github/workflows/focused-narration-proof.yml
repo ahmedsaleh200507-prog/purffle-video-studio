@@ -9,7 +9,7 @@ permissions:
 jobs:
   proof:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 55
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -19,6 +19,7 @@ jobs:
       PURFFLE_EDITORIAL_STANDARD: '1'
       PURFFLE_CREATIVE_NARRATION: '1'
       PURFFLE_SINGLE_PASS_NARRATION: '1'
+      PURFFLE_STORY_FIRST: '1'
       PURFFLE_EDITORIAL_ANSWER_GATE: '1'
       PURFFLE_EDITORIAL_PACING: '1'
       PURFFLE_NARRATION_ONLY: '1'
@@ -42,10 +43,11 @@ jobs:
         env:
           PURFFLE_CREATIVE_NARRATION: '0'
           PURFFLE_SINGLE_PASS_NARRATION: '0'
+          PURFFLE_STORY_FIRST: '0'
         run: |
           python -m compileall -q scripts tests/test_production_narration.py
-          python -m pytest -q tests/test_production_narration.py tests/test_story_room.py tests/test_root_production.py
-      - name: Exercise the real production text path on five subjects in both languages
+          python -m pytest -q tests/test_production_narration.py tests/test_story_room.py tests/test_root_production.py tests/test_story_first.py
+      - name: Exercise story-first production on ten subjects in both languages
         env:
           PURFFLE_STRICT: '1'
         run: |
@@ -62,9 +64,20 @@ jobs:
               ("en","Why do cats have whiskers?"),
               ("de","Warum hatte das Kolosseum unterirdische Gänge?"),
               ("en","Why does a steel ship float?"),
-              ("de","Warum ist der Mond voller Krater?")
+              ("de","Warum ist der Mond voller Krater?"),
+              ("en","How do mangrove trees survive in salt water?"),
+              ("de","Wie überleben Mangroven im Salzwasser?"),
+              ("en","How did the printing press change book production?"),
+              ("de","Wie veränderte der Buchdruck die Herstellung von Büchern?"),
+              ("en","Why does bread rise?"),
+              ("de","Warum geht Brotteig auf?"),
+              ("en","How do migrating monarch butterflies navigate?"),
+              ("de","Wie orientieren sich Monarchfalter auf ihrer Wanderung?"),
+              ("en","Why do some caves contain giant crystals?"),
+              ("de","Warum entstehen in manchen Höhlen riesige Kristalle?")
           ]
           failed=0
+          scores=[]
           for i,(lang,topic) in enumerate(cases,1):
               root=Path("focused-proof")/str(i)
               root.mkdir(parents=True,exist_ok=True)
@@ -80,9 +93,16 @@ jobs:
                   print("NARRATION OUTPUT:",i,path.name,path.read_text(),flush=True)
               if (root/"science-report.json").is_file():
                   print("SOURCE SCREEN:",i,(root/"science-report.json").read_text(),flush=True)
+              quality=root/"narration-quality.json"
+              if success and quality.is_file():
+                  score=json.loads(quality.read_text()).get("editorial",{}).get("weighted_score")
+                  if isinstance(score,(int,float)): scores.append(score)
               print("TEST RESULT:",i,topic,success,result.get("stage"),flush=True)
           print("TOTAL ACCEPTED:",len(cases)-failed,f"/{len(cases)}",flush=True)
-          sys.exit(1 if failed else 0)
+          average=sum(scores)/len(scores) if scores else 0
+          print("ACCEPTED QUALITY MEAN:",round(average,2),"SCORED:",len(scores),flush=True)
+          print("QUALITY TARGET:",average>=85 and len(scores)==len(cases),flush=True)
+          sys.exit(1 if failed or len(scores)!=len(cases) or average<85 else 0)
           PY
       - uses: actions/upload-artifact@v4
         if: always()

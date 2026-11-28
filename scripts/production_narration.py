@@ -7,6 +7,10 @@ from story_room import obvious_opening_problem
 
 VERSION="curiosity-first-production-4"
 
+# Recovery version identifies the experimental story-first path separately.
+if os.getenv("PURFFLE_STORY_FIRST")=="1" and os.getenv("PURFFLE_SINGLE_PASS_NARRATION")=="1":
+    VERSION="story-first-production-1"
+
 def enabled():
     return os.getenv("PURFFLE_CREATIVE_NARRATION","0")=="1"
 
