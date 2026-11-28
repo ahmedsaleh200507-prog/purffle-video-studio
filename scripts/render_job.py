@@ -167,7 +167,11 @@ def main():
             stage = 'grounded_script'
             review_feedback_text = ''
             review_scene_target = None
-            for attempt in range(3):
+            single_pass = creative and os.getenv('PURFFLE_SINGLE_PASS_NARRATION') == '1'
+            max_attempts = 2 if single_pass else 3
+            previous_screenplay = None
+            keep_indices = ()
+            for attempt in range(max_attempts):
                 # The normalizer obtains precise, source-checked facts before
                 # anybody searches for clips. A visual query can never
                 # introduce an unsourced scientific claim into the speech.
@@ -199,31 +203,34 @@ def main():
                                            _lightning_repeated_topic(topic))
                                 else review_scene_target)
                 try:
-                    with (use_story_scene_target(target_count),
-                          use_evidence(evidence),
-                          use_review_feedback(review_feedback_text)):
-                        # For fixed, official-source-backed explainers,
-                        # drafting a random Groq script only to overwrite
-                        # every sentence wastes thousands of free tokens.
-                        # Unknown topics still use model drafts and strict
-                        # independent source-quote review.
-                        from official_draft import approved_dossier_draft
-                        cached_draft = approved_dossier_draft(
-                            topic, s.language, evidence,
-                            scene_count=target_count or 3)
-                        if cached_draft is not None:
-                            screenplay, pick, writer = cached_draft
-                            print('[SOURCE DOSSIER] Factual source-reviewed '
-                                  'draft; zero Groq script tokens', flush=True)
-                        else:
-                            screenplay, pick, writer = studio.draft(
-                                topic, style='facts')
+                    if single_pass and previous_screenplay is not None:
+                        screenplay = previous_screenplay
+                    else:
+                        with (use_story_scene_target(target_count),
+                              use_evidence(evidence),
+                              use_review_feedback(review_feedback_text)):
+                            # For fixed, official-source-backed explainers,
+                            # drafting a random Groq script only to overwrite
+                            # every sentence wastes thousands of free tokens.
+                            # Unknown topics still use model drafts and strict
+                            # independent source-quote review.
+                            from official_draft import approved_dossier_draft
+                            cached_draft = approved_dossier_draft(
+                                topic, s.language, evidence,
+                                scene_count=target_count or 3)
+                            if cached_draft is not None:
+                                screenplay, pick, writer = cached_draft
+                                print('[SOURCE DOSSIER] Factual source-reviewed '
+                                      'draft; zero Groq script tokens', flush=True)
+                            else:
+                                screenplay, pick, writer = studio.draft(
+                                    topic, style='facts')
                 except (ValueError, TypeError) as draft_error:
                     # The Groq JSON generator sometimes omits a mandatory
                     # scene action/key. Never fabricate one or waive the
                     # six-field visual schema; redraft inside the same
                     # bounded three-attempt factual/storyboard loop.
-                    if attempt >= 2:
+                    if attempt >= max_attempts - 1:
                         raise
                     logging.warning(
                         'Structured script rejected; requesting complete '
@@ -234,7 +241,7 @@ def main():
                     if creative:
                         stage = 'creative_narration'
                         screenplay, writer = rewrite_short(screenplay, topic, s.language, review_evidence,
-                                                           feedback=review_feedback_text)
+                                                           feedback=review_feedback_text, keep_indices=keep_indices)
                     if creative:
                         # Preserve actual generated words even when a later gate rejects the video.
                         payload = {'topic': topic, 'language': s.language,
@@ -261,6 +268,9 @@ def main():
                         path=os.environ.get('SCIENCE_REPORT', 'science-report.json'))
                     break
                 except RuntimeError as script_error:
+                    if single_pass:
+                        previous_screenplay = screenplay
+                        keep_indices = ()
                     if evidence.method == 'curated_editor_reviewed' and not creative:
                         # A mismatched predefined statement cannot be fixed
                         # by paying the LLM to invent an alternative: fail
@@ -286,7 +296,13 @@ def main():
                         from science_sources import source_revision_scene_count
                         revision_count = source_revision_scene_count(
                             feedback_path, screenplay)
-                        if revision_count is not None:
+                        if single_pass:
+                            try:
+                                rows = json.loads(Path(feedback_path).read_text(encoding='utf-8')).get('scene_checks', [])
+                                keep_indices = tuple(row['scene']-1 for row in rows if row.get('supported') is True)
+                            except (OSError, ValueError, KeyError, TypeError):
+                                keep_indices = ()
+                        elif revision_count is not None:
                             review_scene_target = revision_count
                         # Preserve why earlier scripts failed. A later 429
                         # overwrote science-report.json with an empty checks
@@ -305,7 +321,7 @@ def main():
                     if str(script_error).startswith(('retention_storyboard_invalid:', 'editorial_')):
                         # Fixed internal verdict labels, never arbitrary model instructions.
                         review_feedback_text="EDITORIAL REVISION: Correct the failed narrative criteria: "+str(script_error)[:220]+". Keep every claim source-supported and answer the original topic."
-                    if attempt >= 2:
+                    if attempt >= max_attempts - 1:
                         if creative:
                             raise  # Do not replace rejected creative text with a stale script.
                         # The real V5 #102 proof screened two of four scenes
