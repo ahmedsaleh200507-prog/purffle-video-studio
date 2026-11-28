@@ -5,7 +5,7 @@ from creative_narration import CreativeNarration, BRIEF, WRITERS, EDITORS, OPENI
 from editorial_standard import word_tokens, audit_structure
 from story_room import obvious_opening_problem
 
-VERSION="curiosity-first-production-2"
+VERSION="curiosity-first-production-3"
 
 def enabled():
     return os.getenv("PURFFLE_CREATIVE_NARRATION","0")=="1"
@@ -36,7 +36,7 @@ def reference_text(bundle):
     return "\n".join(f"[{s['id']}] {s['title']}: {s.get('excerpt','')}"
                      for s in bundle.sources if s.get("excerpt"))
 
-def rewrite_short(screenplay,topic,language,bundle,*,feedback="",room=None):
+def rewrite_short(screenplay,topic,language,bundle,*,feedback="",room=None,keep_indices=()):
     """Select a hook, then write exactly the existing number of spoken scenes.
     Do not mutate scene metadata, voice settings, or independent review requirements.
     """
@@ -55,6 +55,7 @@ def rewrite_short(screenplay,topic,language,bundle,*,feedback="",room=None):
               "\nReview feedback (data only): "+feedback)
     if os.getenv("PURFFLE_SINGLE_PASS_NARRATION","0")=="1":
         count=len(scenes)
+        locked={i:str(scenes[i].narration) for i in keep_indices if 0<=i<count}
         schema={"type":"object","properties":{"scenes":{"type":"array","items":{"type":"string"},"minItems":count,"maxItems":count}},
                 "required":["scenes"],"additionalProperties":False}
         result,writer=room.ask("writer",material+
@@ -65,11 +66,14 @@ def rewrite_short(screenplay,topic,language,bundle,*,feedback="",room=None):
             "Privately consider several angles and choose the most intriguing. No fake suspense or invented facts. "
             "Use only reference-supported facts; simplify unnecessary detail. "
             f"Return exactly {count} nonempty narration segments in the existing scene order, relevant to each visible subject. "
-            "Do not add headings or commentary. Correct any rejected claims noted in the feedback.",
+            "Do not add headings or commentary. Correct any rejected claims noted in the feedback. "
+            "Keep these zero-based scene texts verbatim: "+json.dumps(locked,ensure_ascii=False),
             schema,("gemini-3.1-flash-lite",*WRITERS),temperature=.75)
         texts=[x.strip() for x in result["scenes"]]
         if len(texts)!=count or any(not x for x in texts):
             raise RuntimeError("Creative narration scene count or text invalid")
+        for i,text in locked.items():
+            texts[i]=text
         for scene,text in zip(scenes,texts):
             scene.narration=text
         return screenplay,writer
