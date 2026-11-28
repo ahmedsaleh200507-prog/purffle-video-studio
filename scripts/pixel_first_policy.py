@@ -53,7 +53,7 @@ def corroborates(rows):
     return len(rows)==3 and all(len(r)==3 and all(math.isfinite(float(v)) for v in r) for r in rows) and sum(r[0]>max(r[1:]) for r in rows)>=2
 
 def confirmed(answers):
-    return answers==[True,False,False]
+    return isinstance(answers,list) and len(answers)==3 and answers[0] is True and answers[1] is False and answers[2] is False
 
 def verify_pixels(path,need,focus,contract,matcher,*,deadline,ask=None,secondary=None):
     """Review the exact final portrait interval. Fail closed on missing evidence.
@@ -97,15 +97,21 @@ def verify_pixels(path,need,focus,contract,matcher,*,deadline,ask=None,secondary
             remaining=deadline-time.monotonic()
             if remaining<15:
                 return {"verified":False,"reason":"review_budget_exhausted","evidence":evidence}
-            p=subprocess.run([sys.executable,str(Path(__file__).resolve()),str(preview),json.dumps([r["queries"] for r in evidence])],
-                capture_output=True,text=True,check=False,timeout=min(105,remaining))
+            try:
+                p=subprocess.run([sys.executable,str(Path(__file__).resolve()),str(preview),json.dumps([r["queries"] for r in evidence])],
+                    capture_output=True,text=True,check=False,timeout=min(105,remaining))
+            except subprocess.TimeoutExpired:
+                return {"verified":False,"reason":"qwen_review_timeout","evidence":evidence}
             if p.returncode:
                 # Report only diagnostic exception classes, never arbitrary child output.
                 classes=re.findall(r'(?m)^([A-Za-z_][\w.]*(?:Error|Exception)):',p.stderr)
                 return {'verified':False,'reason':'qwen_child_failed','returncode':p.returncode,
                         'exception_types':classes[-5:],'evidence':evidence}
-            answers=json.loads(p.stdout.splitlines()[-1])
-    if len(answers)!=len(evidence):
+            try:
+                answers=json.loads(p.stdout.splitlines()[-1])
+            except (ValueError,IndexError):
+                return {"verified":False,"reason":"invalid_qwen_output","evidence":evidence}
+    if not isinstance(answers,list) or len(answers)!=len(evidence):
         return {"verified":False,"reason":"invalid_qwen_evidence","evidence":evidence}
     for row,verdict in zip(evidence,answers):
         row["qwen"]=verdict

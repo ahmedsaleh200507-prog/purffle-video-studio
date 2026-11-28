@@ -29,7 +29,7 @@ jobs:
           test "$GEMINI_FREE" = 1 && test "$GROQ_FREE" = 1 && test "$OPENROUTER_FREE" = 1
       - run: pip install 'pytest>=8,<10' 'Pillow>=10,<14' requests 'jsonschema>=4.20,<5' 'PyYAML>=6,<7'
       - run: python -m compileall -q scripts
-      - run: python -m pytest -q tests/test_root_production.py tests/test_science_salvage.py tests/test_science_sources.py tests/test_long_generic.py tests/test_long_batch_slot.py tests/test_long_script.py tests/test_long_video_pipeline.py tests/test_aggregate_results.py tests/test_ranked_free_writers.py tests/test_multi_shot.py tests/test_multi_shot_runtime.py tests/test_free_stock_probe.py
+      - run: python -m pytest -q tests/test_root_production.py tests/test_science_salvage.py tests/test_science_sources.py tests/test_long_generic.py tests/test_long_batch_slot.py tests/test_long_script.py tests/test_long_video_pipeline.py tests/test_aggregate_results.py tests/test_ranked_free_writers.py tests/test_multi_shot.py tests/test_multi_shot_runtime.py tests/test_free_stock_probe.py tests/test_pixel_first_policy.py tests/test_empty_footage_batches.py tests/test_v4_footage_search.py
   stock_verification:
     needs: preflight
     uses: ./.github/workflows/free-stock-proof.yml

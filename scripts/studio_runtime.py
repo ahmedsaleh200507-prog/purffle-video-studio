@@ -355,6 +355,9 @@ class StrictVisuals:
         attempt_deadline = min(scene_start + (150 if os.environ.get("PURFFLE_SHORTS_PORTRAIT_FIRST")=="1" else 75),
                                getattr(self, "_shot_deadline", float("inf")))
         max_candidates = max(1, min(12, int(os.getenv("CANDIDATES_PER_SOURCE", "4"))))
+        # Decide once, even when every provider batch is empty or rejected.
+        from pixel_first_policy import enabled as pixel_first_enabled, metadata_rank, action_rank
+        pixel_first = pixel_first_enabled() and isinstance(getattr(self,"matcher",None), SceneMatcher) and bool(director_contract)
         # #93: the precise "lava entering ocean" shot was filled by a
         # generic Pixabay lava clip before the curated USGS ocean-entry
         # footage was ever considered. Prefer USGS ONLY for that shot;
@@ -533,16 +536,16 @@ class StrictVisuals:
                         raise ValueError(
                             "volcano_final_action_mismatch: no provider evidence "
                             "for an active eruption, plume, ash, or molten lava")
-                    from pixel_first_policy import enabled as pixel_first_enabled, metadata_rank, action_rank
-                    pixel_first = pixel_first_enabled() and isinstance(self.matcher, SceneMatcher) and bool(director_contract)
                     action_metadata = "explicit_event"
                     if director_contract:
                         from visual_director import metadata_action_candidate
                         action_metadata = metadata_action_candidate(director_contract, " ".join(
                                 (str(item.text),
                                  str(license_info.get("source_page", "")))))
-                        if action_metadata == "reject" and pixel_first:
-                            action_metadata = action_rank(director_contract, " ".join((str(item.text),str(license_info.get("source_page", "")))))
+                        if pixel_first:
+                            pixel_metadata = action_rank(director_contract, " ".join((str(item.text),str(license_info.get("source_page", "")))))
+                            if pixel_metadata == "reject" or action_metadata == "reject":
+                                action_metadata = pixel_metadata
                         if action_metadata == "reject":
                             raise ValueError(
                                 "visual_director_action_metadata_mismatch: "
@@ -596,7 +599,7 @@ class StrictVisuals:
             subject_only_attempts = 0
             shortlist=ranked[:max_candidates]
             # Reserve one bounded slot for a plausible but sparsely tagged source.
-            if pixel_first_enabled():
+            if pixel_first and max_candidates > 1:
                 deferred_candidate=next((r for r in ranked if r[1].extra.get("relevance_evidence",{}).get("pixel_review_required")),None)
                 if deferred_candidate is not None and deferred_candidate not in shortlist:
                     shortlist=shortlist[:max_candidates-1]+[deferred_candidate]

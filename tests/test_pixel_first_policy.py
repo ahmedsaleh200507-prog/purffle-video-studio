@@ -27,3 +27,9 @@ def test_independent_verdict_must_be_explicit():
 def test_default_match_remains_strict():
     import inspect
     assert inspect.signature(SceneMatcher.match).parameters["allow_sparse_metadata"].default is False
+
+
+def test_numeric_and_malformed_verdicts_fail_closed():
+    assert not confirmed([1,0,0])
+    assert not confirmed(None)
+    assert not confirmed([True,False])

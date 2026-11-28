@@ -1,5 +1,8 @@
 name: Pixel-first metadata deferral proof
 on:
+  push:
+    branches: [chatgpt/yellow-system-fixes]
+    paths: ['.github/workflows/pixel-first-proof.yml']
   workflow_call:
   workflow_dispatch:
 permissions:
@@ -7,7 +10,7 @@ permissions:
 jobs:
   proof:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       PYTHONPATH: scripts
       OMP_NUM_THREADS: '2'
@@ -29,7 +32,15 @@ jobs:
       - run: pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
       - run: pip install 'transformers==4.57.1' 'accelerate>=1,<2' 'Pillow>=10.1,<14' requests 'sentencepiece>=0.2,<1' 'pytest>=8,<10' decord num2words 'av>=14,<17'
       - run: python -m compileall -q scripts
-      - run: python -m pytest -q tests/test_pixel_first_policy.py
+      - run: python -m pytest -q tests/test_pixel_first_policy.py tests/test_empty_footage_batches.py
+      - name: Preload pinned Qwen checkpoint outside inference deadline
+        run: |
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          from temporal_vision_pilot import MODELS
+          name,revision=MODELS["qwen2b"]
+          snapshot_download(name,revision=revision,allow_patterns=["*.json","*.safetensors","*.txt","*.model","*.jinja"])
+          PY
       - name: Test real source pixels independent of sparse metadata
         run: |
           python - <<'PY'
