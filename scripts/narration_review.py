@@ -5,6 +5,7 @@ passage IDs rather than retyping quotations. This is a model assessment,
 not an independent scientific certification or a retention forecast.
 """
 from pathlib import Path
+import os
 
 WEIGHTS={"hook":30,"continuation":25,"interesting_facts":20,"spoken_flow":15,"ending":10}
 STATUSES=("supported","minor_issue","material_issue","nonfactual")
@@ -42,12 +43,23 @@ def review_short(script,bundle,llm,path):
         "from 1 to 10. A dry textbook explanation scores 3-5, ordinary 6, good 7, gripping 8-9, exceptional 10. "
         "Score the spoken words, not topic attractiveness, correctness alone, imagined voice or visuals. "
         "Scores are advisory; do not confuse weak storytelling with incorrect facts. Return JSON only.")
-    prompt="Exact topic: "+bundle.topic+"\nReference passages:\n"+reference_text(bundle)+"\nNarration:\n"+"\n".join(
+    conditional=os.getenv("PURFFLE_CONDITIONAL_EDIT")=="1"
+    schema=SCHEMA
+    if conditional:
+        schema={**SCHEMA,"properties":{**SCHEMA["properties"],"language_ok":{"type":"boolean"},"complete":{"type":"boolean"}},
+                "required":[*SCHEMA["required"],"language_ok","complete"]}
+        system+=(" Check the requested narration language independently of its source language. "
+                 "Set language_ok false if it is in the wrong language or substantially mixed. "
+                 "Set complete false if any sentence, especially the final one, is unfinished or grammatically cut off. "
+                 "Contradictory absolute statements are material issues even if a later sentence qualifies them.")
+    prompt="Exact topic: "+bundle.topic+"\nRequested language: "+str(getattr(script,"language","not specified"))+"\nReference passages:\n"+reference_text(bundle)+"\nNarration:\n"+"\n".join(
         f"Scene {i}: {t}" for i,t in enumerate(texts,1))
     try:
         if not references:
             raise ValueError("no reference passages")
-        result=_strict_science_review_json(llm,system,prompt,SCHEMA)
+        result=_strict_science_review_json(llm,system,prompt,schema)
+        if conditional and any(type(result.get(k)) is not bool for k in ("language_ok","complete")):
+            raise ValueError("invalid language or completeness verdict")
         if type(result.get("answers_question")) is not bool or not isinstance(result.get("reason"),str):
             raise ValueError("invalid verdict")
         scores=result["scores"]
@@ -76,6 +88,11 @@ def review_short(script,bundle,llm,path):
     editorial={"state":"model_screened_topic_answer","answers_question":result["answers_question"],
         "scores":scores,"weighted_score":sum(scores[k]*w for k,w in WEIGHTS.items())/10,
         "reason":result["reason"][:500],"scope":"advisory model scores, not measured viewer retention"}
+    if conditional:
+        editorial.update(language_ok=result["language_ok"],complete=result["complete"])
+        if not result["language_ok"] or not result["complete"]:
+            _report(report,bundle,"failed",checks=checks,topic_review=editorial,error="wrong language or incomplete narration")
+            raise RuntimeError("editorial_narration_integrity: wrong language or incomplete sentence")
     if any(not c["supported"] for c in checks):
         _report(report,bundle,"failed",checks=checks,topic_review=editorial,error="material factual issue")
         raise RuntimeError("science_claim_unverified: unsupported narration scene")

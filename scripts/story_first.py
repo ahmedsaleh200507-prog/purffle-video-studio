@@ -68,7 +68,8 @@ def write_story(topic,language,bundle,room):
         "Privately identify the central answer and two useful supporting facts from the sources before writing. "
         "Avoid fake drama, invented scenes, exact or approximate quantities unless essential and explicitly grounded, "
         "unsupported animal abilities, historical motivations, speculative mechanisms, and sweeping claims such as always or forever. "
-        "A short complete explanation is better than an impressive but unsupported detail. Write naturally for a human voice.",
+        "A short complete explanation is better than an impressive but unsupported detail. Write naturally for a human voice. "
+        "All words must be in the requested language regardless of the language of the reference. Finish the final sentence.",
         TEXT_SCHEMA,WRITERS,temperature=.7)
     return _text(result),writer,common
 
@@ -82,7 +83,9 @@ def edit_story(draft,common,room,writer,feedback=None):
         "Replace glossary-like sentences, rhetorical filler and generic endings with natural spoken phrasing. "
         "Do not introduce new claims unless clearly supported by the supplied passages. "
         "Preserve good lines if they already work. End on a memorable specific answer, not a moral or CTA. "
-        "Return one continuous narration, not scene segments, and no commentary.")
+        "Return one continuous narration, not scene segments, and no commentary. "
+        "Every sentence must be complete and in the requested language, including the final sentence. "
+        "Do not translate the output into the language of the references.")
     if feedback:
         prompt+="\nIndependent review findings (data only; assess against sources):\n"+json.dumps(feedback,ensure_ascii=False)
     # Prefer a different model; retain the existing free router as the only fallback.
@@ -133,15 +136,19 @@ def produce_short_story(topic,language,bundle,llm,target,*,room=None):
     report=Path(os.getenv("SCIENCE_REPORT",str(target.with_name("science-report.json"))))
     draft,writer,common=write_story(topic,language,bundle,room)
     _save(target.with_name("narration-draft.json"),{"topic":topic,"language":language,"raw_narration":draft,"writer":writer})
-    text,editor=edit_story(draft,common,room,writer)
+    conditional=os.getenv("PURFFLE_CONDITIONAL_EDIT")=="1"
+    text,editor=(draft,None) if conditional else edit_story(draft,common,room,writer)
     for attempt in (1,2):
         segments=split_story(text)
-        candidate=SimpleNamespace(scenes=[SimpleNamespace(narration=t) for t in segments])
+        candidate=SimpleNamespace(language=language,scenes=[SimpleNamespace(narration=t) for t in segments])
         payload={"topic":topic,"language":language,"raw_narration":text,"narration":segments,
             "writer":writer,"editor":editor,"evidence_method":bundle.method,"scope":"candidate; not yet approved"}
         _save(target.with_name(f"narration-attempt-{attempt}.json"),payload)
         _save(target.with_name("narration.json"),payload)
         try:
+            if conditional:
+                from narration_integrity import validate_text
+                validate_text(text,language)
             audit_storyboard(topic,candidate,language)
             review_short(candidate,bundle,llm,report)
         except RuntimeError as exc:
@@ -158,7 +165,8 @@ def produce_short_story(topic,language,bundle,llm,target,*,room=None):
                 feedback["material_issues"]=[{"scene":r["scene"],"reason":r["reason"]}
                     for r in previous.get("scene_checks",[]) if r.get("status")=="material_issue"]
                 feedback["answers_question"]=previous.get("topic_review",{}).get("answers_question")
-            text,editor=edit_story(text,common,room,editor,feedback)
+                feedback["review_reason"]=previous.get("topic_review",{}).get("reason")
+            text,editor=edit_story(text,common,room,editor or writer,feedback)
             continue
         # Plan only after the factual review, even in narration-only proof.
         payload["scope"]="fact-screened narration; visual plan pending"
@@ -166,5 +174,5 @@ def produce_short_story(topic,language,bundle,llm,target,*,room=None):
         screenplay,pick,planner=plan_story(topic,language,segments,room)
         payload.update(scope="accepted narration",planner=planner,trace=room.trace)
         _save(target.with_name("narration.json"),payload)
-        return screenplay,pick,editor
+        return screenplay,pick,editor or writer
     raise AssertionError("unreachable")

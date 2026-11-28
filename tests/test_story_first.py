@@ -60,3 +60,30 @@ def test_plan_schema_cannot_return_narration():
     from jsonschema import Draft202012Validator
     props=story_first.PLAN_SCHEMA["properties"]["scenes"]["items"]
     assert "narration" not in props["properties"] and not props["additionalProperties"]
+
+def test_conditional_editor_preserves_good_draft(monkeypatch,tmp_path):
+    monkeypatch.setenv("PURFFLE_CONDITIONAL_EDIT","1")
+    monkeypatch.setenv("PURFFLE_SINGLE_PASS_NARRATION","1")
+    monkeypatch.setenv("SCIENCE_REPORT",str(tmp_path/"science-report.json"))
+    calls=[]
+    raw="A wound spring stores energy. Its release turns gears and moves the hands. The clock keeps ticking without electricity."
+    class Room:
+        trace=[]
+        def ask(self,role,*args,**kwargs):
+            calls.append(role)
+            assert role=="writer"
+            return {"narration":raw},"real-writer"
+    monkeypatch.setattr(story_first,"review_short",lambda *args:calls.append("review"))
+    monkeypatch.setattr(story_first,"plan_story",lambda topic,lang,segs,room:(SimpleNamespace(scenes=[SimpleNamespace(narration=s) for s in segs]),None,"planner"))
+    bundle=Evidence("Clock",({"id":"ref-1","title":"Clock","excerpt":raw},),"model_screened_reference")
+    script,_,writer=story_first.produce_short_story("Clock","en",bundle,object(),tmp_path/"result.json",room=Room())
+    assert calls==["writer","review"] and writer=="real-writer"
+    assert " ".join(s.narration for s in script.scenes)==raw
+
+def test_integrity_rejects_wrong_language_and_cutoff():
+    from narration_integrity import validate_text
+    with pytest.raises(RuntimeError,match="wrong language"):
+        validate_text("The tree grows in salty water because its roots filter the salt. This remarkable adaptation lets it survive where other trees cannot.","de")
+    with pytest.raises(RuntimeError,match="unfinished"):
+        validate_text("The rock slowly forms crystals deep underground and the water","en")
+    assert validate_text("Die Wurzeln des Baumes halten einen großen Teil des Salzes zurück. Dadurch kann der Baum auch im salzigen Wasser wachsen.","de")["detected_language"]=="de"
