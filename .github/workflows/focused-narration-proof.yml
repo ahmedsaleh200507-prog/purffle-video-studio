@@ -1,4 +1,4 @@
-name: Ranked free writer production narration proof
+name: Ranked free writer fresh topic proof
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
@@ -63,19 +63,21 @@ jobs:
           import json,os,subprocess,sys
           from pathlib import Path
           cases=[
-              ("en","Why do airplanes leave white trails?"),
-              ("de","Warum haben Katzen Schnurrhaare?"),
-              ("en","Why did the Roman Colosseum have underground tunnels?"),
-              ("de","Warum schwimmt ein Schiff aus Stahl?"),
-              ("en","Why is the Moon covered in craters?"),
-              ("de","Warum hinterlassen Flugzeuge weiße Streifen?"),
-              ("en","Why do cats have whiskers?"),
-              ("de","Warum hatte das Kolosseum unterirdische Gänge?"),
-              ("en","Why does a steel ship float?"),
-              ("de","Warum ist der Mond voller Krater?"),
+              ("en","How do mangrove trees survive in salt water?"),
+              ("de","Wie überleben Mangroven im Salzwasser?"),
+              ("en","How did the printing press change book production?"),
+              ("de","Wie veränderte der Buchdruck die Herstellung von Büchern?"),
+              ("en","Why does bread rise?"),
+              ("de","Warum geht Brotteig auf?"),
+              ("en","How do migrating monarch butterflies navigate?"),
+              ("de","Wie orientieren sich Monarchfalter auf ihrer Wanderung?"),
+              ("en","Why do some caves contain giant crystals?"),
+              ("de","Warum entstehen in manchen Höhlen riesige Kristalle?")
           ]
           failed=0
           scores=[]
+          language_scores={'en':[], 'de':[]}
+          ending_scores={'en':[], 'de':[]}
           authors={}
           initial_authors={}
           rewrites={}
@@ -109,11 +111,21 @@ jobs:
                   editorial=json.loads(quality.read_text()).get("editorial",{})
                   score=editorial.get("weighted_score")
                   if isinstance(score,(int,float)): scores.append(score)
+                  source=root/"science-report.json"
+                  if source.is_file():
+                      dimensions=json.loads(source.read_text()).get("topic_review",{}).get("scores",{})
+                      if isinstance(dimensions.get("spoken_flow"),(int,float)): language_scores[lang].append(10*dimensions["spoken_flow"])
+                      if isinstance(dimensions.get("ending"),(int,float)): ending_scores[lang].append(10*dimensions["ending"])
                   if editorial.get("reviewer_model") and editorial["reviewer_model"]!=author: independent_reviews+=1
               print("TEST RESULT:",i,topic,success,result.get("stage"),flush=True)
           print("TOTAL ACCEPTED:",len(cases)-failed,f"/{len(cases)}",flush=True)
           average=sum(scores)/len(scores) if scores else 0
           print("ACCEPTED QUALITY MEAN:",round(average,2),"SCORED:",len(scores),flush=True)
+          for lang in ("en","de"):
+              flow=language_scores[lang]
+              ending=ending_scores[lang]
+              print("SPOKEN FLOW:",lang,round(sum(flow)/len(flow),2) if flow else None,"SCORED:",len(flow),flush=True)
+              print("ENDING:",lang,round(sum(ending)/len(ending),2) if ending else None,"SCORED:",len(ending),flush=True)
           print("FINAL AUTHORS:",json.dumps(authors),flush=True)
           print("INITIAL AUTHORS:",json.dumps(initial_authors),flush=True)
           print("QUALITY REVISIONS:",json.dumps(rewrites),flush=True)
