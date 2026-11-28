@@ -54,7 +54,8 @@ def passages(extract,query,focus,topic):
     """Choose real contiguous paragraphs, including relevant article sections."""
     query_terms,focus_terms,topic_terms=map(_terms,(query,focus,topic))
     ranked=[]
-    for i,raw in enumerate(re.split(r"\n\s*\n|\n(?===)",extract)):
+    extract=re.sub(r"(?m)^=+[^\n]*=+[ \t]*$", "\n\n", extract)
+    for i,raw in enumerate(re.split(r"\n\s*\n",extract)):
         paragraph=re.sub(r"\s+"," ",raw).strip()
         if len(paragraph)<80 or paragraph.startswith("==") or "may refer to:" in paragraph[:150].casefold():
             continue
