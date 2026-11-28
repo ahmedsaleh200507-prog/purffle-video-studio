@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 MODELS={
-    "qwen4b":("Qwen/Qwen3-VL-4B-Instruct","264f17f202db5796c7039d94d0c024668a6ac27e"),
+    "qwen4b":("Qwen/Qwen3-VL-4B-Instruct","b2d05efe1092b10bbdbb2f7447c40a6f7435dda6"),
     "smolvlm":("HuggingFaceTB/SmolVLM2-2.2B-Instruct","482adb537c021c86670beed01cd58990d01e72e4"),
     "qwen2b":("Qwen/Qwen3-VL-2B-Instruct","89644892e4d85e24eaac8bacfd4f463576704203"),
 }

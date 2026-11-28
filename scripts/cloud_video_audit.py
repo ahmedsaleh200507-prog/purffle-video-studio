@@ -37,7 +37,7 @@ def native_payload(path):
 def frame_payload(path,model):
     from media_validation import _frame
     parts=[]
-    for t in (.1,1.1,2.1,3.1):
+    for t in (.1,1.6,3.1):
         frame=_frame(path,t,448,preserve_aspect=True)
         buf=io.BytesIO()
         frame.convert("RGB").save(buf,format="JPEG",quality=82)
@@ -45,7 +45,8 @@ def frame_payload(path,model):
         parts.append({"type":"image_url","image_url":{"url":"data:image/jpeg;base64,"+base64.b64encode(buf.getvalue()).decode()}})
     parts.append({"type":"text","text":prompt()})
     return {"model":model,"messages":[{"role":"user","content":parts}],
-            "temperature":0.1,"max_tokens":1024,"stream":False,"reasoning_effort":"low"}
+            "temperature":0.1,"max_completion_tokens":1024,"stream":False,"reasoning_effort":"low",
+            "response_format":{"type":"json_object"}}
 
 def request(provider,model,path,env,*,post=None):
     if (provider,model) not in MODELS:

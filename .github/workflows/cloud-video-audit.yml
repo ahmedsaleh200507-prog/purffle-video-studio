@@ -1,4 +1,4 @@
-name: Strong free cloud video understanding proof
+name: Strong free cloud video proof - corrected Groq frame limit
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
