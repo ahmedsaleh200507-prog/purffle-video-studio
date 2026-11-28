@@ -154,8 +154,8 @@ jobs:
       PURFFLE_EDITORIAL_PACING: '1'
       PURFFLE_SOURCE_TEXT_GATE: '1'
       PURFFLE_ADVANCED_VISUALS: '0'  # enabled after optional dependency checks
-      PIXABAY_API_KEY: ${{ !inputs.free_canary && secrets.PIXABAY_API_KEY || '' }}
-      PEXELS_API_KEY: ${{ !inputs.free_canary && secrets.PEXELS_API_KEY || '' }}
+      PIXABAY_API_KEY: ${{ (!inputs.free_canary || vars.PURFFLE_PIXABAY_FREE_CONFIRMED == '1') && secrets.PIXABAY_API_KEY || '' }}
+      PEXELS_API_KEY: ${{ (!inputs.free_canary || vars.PURFFLE_PEXELS_FREE_CONFIRMED == '1') && secrets.PEXELS_API_KEY || '' }}
       COVERR_API_KEY: ${{ !inputs.free_canary && secrets.COVERR_API_KEY || '' }}
       COVER2: ${{ !inputs.free_canary && secrets.COVER2 || '' }}
       NPS_API_KEY: ${{ !inputs.free_canary && secrets.NPS_API_KEY || '' }}
@@ -170,7 +170,7 @@ jobs:
       # working video indexes before tiny fixed catalogs or slower archives.
       # Remaining providers are still checked when the first ones have no
       # verified, relevant HD clip; license and CLIP checks stay unchanged.
-      VISUAL_SOURCES: ${{ inputs.free_canary && 'usgs-video,freenaturestock-video,nasa-video,wikimedia-video,archive-video' || 'pexels,pixabay,usgs-video,nps-video,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video,vecteezy-video' }}
+      VISUAL_SOURCES: ${{ inputs.free_canary && 'pexels,pixabay,usgs-video,freenaturestock-video,nasa-video,wikimedia-video,archive-video' || 'pexels,pixabay,usgs-video,nps-video,wikimedia-video,nasa-video,archive-video,coverr-video,europeana-video,freenaturestock-video,vecteezy-video' }}
       # Fixed George/Thorsten; no alternate voice or private model setup.
       PURFFLE_NARRATOR_LOCK: '1'
       TTS_ENGINE: piper
