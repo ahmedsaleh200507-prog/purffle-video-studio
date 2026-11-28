@@ -235,6 +235,14 @@ def main():
                         stage = 'creative_narration'
                         screenplay, writer = rewrite_short(screenplay, topic, s.language, review_evidence,
                                                            feedback=review_feedback_text)
+                    if creative:
+                        # Preserve actual generated words even when a later gate rejects the video.
+                        payload = {'topic': topic, 'language': s.language,
+                                   'narration': [str(scene.narration) for scene in screenplay.scenes],
+                                   'evidence_method': review_evidence.method,
+                                   'writer': str(writer), 'scope': 'candidate; not yet approved'}
+                        write_json(target.with_name(f'narration-attempt-{attempt+1}.json'), payload)
+                        write_json(target.with_name('narration.json'), payload)
                     from science_fact_guard import validate_unsourced_quantities
                     validate_unsourced_quantities(
                         screenplay, os.environ['VIDEO_TOPIC'])
