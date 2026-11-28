@@ -10,10 +10,10 @@ from visual_multitime_proof import FRESH,make_preview
 from temporal_vision_pilot import local_engine,infer,parse_short_answer
 
 REVIEW={
-    "shore":{"sha256":"", "starts":[3.242488,17.4687,31.694912],
+    "shore":{"sha256":"14ee1d1677e295f2f265679932b62b0516b02762c33191ebffc7c56485659803", "starts":[3.242488,17.4687,31.694912],
              "notes":["Stones dominate, dark water-like background; water visibility is limited."]*3,
              "questions":["Are rounded stones or rocks visibly present?","Is water visibly present behind or beside the rocks?","Is this a full-screen text card rather than camera footage?"]},
-    "postfire":{"sha256":"","starts":[15.10324,66.8885,118.67376],
+    "postfire":{"sha256":"5446df8026310086bce9d4fb71d0c9608e459f733e6ad23846fae808d1da8afd","starts":[15.10324,66.8885,118.67376],
                 "notes":["Full-screen green USGS introductory text card, no scene footage.",
                          "Forested channel with small possible debris flow; exact event visibility uncertain from sampled stills.",
                          "Clearly visible muddy debris in channel, consecutive frames show changed flow shape."],

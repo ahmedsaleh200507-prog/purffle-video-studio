@@ -1,4 +1,4 @@
-name: Reviewed scene intervals and real portrait render proof
+name: Hash-bound scene intervals and real portrait render proof
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
