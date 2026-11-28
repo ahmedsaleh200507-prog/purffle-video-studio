@@ -19,7 +19,7 @@ SCHEMA={"type":"object","properties":{
         "required":list(WEIGHTS),"additionalProperties":False},
     "reason":{"type":"string"}},"required":["answers_question","checks","scores","reason"],"additionalProperties":False}
 
-def review_short(script,bundle,llm,path):
+def review_short(script,bundle,llm,path,*,reviewer=None):
     from science_sources import _strict_science_review_json,_report
     from production_narration import reference_text
     report=Path(path)
@@ -57,7 +57,15 @@ def review_short(script,bundle,llm,path):
     try:
         if not references:
             raise ValueError("no reference passages")
-        result=_strict_science_review_json(llm,system,prompt,schema)
+        reviewer_name=None
+        if reviewer is not None:
+            system+=(" Check each factual clause, not just the broad mechanism. A source describing one component does not prove it is the main component. "
+                     "Do not infer comparative rates, universality, permanence, or absolute exclusivity without evidence. "
+                     "Do not overlook contradictions within a story. Figurative language must not introduce false physical claims. "
+                     "If a scene is mainly about a tangential species or event, check whether the exact subject still receives a useful answer.")
+            result,reviewer_name=reviewer(system,prompt,schema)
+        else:
+            result=_strict_science_review_json(llm,system,prompt,schema)
         if conditional and any(type(result.get(k)) is not bool for k in ("language_ok","complete")):
             raise ValueError("invalid language or completeness verdict")
         if type(result.get("answers_question")) is not bool or not isinstance(result.get("reason"),str):
@@ -80,7 +88,7 @@ def review_short(script,bundle,llm,path):
                 "source_ids":ids,"source_id":ids[0] if ids else "",
                 "reference_passages":[{"id":k,"excerpt":references[k]["excerpt"]} for k in ids],
                 "reason":row["reason"][:350]})
-        if not any(c["status"] in ("supported","minor_issue") for c in checks):
+        if not any(c["status"] in ("supported","minor_issue") for c in checks) and not any(c["status"]=="material_issue" for c in checks):
             raise ValueError("no grounded scene")
     except (ValueError,KeyError,TypeError,AttributeError,RuntimeError) as exc:
         _report(report,bundle,"failed",error="science_review_unavailable: invalid or unavailable whole-story review")
@@ -88,6 +96,8 @@ def review_short(script,bundle,llm,path):
     editorial={"state":"model_screened_topic_answer","answers_question":result["answers_question"],
         "scores":scores,"weighted_score":sum(scores[k]*w for k,w in WEIGHTS.items())/10,
         "reason":result["reason"][:500],"scope":"advisory model scores, not measured viewer retention"}
+    if reviewer_name:
+        editorial["reviewer_model"]=reviewer_name
     if conditional:
         editorial.update(language_ok=result["language_ok"],complete=result["complete"])
         if not result["language_ok"] or not result["complete"]:

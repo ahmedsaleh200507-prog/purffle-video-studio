@@ -1,4 +1,4 @@
-name: Focused production narration proof
+name: Qwen-primary production narration proof
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
@@ -9,7 +9,7 @@ permissions:
 jobs:
   proof:
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 80
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/scripts
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -20,6 +20,8 @@ jobs:
       PURFFLE_CREATIVE_NARRATION: '1'
       PURFFLE_SINGLE_PASS_NARRATION: '1'
       PURFFLE_STORY_FIRST: '1'
+      PURFFLE_CONDITIONAL_EDIT: '1'
+      PURFFLE_QWEN_PRIMARY: '1'
       PURFFLE_EDITORIAL_ANSWER_GATE: '1'
       PURFFLE_EDITORIAL_PACING: '1'
       PURFFLE_NARRATION_ONLY: '1'
@@ -44,10 +46,12 @@ jobs:
           PURFFLE_CREATIVE_NARRATION: '0'
           PURFFLE_SINGLE_PASS_NARRATION: '0'
           PURFFLE_STORY_FIRST: '0'
+          PURFFLE_CONDITIONAL_EDIT: '0'
+          PURFFLE_QWEN_PRIMARY: '0'
         run: |
           python -m compileall -q scripts tests/test_production_narration.py
           python -m pytest -q tests/test_production_narration.py tests/test_story_room.py tests/test_root_production.py tests/test_story_first.py
-      - name: Exercise story-first production on ten subjects in both languages
+      - name: Exercise Qwen-primary production on ten subjects in both languages
         env:
           PURFFLE_STRICT: '1'
         run: |
@@ -78,6 +82,9 @@ jobs:
           ]
           failed=0
           scores=[]
+          authors={}
+          rewrites={}
+          independent_reviews=0
           for i,(lang,topic) in enumerate(cases,1):
               root=Path("focused-proof")/str(i)
               root.mkdir(parents=True,exist_ok=True)
@@ -93,16 +100,28 @@ jobs:
                   print("NARRATION OUTPUT:",i,path.name,path.read_text(),flush=True)
               if (root/"science-report.json").is_file():
                   print("SOURCE SCREEN:",i,(root/"science-report.json").read_text(),flush=True)
+              output=root/"narration.json"
+              if output.is_file():
+                  narration=json.loads(output.read_text())
+                  author=narration.get("final_author") or narration.get("editor") or narration.get("writer")
+                  if author: authors[author]=authors.get(author,0)+1
+                  note=narration.get("quality_revision","not completed")
+                  rewrites[note]=rewrites.get(note,0)+1
               quality=root/"narration-quality.json"
               if success and quality.is_file():
-                  score=json.loads(quality.read_text()).get("editorial",{}).get("weighted_score")
+                  editorial=json.loads(quality.read_text()).get("editorial",{})
+                  score=editorial.get("weighted_score")
                   if isinstance(score,(int,float)): scores.append(score)
+                  if editorial.get("reviewer_model") and editorial["reviewer_model"]!=author: independent_reviews+=1
               print("TEST RESULT:",i,topic,success,result.get("stage"),flush=True)
           print("TOTAL ACCEPTED:",len(cases)-failed,f"/{len(cases)}",flush=True)
           average=sum(scores)/len(scores) if scores else 0
           print("ACCEPTED QUALITY MEAN:",round(average,2),"SCORED:",len(scores),flush=True)
+          print("FINAL AUTHORS:",json.dumps(authors),flush=True)
+          print("QUALITY REVISIONS:",json.dumps(rewrites),flush=True)
+          print("INDEPENDENT REVIEWS:",independent_reviews,flush=True)
           print("QUALITY TARGET:",average>=85 and len(scores)==len(cases),flush=True)
-          sys.exit(1 if failed or len(scores)!=len(cases) or average<85 else 0)
+          sys.exit(1 if failed or len(scores)!=len(cases) or average<85 or independent_reviews!=len(cases) else 0)
           PY
       - uses: actions/upload-artifact@v4
         if: always()

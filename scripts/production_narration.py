@@ -10,6 +10,8 @@ VERSION="curiosity-first-production-4"
 # Recovery version identifies the experimental story-first path separately.
 if os.getenv("PURFFLE_STORY_FIRST")=="1" and os.getenv("PURFFLE_SINGLE_PASS_NARRATION")=="1":
     VERSION="story-first-production-1"
+    if os.getenv("PURFFLE_QWEN_PRIMARY")=="1" and os.getenv("PURFFLE_CONDITIONAL_EDIT")=="1":
+        VERSION="story-first-qwen-conditional-2"
 
 def enabled():
     return os.getenv("PURFFLE_CREATIVE_NARRATION","0")=="1"

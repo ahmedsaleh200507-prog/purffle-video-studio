@@ -5,6 +5,7 @@ Candidate scripts require separate factual and human editorial approval before p
 from __future__ import annotations
 import json
 import re
+import os
 from editorial_standard import audit_structure, word_tokens
 from cloud_model_router import Router, MODELS, ModelError
 
@@ -98,7 +99,8 @@ class StoryRoom:
 
     def ask(self, role, prompt, schema, preferred, *, avoid=None, temperature=.3):
         excluded = set(avoid) if isinstance(avoid,(tuple,list,set)) else ({avoid} if avoid else set())
-        pairs = sorted((p for p in MODELS if p[1] not in excluded), key=lambda p: (False,
+        restricted=os.getenv("PURFFLE_QWEN_PRIMARY")=="1" and role in ("writer","editor_1","planner","review")
+        pairs = sorted((p for p in MODELS if p[1] not in excluded and (not restricted or p[1] in preferred)), key=lambda p: (False,
             preferred.index(p[1]) if p[1] in preferred else len(preferred)))
         messages=[{"role":"system","content":"You are an experienced nonfiction documentary writer or editor. Return JSON only."},
                   {"role":"user","content":prompt}]
@@ -109,7 +111,7 @@ class StoryRoom:
                 continue
             try:
                 raw=self.router.request(provider,model,messages=messages,schema=schema,
-                                        max_tokens=2600 if role in ("writer","rewrite") else 1600,temperature=temperature,
+                                        max_tokens=3000 if role=="review" else 2600 if role in ("writer","rewrite") else 1600,temperature=temperature,
                                         reasoning_effort="high" if role in ("writer","rewrite") and model=="openai/gpt-oss-120b" else "low")
                 self.trace.append({"role":role,"model":model,"status":"accepted_json"})
                 return json.loads(raw),model
@@ -123,7 +125,7 @@ class StoryRoom:
                     self.router.cooldown[model]=self.router.clock()+65
                 elif exc.status_code>=500:
                     self.router.cooldown[model]=self.router.clock()+30
-        if excluded:
+        if excluded or restricted:
             raise RuntimeError("independent_story_model_unavailable: "+role)
         raw=self.router.complete(messages,schema=schema,max_tokens=1600,temperature=temperature)
         model=self.router.events[-1]["model"]
