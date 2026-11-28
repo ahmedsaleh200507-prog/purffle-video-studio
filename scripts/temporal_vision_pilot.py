@@ -62,21 +62,47 @@ def local_engine(key):
                 use_safetensors=True,dtype=torch.bfloat16,attn_implementation="sdpa",
                 low_cpu_mem_usage=True).eval()
     return processor,model
-def infer(engine,path):
+def infer(engine,path,question):
     import torch
     processor,model=engine
     messages=[{"role":"user","content":[{"type":"video","path":str(path)},
-              {"type":"text","text":prompt()}]}]
+              {"type":"text","text":"Inspect the ordered video frames. Answer the following question with only Yes, No, or Uncertain. Do not guess. "+question}]}]
     inputs=processor.apply_chat_template(messages,add_generation_prompt=True,
-              tokenize=True,return_dict=True,return_tensors="pt",num_frames=8,
+              tokenize=True,return_dict=True,return_tensors="pt",fps=2,
               video_load_backend="decord")
     if not any(k in inputs for k in ("pixel_values_videos","pixel_values","video_grid_thw")):
         raise ValueError("video pixels not present in processed input")
     inputs=inputs.to(model.device,dtype=torch.bfloat16)
     with torch.inference_mode():
-        ids=model.generate(**inputs,max_new_tokens=96,do_sample=False)
+        ids=model.generate(**inputs,max_new_tokens=16,do_sample=False)
     return processor.batch_decode(ids[:,inputs["input_ids"].shape[1]:],
                                    skip_special_tokens=True)[0].strip()
+def parse_short_answer(raw):
+    """Strict answer vocabulary; never convert descriptive prose into a verdict."""
+    answer=raw.strip().casefold().rstrip(".!").strip()
+    if answer in ("yes","true"):
+        return True
+    if answer in ("no","false"):
+        return False
+    if answer in ("uncertain","unknown","null","not sure"):
+        return None
+    raise ValueError("invalid short verdict")
+
+def local_verdict(engine,path,case,ask=infer):
+    answers=[]
+    verdicts=[]
+    invalid=0
+    for question in QUESTIONS:
+        raw=ask(engine,path,question)
+        answers.append(raw[:1000])
+        try:
+            verdicts.append(parse_short_answer(raw))
+        except ValueError:
+            invalid+=1
+            verdicts.append(None)
+    result=score(json.dumps(dict(zip(("first","second","third"),verdicts))),case)
+    return {**result,"answers":answers,"invalid_answers":invalid}
+
 def main(key):
     import torch
     torch.set_num_threads(2)
@@ -96,8 +122,7 @@ def main(key):
             for case,path in paths.items():
                 start=time.monotonic()
                 try:
-                    raw=infer(engine,path)
-                    row={"status":"evaluated",**score(raw,case),"answer":raw[:1000]}
+                    row={"status":"evaluated",**local_verdict(engine,path,case)}
                 except Exception as exc:
                     row={"status":"error","error_type":type(exc).__name__,"error":str(exc)[:300]}
                 row["seconds"]=round(time.monotonic()-start,2)

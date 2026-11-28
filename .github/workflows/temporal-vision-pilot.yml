@@ -1,4 +1,4 @@
-name: Free local video audition - PyAV and verified Qwen revision
+name: Local video audition - single FPS and strict individual answers
 on:
   push:
     branches: [chatgpt/yellow-system-fixes]
